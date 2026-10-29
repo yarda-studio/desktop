@@ -1,0 +1,431 @@
+/* Bundled fonts — no CDN, works offline */
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/source-serif-4/wght.css';
+@import '@fontsource-variable/jetbrains-mono/wght.css';
+
+/* Material Symbols Outlined — variable icon font (FILL, wght, GRAD, opsz axes) */
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url('../assets/fonts/material-symbols-outlined.woff2') format('woff2');
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Color tokens ──────────────────────────────────────────────────────────
+   Space-separated RGB channels (no "rgb()" wrapper) so Tailwind's opacity
+   modifier syntax keeps working: bg-primary/50 → rgb(var(--col-primary) / 0.5)
+   ──────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Calm Editorial Precision (see docs/DESIGN.md) — flat surfaces with hairline
+     borders; translucent glass only for floating chrome. */
+  --hairline:     rgba(28, 27, 25, 0.08);
+  --glass-bg:     rgba(255, 253, 249, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.8);
+  --glass-shadow: 0 8px 32px -4px rgba(28, 27, 25, 0.12);
+  --blob-1: rgba(120, 110, 95, 0.10);
+  --blob-2: rgba(46, 184, 134, 0.12);
+  --blob-3: rgba(184, 137, 43, 0.10);
+  --glass-strong-bg: rgba(255, 253, 249, 0.97);
+  --live-gradient: linear-gradient(135deg, #e5484d, #c43a3f);
+
+  /* Surfaces: background = window canvas, surface = elevated flat layer */
+  --col-background:                247 244 238;  /* #f7f4ee cream */
+  --col-surface:                   255 253 249;
+  --col-surface-variant:           230 226 218;
+  --col-surface-dim:               240 236 229;
+  --col-surface-bright:            255 253 249;
+  --col-surface-container-lowest:  255 253 249;
+  --col-surface-container-low:     251 249 244;
+  --col-surface-container:         244 241 234;
+  --col-surface-container-high:    237 233 225;
+  --col-surface-container-highest: 230 226 218;
+  --col-surface-tint:              28 27 25;
+
+  --col-on-surface:                28 27 25;     /* #1c1b19 warm ink */
+  --col-on-surface-variant:        106 102 94;   /* #6a665e */
+  --col-on-background:             28 27 25;
+
+  --col-outline:                   128 123 114;  /* ≥3:1 on cream for control boundaries (SC 1.4.11) */
+  --col-outline-variant:           230 226 218;  /* hairline */
+
+  --col-inverse-surface:           28 27 25;
+  --col-inverse-on-surface:        240 236 229;
+  --col-inverse-primary:           236 232 223;
+
+  /* Primary (ink — the default accent; other accents override these in accents.css) */
+  --col-primary:                   28 27 25;    /* #1c1b19 ink */
+  --col-on-primary:                247 244 238;
+  --col-primary-container:         235 231 223;
+  --col-on-primary-container:      28 27 25;
+  --col-primary-fixed:             226 222 213;
+  --col-primary-fixed-dim:         196 191 181;
+  --col-on-primary-fixed:          28 27 25;
+  --col-on-primary-fixed-variant:  70 67 62;
+
+  /* Secondary = muted ink; container = accent-tinted selected state */
+  --col-secondary:                 106 102 94;
+  --col-on-secondary:              255 255 255;
+  --col-secondary-container:       235 231 223;
+  --col-on-secondary-container:    28 27 25;
+  --col-secondary-fixed:           237 233 225;
+  --col-secondary-fixed-dim:       212 208 199;
+  --col-on-secondary-fixed:        28 27 25;
+  --col-on-secondary-fixed-variant: 84 80 73;
+
+  /* Tertiary = soft jade (installed / synced) */
+  --col-tertiary:                  14 124 86;    /* AA text on cream */
+  --col-on-tertiary:               255 255 255;
+  --col-tertiary-container:        214 245 232;
+  --col-on-tertiary-container:     0 81 56;
+  --col-tertiary-fixed:            122 250 195;
+  --col-tertiary-fixed-dim:        92 221 168;
+  --col-on-tertiary-fixed:         0 33 20;
+  --col-on-tertiary-fixed-variant: 0 81 56;
+
+  /* Error / live = crimson */
+  --col-error:                     201 42 47;    /* AA text on cream */
+  --col-on-error:                  255 255 255;
+  --col-error-container:           253 232 233;
+  --col-on-error-container:        150 25 30;
+
+  /* Exegesis & tags = warm gold */
+  --col-gold:                      138 98 14;    /* AA text on cream */
+}
+
+.dark {
+  --hairline:     rgba(255, 255, 255, 0.07);
+  --glass-bg:     rgba(26, 26, 25, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.36);
+  --glass-strong-bg: rgba(26, 26, 25, 0.97);
+  --blob-1: rgba(200, 190, 170, 0.08);
+  --blob-2: rgba(46, 184, 134, 0.12);
+  --blob-3: rgba(184, 137, 43, 0.10);
+
+  --col-background:                18 17 16;     /* #121110 */
+  --col-surface:                   26 26 25;
+  --col-surface-variant:           52 51 48;
+  --col-surface-dim:               18 17 16;
+  --col-surface-bright:            56 55 52;
+  --col-surface-container-lowest:  13 13 12;
+  --col-surface-container-low:     23 22 21;
+  --col-surface-container:         30 29 28;
+  --col-surface-container-high:    40 39 37;
+  --col-surface-container-highest: 52 51 48;
+  --col-surface-tint:              236 232 223;
+
+  --col-on-surface:                236 232 223;  /* #ece8df */
+  --col-on-surface-variant:        154 149 140;
+  --col-on-background:             236 232 223;
+
+  --col-outline:                   150 145 136;
+  --col-outline-variant:           42 41 38;     /* hairline */
+
+  --col-inverse-surface:           236 232 223;
+  --col-inverse-on-surface:        18 17 16;
+  --col-inverse-primary:           28 27 25;
+
+  --col-primary:                   236 232 223; /* #ece8df */
+  --col-on-primary:                18 17 16;
+  --col-primary-container:         236 232 223;
+  --col-on-primary-container:      40 38 34;
+  --col-primary-fixed:             58 56 52;
+  --col-primary-fixed-dim:         84 81 75;
+  --col-on-primary-fixed:          236 232 223;
+  --col-on-primary-fixed-variant:  200 195 185;
+
+  --col-secondary:                 154 149 140;
+  --col-on-secondary:              18 17 16;
+  --col-secondary-container:       46 45 42;
+  --col-on-secondary-container:    236 232 223;
+  --col-secondary-fixed:           52 51 48;
+  --col-secondary-fixed-dim:       72 70 66;
+  --col-on-secondary-fixed:        236 232 223;
+  --col-on-secondary-fixed-variant: 210 205 196;
+
+  --col-tertiary:                  92 221 168;
+  --col-on-tertiary:               0 56 37;
+  --col-tertiary-container:        17 70 52;
+  --col-on-tertiary-container:     122 250 195;
+  --col-tertiary-fixed:            17 70 52;
+  --col-tertiary-fixed-dim:        26 173 124;
+  --col-on-tertiary-fixed:         122 250 195;
+  --col-on-tertiary-fixed-variant: 92 221 168;
+
+  --col-error:                     255 130 135;
+  --col-on-error:                  60 0 5;
+  --col-error-container:           93 28 33;
+  --col-on-error-container:        255 218 214;
+
+  --col-gold:                      200 154 60;
+}
+
+/* ── Page frame ────────────────────────────────────────────────────────────
+   The app is one fixed-size shell whose panels scroll internally, never the
+   document. Without this, anything that briefly overflows the window (a
+   sheet sliding in, a drag past an edge, macOS rubber-banding) scrolls the
+   whole page a few pixels and exposes the bare <body> — white, since it had
+   no background — as a stripe along the bottom edge. */
+html, body, #root {
+  height: 100%;
+}
+html, body {
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: rgb(var(--col-background));
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(var(--col-outline) / 0.35); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--col-outline)); }
+
+@layer base {
+  body {
+    font-family: 'Inter Variable', sans-serif;
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3, h4 { text-wrap: balance; }
+  p, li { text-wrap: pretty; }
+  /* Visible keyboard focus everywhere (WCAG 2.4.7 / 2.4.11). Components that draw
+     their own ring (.field, focus-visible:ring-*) opt out with outline-none. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--col-primary));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .dark :focus-visible { outline-color: rgb(var(--col-primary-fixed-dim)); }
+  [tabindex="-1"]:focus { outline: none; }
+}
+
+@layer components {
+  /* ── Flat: things that sit in the page ─────────────────────────────────── */
+  /* Elevated content layer: solid surface, hairline border, no shadow */
+  .panel {
+    background: rgb(var(--col-surface));
+    border: 1px solid rgb(var(--col-outline-variant));
+  }
+  /* Secondary control: faint fill + hairline, brightens on hover */
+  .ctl {
+    background: rgb(var(--col-on-surface) / 0.04);
+    border: 1px solid rgb(var(--col-outline-variant));
+    transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+  }
+  .ctl:hover { background: rgb(var(--col-on-surface) / 0.08); }
+  .ctl:active { transform: scale(0.97); }
+  /* Ghost: icon/text only, soft tint on hover */
+  .ghost {
+    transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+  }
+  .ghost:hover { background: rgb(var(--col-on-surface) / 0.06); color: rgb(var(--col-on-surface)); }
+  .ghost:active { transform: scale(0.97); }
+  /* Selected / active control: accent-tinted */
+  .ctl-active {
+    background: rgb(var(--col-primary) / 0.12);
+    color: rgb(var(--col-primary));
+    border: 1px solid rgb(var(--col-primary) / 0.18);
+  }
+  /* Selected list row / card: faint accent wash (seamless / zero lines) */
+  .row-selected {
+    background: rgb(var(--col-primary) / 0.10);
+  }
+  /* Text field: tinted fill, hairline, soft accent focus ring */
+  .field {
+    background: rgb(var(--col-on-surface) / 0.04);
+    border: 1px solid rgb(var(--col-outline) / 0.75);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .field:focus-within, .field:focus {
+    border-color: rgb(var(--col-primary) / 0.5);
+    box-shadow: 0 0 0 2px rgb(var(--col-primary) / 0.2);
+  }
+  /* Primary action: solid accent */
+  .btn-primary {
+    background: rgb(var(--col-primary));
+    color: rgb(var(--col-on-primary));
+    transition: filter 150ms ease, transform 150ms ease;
+  }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-primary:active { transform: scale(0.97); }
+  /* Live broadcast: crimson gradient */
+  .btn-live {
+    background: var(--live-gradient);
+    color: #fff;
+    box-shadow: 0 0 18px rgb(var(--col-error) / 0.35);
+  }
+  /* Keycap-style hint (⌘K, shortcuts) */
+  .kbd {
+    font-family: 'JetBrains Mono Variable', monospace;
+    font-size: 12px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgb(var(--col-on-surface) / 0.06);
+    border: 1px solid rgb(var(--col-outline-variant));
+    color: rgb(var(--col-on-surface-variant));
+  }
+
+  /* ── Glass: things that float ──────────────────────────────────────────── */
+  .glass {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+    backdrop-filter: blur(24px) saturate(150%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+
+  /* Drawers and sheets that sit over busy content: same glass, firmer fill */
+  .glass-strong { background: var(--glass-strong-bg); }
+
+  /* Soft sand / jade / gold blooms behind the glass. Peripheral only:
+     scripture is always on a solid surface, never on this. */
+  .ambient {
+    background:
+      radial-gradient(45% 55% at 18% 0%, var(--blob-1), transparent 70%),
+      radial-gradient(40% 50% at 92% 30%, var(--blob-2), transparent 70%),
+      radial-gradient(45% 50% at 45% 105%, var(--blob-3), transparent 70%),
+      rgb(var(--col-background));
+  }
+
+  /* Settings rows: one title/description pair and one control language. */
+  .set-title { @apply font-body-ui text-[14px] font-semibold text-on-surface; letter-spacing: -0.01em; }
+  .set-desc  { @apply font-body-ui text-[13px] leading-snug text-on-surface-variant mt-1; }
+  .set-row   { @apply flex items-center justify-between gap-x-6 gap-y-3 flex-wrap px-8 py-4 min-h-[64px]; }
+  .set-ctl   { @apply inline-flex items-center justify-center h-8 px-3 rounded-lg font-body-ui text-[13px] font-medium whitespace-nowrap transition-colors; }
+
+  .field-label { @apply block mb-1.5 font-body-ui font-medium text-[12px] text-on-surface-variant; }
+  .field-input {
+    @apply w-full h-9 px-3 rounded-md text-on-surface font-body-ui text-[13px] outline-none field;
+  }
+}
+
+/* Live output uses CSS variables so a saved theme updates every Scripture
+   layout—single verse, context, and chapter—without divergent rules. */
+.presentation-output .text-white { color: var(--presentation-text) !important; }
+.presentation-output .text-white\/60 { color: var(--presentation-reference) !important; }
+.presentation-output .text-white\/40,
+.presentation-output .text-white\/30,
+.presentation-output .text-white\/25,
+.presentation-output .text-white\/20 { color: color-mix(in srgb, var(--presentation-reference), transparent 55%) !important; }
+.presentation-output p { text-shadow: var(--presentation-shadow); }
+
+.presentation-transition-fade { animation: presentation-fade var(--presentation-transition-duration, 300ms) ease-out both; }
+.presentation-transition-slide { animation: presentation-slide-up var(--presentation-transition-duration, 300ms) cubic-bezier(.2, .8, .2, 1) both; }
+
+@keyframes presentation-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes presentation-slide-up {
+  from { opacity: 0; transform: translateY(3%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Light/dark cross-fade ─────────────────────────────────────────────────
+   App.tsx wraps the theme switch in document.startViewTransition, which
+   cross-fades a snapshot of the old screen into the new one. The default
+   animation is already a fade; this just sets its length and keeps the two
+   layers from blending additively mid-way. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 380ms;
+  animation-timing-function: ease-in-out;
+  mix-blend-mode: normal;
+}
+
+@keyframes settings-pane-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.settings-pane-in { animation: settings-pane-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .presentation-transition-fade, .presentation-transition-slide, .settings-pane-in { animation: none; }
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.01ms; }
+}
+
+@media (forced-colors: active) {
+  .ctl, .field, .panel { border-color: CanvasText; }
+  .ctl-active, .row-selected { outline: 2px solid Highlight; }
+}
+
+/* ── Material Symbols ──────────────────────────────────────────────────── */
+/* These rules replicate what the Google Fonts CDN stylesheet provided.
+   font-family assigns the custom font; font-feature-settings enables the
+   ligatures that convert text like "menu_book" into icon glyphs. */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  vertical-align: middle;
+  white-space: nowrap;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
+}
+.icon-fill  { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+.icon-light { font-variation-settings: 'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24; }
+
+/* ── Verse hover actions ────────────────────────────────────────────────── */
+.verse-container:hover .verse-actions,
+.verse-container:focus-within .verse-actions { opacity: 1; pointer-events: auto; }
+
+/* ── Strong's word hover ────────────────────────────────────────────────── */
+.strongs-word:hover .strongs-tag,
+.strongs-word:focus-visible .strongs-tag { opacity: 1; }
+
+/* ── Text selection ─────────────────────────────────────────────────────── */
+::selection {
+  background: rgb(var(--col-secondary-container));
+  color: rgb(var(--col-on-secondary-container));
+}
+
+/* Range inputs: a quiet track, the filled part and thumb in the primary ink.
+   --range-fill is set inline by the component; thumb is 20px for WCAG 2.5.8. */
+input[type="range"].range {
+  -webkit-appearance: none; appearance: none;
+  height: 20px; background: transparent;
+}
+input[type="range"].range::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 9999px;
+  background: rgb(var(--col-outline-variant));
+}
+input[type="range"].range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 18px; height: 18px; margin-top: -7px; border-radius: 9999px;
+  background: rgb(var(--col-primary));
+  border: 3px solid rgb(var(--col-surface));
+  outline: 1px solid rgb(var(--col-outline));
+}
+input[type="range"].range::-moz-range-track { height: 4px; border-radius: 9999px; background: rgb(var(--col-outline-variant)); }
+input[type="range"].range::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 9999px;
+  background: rgb(var(--col-primary)); border: 3px solid rgb(var(--col-surface)); outline: 1px solid rgb(var(--col-outline));
+}
+
+/* A browser output opened with ?alpha=1 is keyed over video (OBS, vMix): no backdrop, just the text. */
+html.alpha, html.alpha body, html.alpha #root { background: transparent !important; }
+html.alpha .output-backdrop { background: transparent !important; }
+html.alpha .output-backdrop video { display: none; }

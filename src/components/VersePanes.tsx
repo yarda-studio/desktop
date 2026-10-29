@@ -1,0 +1,335 @@
+import { memo, useEffect, useRef } from "react";
+import type { ChapterText, TextSpan, PresentationTheme } from "../lib/tauri";
+import { useAppStore, type DisplayPrefs } from "../store/app";
+import { PART_LABELS, type ThemeForSplit } from "../lib/verseSplit";
+import { contentStrongs } from "../lib/strongsMarkers";
+
+export const FONT_FAMILY_CSS: Record<string, string> = {
+  system: `-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif`,
+  serif:  `Georgia, "Palatino Linotype", Palatino, serif`,
+  times:  `"Times New Roman", Times, serif`,
+  mono:   `"Courier New", Courier, monospace`,
+};
+
+/** Extra line-height added while Strong's underlines are shown. */
+const STRONGS_LEADING = 0.3;
+
+export function PrimaryPane({
+  chapter, loading, error, currentVerse, onStrongsClick, onVerseClick, onCrossRefClick, onCompareClick, onCommentaryClick, onNotesClick, onAddToServiceClick, showBorder, showStrongs, showCrossRefs, showRedLetter, showCommentary, showNotes, readingFontSize, displayPrefs, presentationTheme, fullscreen, scrollContainerRef, currentPart, onPartClick, activeVerseParts,
+}: {
+  chapter: ChapterText | null;
+  loading: boolean;
+  error: string | null;
+  currentVerse: number;
+  onStrongsClick: (numbers: string[]) => void;
+  onVerseClick: (verse: number) => void;
+  onCrossRefClick: (verse: number) => void;
+  onCompareClick: (verse: number) => void;
+  onCommentaryClick: (verse: number) => void;
+  onNotesClick: (verse: number) => void;
+  /** Omitted entirely in Study workspace — service queue is a Presentation-only feature. */
+  onAddToServiceClick?: (verse: number) => void;
+  showBorder: boolean;
+  showStrongs: boolean;
+  showCrossRefs: boolean;
+  showRedLetter: boolean;
+  showCommentary: boolean;
+  showNotes: boolean;
+  readingFontSize: number;
+  displayPrefs: DisplayPrefs;
+  presentationTheme?: PresentationTheme | null;
+  fullscreen?: boolean;
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
+  currentPart?: number;
+  onPartClick?: (part: number) => void;
+  /** Pre-measured split parts for the active verse, passed from ReadingView. */
+  activeVerseParts?: string[];
+}) {
+  const internalRef = useRef<HTMLDivElement>(null);
+  const scrollRef = (scrollContainerRef ?? internalRef) as React.RefObject<HTMLDivElement>;
+  const prevChapterRef = useRef<ChapterText | null>(null);
+
+  useEffect(() => {
+    if (!chapter) return;
+    const isNewChapter = chapter !== prevChapterRef.current;
+    prevChapterRef.current = chapter;
+    const el = scrollRef.current?.querySelector<HTMLElement>(`[data-verse="${currentVerse}"]`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: isNewChapter ? "start" : "nearest" });
+  }, [chapter, currentVerse]);
+
+  if (loading) return <div className="flex-1 flex items-center justify-center"><span className="font-body-ui text-body-ui text-on-surface-variant">Loading…</span></div>;
+  if (error) return <div className="flex-1 p-8"><p className="font-body-ui text-body-ui text-error">{error}</p></div>;
+  if (!chapter) return <div className="flex-1 flex items-center justify-center"><span className="font-body-ui text-body-ui text-on-surface-variant">Select a module to begin reading.</span></div>;
+
+  const maxWidth = fullscreen ? "100%" : "1100px";
+  const horizPadding = `max(16px, ${displayPrefs.margins / 2}%)`;
+  const textStyle: React.CSSProperties = {
+    fontSize: `${readingFontSize}px`,
+    // Strong's underlines sit between lines, so give them extra room.
+    lineHeight: 1 + displayPrefs.lineSpacing + (showStrongs ? STRONGS_LEADING : 0),
+    letterSpacing: displayPrefs.letterSpacing === 0 ? undefined : `${(displayPrefs.letterSpacing * 0.1).toFixed(3)}em`,
+    textAlign: displayPrefs.textAlign,
+    fontFamily: FONT_FAMILY_CSS[displayPrefs.fontFamily],
+  };
+
+  return (
+    <div ref={scrollRef} className={`flex-1 overflow-y-auto ${showBorder ? "border-r border-outline-variant" : ""}`}>
+      <div className="mx-auto w-full py-8 space-y-4" style={{ maxWidth, paddingLeft: horizPadding, paddingRight: horizPadding }}>
+        {chapter.verses.map((v) => (
+          <VerseRow
+            key={v.verse}
+            verse={v.verse}
+            spans={v.spans}
+            active={v.verse === currentVerse}
+            onStrongsClick={onStrongsClick}
+            onVerseClick={() => onVerseClick(v.verse)}
+            onCrossRefClick={() => onCrossRefClick(v.verse)}
+            onCompareClick={() => onCompareClick(v.verse)}
+            onCommentaryClick={() => onCommentaryClick(v.verse)}
+            onNotesClick={() => onNotesClick(v.verse)}
+            onAddToServiceClick={onAddToServiceClick && (() => onAddToServiceClick(v.verse))}
+            showStrongs={showStrongs}
+            showCrossRefs={showCrossRefs}
+            showRedLetter={showRedLetter}
+            showCommentary={showCommentary}
+            showNotes={showNotes}
+            textStyle={textStyle}
+            splitLongVerses={displayPrefs.splitLongVerses}
+            readingFontSize={readingFontSize}
+            presentationTheme={presentationTheme}
+            presentationContext={displayPrefs.presentationContext}
+            hPadPct={presentationTheme?.safe_margin ?? (5 + displayPrefs.margins / 2)}
+            currentPart={v.verse === currentVerse ? currentPart : undefined}
+            onPartClick={v.verse === currentVerse ? onPartClick : undefined}
+            precomputedSplitParts={v.verse === currentVerse ? activeVerseParts : undefined}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function ParallelPane({ chapter, onStrongsClick, showStrongs, readingFontSize, displayPrefs, scrollContainerRef }: { chapter: ChapterText; onStrongsClick: (numbers: string[]) => void; showStrongs: boolean; readingFontSize: number; displayPrefs: DisplayPrefs; scrollContainerRef?: React.RefObject<HTMLDivElement | null> }) {
+  const horizPadding = `max(16px, ${displayPrefs.margins / 2}%)`;
+  const textStyle: React.CSSProperties = {
+    fontSize: `${readingFontSize}px`,
+    lineHeight: 1 + displayPrefs.lineSpacing,
+    letterSpacing: displayPrefs.letterSpacing === 0 ? undefined : `${(displayPrefs.letterSpacing * 0.1).toFixed(3)}em`,
+    textAlign: displayPrefs.textAlign,
+    fontFamily: FONT_FAMILY_CSS[displayPrefs.fontFamily],
+  };
+  return (
+    <div ref={scrollContainerRef as React.RefObject<HTMLDivElement>} className="flex-1 overflow-y-auto">
+      <div className="max-w-[1100px] mx-auto w-full py-8 space-y-4" style={{ paddingLeft: horizPadding, paddingRight: horizPadding }}>
+        <h2 className="font-headline-md text-headline-md text-primary mb-4 pb-2">
+          {chapter.module_id}
+        </h2>
+        {chapter.verses.map((v) => (
+          <VerseRow
+            key={v.verse}
+            verse={v.verse}
+            spans={v.spans}
+            active={false}
+            onStrongsClick={onStrongsClick}
+            onVerseClick={() => {}}
+            onCrossRefClick={() => {}}
+            onCompareClick={() => {}}
+            onCommentaryClick={() => {}}
+            onNotesClick={() => {}}
+            showStrongs={showStrongs}
+            showCrossRefs={false}
+            showRedLetter={false}
+            showCommentary={false}
+            showNotes={false}
+            textStyle={textStyle}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export const VerseRow = memo(function VerseRow({
+  verse, spans, active, onStrongsClick, onVerseClick, onCrossRefClick, onCompareClick, onCommentaryClick, onNotesClick, onAddToServiceClick, showStrongs, showCrossRefs, showRedLetter, showCommentary, showNotes, textStyle, splitLongVerses, currentPart, onPartClick, precomputedSplitParts,
+  // These are kept in the interface for caller compatibility but unused here
+  // since split parts are now pre-computed by ReadingView.
+  readingFontSize: _readingFontSize, presentationTheme: _presentationTheme, presentationContext: _presentationContext, hPadPct: _hPadPct,
+}: {
+  verse: number;
+  spans: TextSpan[];
+  active: boolean;
+  onStrongsClick: (numbers: string[]) => void;
+  onVerseClick: () => void;
+  onCrossRefClick: () => void;
+  onCompareClick: () => void;
+  onCommentaryClick: () => void;
+  onNotesClick: () => void;
+  onAddToServiceClick?: () => void;
+  showStrongs: boolean;
+  showCrossRefs: boolean;
+  showRedLetter: boolean;
+  showCommentary: boolean;
+  showNotes: boolean;
+  textStyle: React.CSSProperties;
+  splitLongVerses?: boolean;
+  readingFontSize?: number;
+  presentationTheme?: ThemeForSplit | null;
+  presentationContext?: 1 | 2 | 3 | 4;
+  hPadPct?: number;
+  currentPart?: number;
+  onPartClick?: (part: number) => void;
+  /** Pre-measured split parts from ReadingView — used instead of local estimation. */
+  precomputedSplitParts?: string[];
+}) {
+  // Use the pre-measured parts from ReadingView when available (they come from
+  // actual DOM measurement against the presentation box dimensions), otherwise
+  // fall back to null (no chips shown for inactive verses).
+  const markerStrongs = useAppStore((s) => s.markerStrongs);
+  const splitParts = active && splitLongVerses
+    ? (precomputedSplitParts && precomputedSplitParts.length > 0 ? precomputedSplitParts : null)
+    : null;
+  return (
+    <div
+      data-verse={verse}
+      className={`verse-container relative group flex gap-3 p-verse-padding rounded-lg transition-colors cursor-pointer ${
+        active
+          ? "row-selected"
+          : "hover:bg-on-surface/[0.03]"
+      }`}
+      onClick={onVerseClick}
+    >
+      <span
+        className={`font-verse-number text-verse-number mt-2 w-6 text-right select-none shrink-0 ${
+          active ? "text-primary font-bold" : "text-secondary"
+        }`}
+      >
+        {verse}
+      </span>
+      <div className="flex-1 min-w-0">
+        <p
+          className="font-body-reading text-on-surface select-text"
+          style={textStyle}
+        >
+          {spans.map((span, i) => {
+            const red = showRedLetter && span.is_red_letter;
+            const strongsNumbers = contentStrongs(span.strongs ?? [], markerStrongs);
+            if (strongsNumbers.length > 0 && showStrongs) {
+              return (
+                <span
+                  key={i}
+                  className={`strongs-word relative group/word border-b border-dashed hover:bg-secondary/10 pb-[3px] ${span.is_title ? "font-bold" : ""} ${red ? "text-red-600 dark:text-red-400 border-red-400/70" : "border-primary/50"}`}
+                  title={strongsNumbers.length === 1 ? "Double-click to look up in concordance" : "Double-click to look up this phrase's Strong's numbers"}
+                  onDoubleClick={(e) => { e.stopPropagation(); onStrongsClick(strongsNumbers); }}
+                >
+                  <span className="strongs-tag absolute -top-3 left-1/2 -translate-x-1/2 flex gap-1 whitespace-nowrap font-metadata-mono text-[12px] text-secondary opacity-0 transition-opacity">
+                    {strongsNumbers.map((strongs) => (
+                      <button
+                        key={strongs}
+                        type="button"
+                        className="hover:text-primary hover:underline"
+                        title={`Look up ${strongs}`}
+                        onClick={(e) => { e.stopPropagation(); onStrongsClick([strongs]); }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      >
+                        {strongs}
+                      </button>
+                    ))}
+                  </span>
+                  {span.text}
+                </span>
+              );
+            }
+            if (span.is_title) {
+              return <strong key={i} className={`font-bold ${red ? "text-red-600 dark:text-red-400" : ""}`}>{span.text}</strong>;
+            }
+            if (span.is_added) {
+              return <em key={i} className={red ? "text-red-600 dark:text-red-400" : undefined}>{span.text}</em>;
+            }
+            return <span key={i} className={red ? "text-red-600 dark:text-red-400" : undefined}>{span.text}</span>;
+          })}
+        </p>
+
+        {/* Split-part markers — shown under the active verse when split mode is on */}
+        {splitParts && splitParts.length > 1 && (
+          <div className="flex items-start gap-1.5 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+            <span className="font-metadata-mono text-[12px] text-on-surface-variant mt-0.5 mr-0.5 shrink-0">
+              <span className="material-symbols-outlined text-[12px] align-middle">content_cut</span>
+            </span>
+            {splitParts.map((part, i) => {
+              const label = PART_LABELS[i] ?? String.fromCharCode(97 + i);
+              const preview = part.slice(0, 35).trim();
+              const isCurrent = (currentPart ?? 0) === i;
+              return (
+                <button
+                  key={i}
+                  onClick={() => onPartClick?.(i)}
+                  title={part}
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border font-metadata-mono text-[12px] transition-colors ${
+                    isCurrent
+                      ? "bg-secondary-container border-secondary text-on-secondary-container"
+                      : "bg-surface-container border-outline-variant text-on-surface-variant hover:bg-surface-container-high hover:border-outline"
+                  }`}
+                >
+                  <span className={`font-bold ${isCurrent ? "text-secondary" : "text-secondary"}`}>{label}</span>
+                  <span className="text-on-surface-variant">{preview}{part.length > 35 ? "…" : ""}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="verse-actions absolute -right-2 top-2 opacity-0 pointer-events-none flex flex-col gap-1 glass rounded-lg p-1 transition-opacity z-10">
+        <button className="p-1 text-secondary hover:text-primary hover:bg-secondary-container rounded" title="Copy" aria-label="Copy verse">
+          <span className="material-symbols-outlined text-[16px]">content_copy</span>
+        </button>
+        {showNotes && (
+          <button
+            className="p-1 text-secondary hover:text-primary hover:bg-secondary-container rounded"
+            title="Add note"
+            onClick={(e) => { e.stopPropagation(); onNotesClick(); }}
+          >
+            <span className="material-symbols-outlined text-[16px]">edit_note</span>
+          </button>
+        )}
+        <button className="p-1 text-secondary hover:text-primary hover:bg-secondary-container rounded" title="Bookmark" aria-label="Bookmark verse">
+          <span className="material-symbols-outlined text-[16px]">bookmark_add</span>
+        </button>
+        {showCommentary && (
+          <button
+            className="p-1 text-secondary hover:text-primary hover:bg-secondary-container rounded"
+            title="Commentary"
+            onClick={(e) => { e.stopPropagation(); onCommentaryClick(); }}
+          >
+            <span className="material-symbols-outlined text-[16px]">library_books</span>
+          </button>
+        )}
+        {showCrossRefs && (
+          <button
+            className="p-1 text-secondary hover:text-primary hover:bg-secondary-container rounded"
+            title="Cross-references"
+            onClick={(e) => { e.stopPropagation(); onCrossRefClick(); }}
+          >
+            <span className="material-symbols-outlined text-[16px]">link</span>
+          </button>
+        )}
+        <button
+          className="p-1 text-secondary hover:text-primary hover:bg-secondary-container rounded"
+          title="Compare translations"
+          onClick={(e) => { e.stopPropagation(); onCompareClick(); }}
+        >
+          <span className="material-symbols-outlined text-[16px]">compare</span>
+        </button>
+        {onAddToServiceClick && (
+          <button
+            className="p-1 text-secondary hover:text-primary hover:bg-secondary-container rounded"
+            title="Add to service queue"
+            onClick={(e) => { e.stopPropagation(); onAddToServiceClick(); }}
+          >
+            <span className="material-symbols-outlined text-[16px]">playlist_add</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});

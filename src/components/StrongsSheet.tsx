@@ -1,0 +1,1038 @@
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useAppStore } from "../store/app";
+import { useSheetVisibility } from "../hooks/useSheetVisibility";
+import { defaultLexiconSourceFor, strongsNumbers } from "../hooks/useStrongsEntry";
+import { useStrongsPages } from "../features/strongs/useStrongsPages";
+import type { StrongsStage } from "../features/strongs/pagination";
+import type { PresentationTheme } from "../lib/tauri";
+import { findBooks } from "../data/books";
+
+// 0 means "never explicitly set" (the persisted preference's own default) —
+// resolved to half the viewport height instead of a fixed pixel value so it
+// scales with the actual window rather than being cramped/oversized
+// depending on screen size. Once dragged even once, the real committed
+// pixel height persists from then on and this sentinel never applies again.
+function resolveHeight(stored: number): number {
+  return stored || Math.round(window.innerHeight * 0.5);
+}
+
+function useDraggableHeight(initial: number, onCommit: (h: number) => void) {
+  const [height, setHeight] = useState(() => resolveHeight(initial));
+  const dragging = useRef(false);
+  // onPointerMove can fire (and call setHeight) several times before React
+  // re-renders and re-attaches a fresh onPointerUp closure — reading `height`
+  // straight from that closure risked committing a stale, pre-drag value.
+  // This ref is updated in the same place as setHeight, so it's always
+  // current regardless of render timing.
+  const heightRef = useRef(height);
+
+  useEffect(() => {
+    const resolved = resolveHeight(initial);
+    heightRef.current = resolved;
+    setHeight(resolved);
+  }, [initial]);
+
+  function onPointerDown(e: React.PointerEvent) {
+    e.preventDefault();
+    dragging.current = true;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    if (!dragging.current) return;
+    const next = Math.min(
+      Math.max(180, window.innerHeight - e.clientY),
+      Math.round(window.innerHeight * 0.9),
+    );
+    heightRef.current = next;
+    setHeight(next);
+  }
+
+  function onPointerUp() {
+    if (!dragging.current) return;
+    dragging.current = false;
+    onCommit(heightRef.current);
+  }
+
+  return { height, onPointerDown, onPointerMove, onPointerUp };
+}
+
+// Regex for numeric cross-references in lexicon text that appear WITHOUT
+// "from"/"same as"/etc. framing (see FROM_CONTEXT below for that case) —
+// requires an explicit H/G prefix, unlike the two regexes below. A bare,
+// unprefixed number in the middle of Abbott-Smith/LSJ prose is far more
+// likely to be a leftover citation fragment than a genuine cross-reference:
+// STEPBible's own source data sometimes only tags the first verse of a
+// pair ("Act.5:4, 9" — Ananias then Sapphira — tags just "Act.5.4", leaving
+// the bare "9" as plain text), which used to render as a nonsensical
+// clickable "Strong's 9" button. Real unframed cross-references in these
+// lexicons are effectively always spelled out with their letter prefix
+// ("H1234"/"G1234"), so requiring it here trades a small amount of recall
+// for not linkifying citation-list noise.
+const REF_RE = /\b([HG]\d{1,5}[a-z]?)\b(?!\))/g;
+const FROM_CONTEXT = /(?:from|same\s+as|see\s+\w+\s+for|akin\s+to|derivative\s+of)\s+/gi;
+
+const SINGLE_CHAPTER_BOOKS = new Set(["Obadiah", "Philemon", "2 John", "3 John", "Jude"]);
+
+const OSIS_BOOK_MAP: Record<string, string> = {
+  // OT
+  gen: "Genesis",
+  gene: "Genesis",
+  exo: "Exodus",
+  exod: "Exodus",
+  lev: "Leviticus",
+  num: "Numbers",
+  deu: "Deuteronomy",
+  deut: "Deuteronomy",
+  jos: "Joshua",
+  josh: "Joshua",
+  jdg: "Judges",
+  judg: "Judges",
+  rut: "Ruth",
+  ruth: "Ruth",
+  "1sa": "1 Samuel",
+  "1sam": "1 Samuel",
+  "2sa": "2 Samuel",
+  "2sam": "2 Samuel",
+  "1ki": "1 Kings",
+  "1kgs": "1 Kings",
+  "2ki": "2 Kings",
+  "2kgs": "2 Kings",
+  "1ch": "1 Chronicles",
+  "1chr": "1 Chronicles",
+  "2ch": "2 Chronicles",
+  "2chr": "2 Chronicles",
+  ezr: "Ezra",
+  ezra: "Ezra",
+  neh: "Nehemiah",
+  est: "Esther",
+  esth: "Esther",
+  job: "Job",
+  ps: "Psalms",
+  psa: "Psalms",
+  pss: "Psalms",
+  pro: "Proverbs",
+  prov: "Proverbs",
+  ecc: "Ecclesiastes",
+  eccl: "Ecclesiastes",
+  sng: "Song of Solomon",
+  song: "Song of Solomon",
+  cant: "Song of Solomon",
+  sos: "Song of Solomon",
+  isa: "Isaiah",
+  jer: "Jeremiah",
+  lam: "Lamentations",
+  eze: "Ezekiel",
+  ezek: "Ezekiel",
+  dan: "Daniel",
+  hos: "Hosea",
+  joe: "Joel",
+  joel: "Joel",
+  amo: "Amos",
+  amos: "Amos",
+  oba: "Obadiah",
+  obad: "Obadiah",
+  jon: "Jonah",
+  jonah: "Jonah",
+  mic: "Micah",
+  nah: "Nahum",
+  hab: "Habakkuk",
+  zep: "Zephaniah",
+  zeph: "Zephaniah",
+  hag: "Haggai",
+  zec: "Zechariah",
+  zech: "Zechariah",
+  mal: "Malachi",
+  // NT
+  mat: "Matthew",
+  matt: "Matthew",
+  mrk: "Mark",
+  mark: "Mark",
+  luk: "Luke",
+  luke: "Luke",
+  jhn: "John",
+  john: "John",
+  act: "Acts",
+  acts: "Acts",
+  rom: "Romans",
+  "1co": "1 Corinthians",
+  "1cor": "1 Corinthians",
+  "2co": "2 Corinthians",
+  "2cor": "2 Corinthians",
+  gal: "Galatians",
+  eph: "Ephesians",
+  php: "Philippians",
+  phil: "Philippians",
+  col: "Colossians",
+  "1th": "1 Thessalonians",
+  "1thess": "1 Thessalonians",
+  "2th": "2 Thessalonians",
+  "2thess": "2 Thessalonians",
+  "1ti": "1 Timothy",
+  "1tim": "1 Timothy",
+  "2ti": "2 Timothy",
+  "2tim": "2 Timothy",
+  tit: "Titus",
+  titus: "Titus",
+  phm: "Philemon",
+  phlm: "Philemon",
+  heb: "Hebrews",
+  jas: "James",
+  "1pe": "1 Peter",
+  "1pet": "1 Peter",
+  "2pe": "2 Peter",
+  "2pet": "2 Peter",
+  "1jn": "1 John",
+  "1john": "1 John",
+  "2jn": "2 John",
+  "2john": "2 John",
+  "3jn": "3 John",
+  "3john": "3 John",
+  jud: "Jude",
+  jude: "Jude",
+  rev: "Revelation",
+};
+
+export function parseScriptureRef(raw: string): { book: string; chapter: number; verse: number } | null {
+  if (!raw) return null;
+  const cleaned = raw.trim().replace(/[.,;:]+$/, "");
+  const first = cleaned.split(";")[0].trim();
+
+  // Pattern 1: Book + chapter + verse separator + verse (e.g. "Mrk.16.12", "Php.2.6-7", "John 13:35", "1Jn 2:5")
+  const m1 = first.match(/^([1-3]?\s*[A-Za-z]+)[\.\s]+(\d+)[\.:](\d+)/);
+  if (m1) {
+    const rawBook = m1[1].replace(/\s+/g, "").toLowerCase();
+    const chapter = parseInt(m1[2], 10);
+    const verse = parseInt(m1[3], 10);
+    const book = OSIS_BOOK_MAP[rawBook] || findBooks(rawBook)[0];
+    if (book && !isNaN(chapter) && !isNaN(verse)) {
+      return { book, chapter, verse };
+    }
+  }
+
+  // Pattern 2: Book + single number (e.g. "Jude 4" or "John 3")
+  const m2 = first.match(/^([1-3]?\s*[A-Za-z]+)[\.\s]+(\d+)/);
+  if (m2) {
+    const rawBook = m2[1].replace(/\s+/g, "").toLowerCase();
+    const num = parseInt(m2[2], 10);
+    const book = OSIS_BOOK_MAP[rawBook] || findBooks(rawBook)[0];
+    if (book && !isNaN(num)) {
+      if (SINGLE_CHAPTER_BOOKS.has(book)) {
+        return { book, chapter: 1, verse: num };
+      }
+      return { book, chapter: num, verse: 1 };
+    }
+  }
+
+  return null;
+}
+
+function linkifyStrongsText(
+  text: string,
+  prefix: "H" | "G",
+  onLookup: (num: string) => void,
+  keyPrefix: string = ""
+): React.ReactNode[] {
+  const parts = text.split(
+    /((?:(?:from|same\s+as|see\s+\w+\s+for|akin\s+to|derivative\s+of)\s+)[HG]?\d+[a-z]?)/gi
+  );
+
+  return parts.map((part, i) => {
+    const numMatch = part.match(/([HG]?\d+[a-z]?)$/i);
+    if (numMatch && FROM_CONTEXT.test(part)) {
+      FROM_CONTEXT.lastIndex = 0;
+      const rawNum = numMatch[1];
+      const isAlreadyPrefixed = /^[HG]/i.test(rawNum);
+      const fullNum = isAlreadyPrefixed
+        ? rawNum.toUpperCase()
+        : prefix + rawNum;
+      return (
+        <span key={`${keyPrefix}-p-${i}`}>
+          {part.replace(/[HG]?\d+[a-z]?$/i, "")}
+          <button
+            type="button"
+            className="underline decoration-dotted text-primary hover:text-primary/80 font-medium transition-colors cursor-pointer"
+            onClick={() => onLookup(fullNum)}
+          >
+            {rawNum}
+          </button>
+        </span>
+      );
+    }
+    FROM_CONTEXT.lastIndex = 0;
+    const pieces = part.split(REF_RE);
+    if (pieces.length === 1) return <span key={`${keyPrefix}-p-${i}`}>{part}</span>;
+    return (
+      <span key={`${keyPrefix}-p-${i}`}>
+        {pieces.map((piece, j) => {
+          if (j % 2 === 1) {
+            const isAlreadyPrefixed = /^[HG]/i.test(piece);
+            const fullNum = isAlreadyPrefixed
+              ? piece.toUpperCase()
+              : prefix + piece;
+            return (
+              <button
+                type="button"
+                key={`${keyPrefix}-r-${j}`}
+                className="underline decoration-dotted text-primary hover:text-primary/80 font-medium transition-colors cursor-pointer"
+                onClick={() => onLookup(fullNum)}
+              >
+                {piece}
+              </button>
+            );
+          }
+          return <span key={`${keyPrefix}-s-${j}`}>{piece}</span>;
+        })}
+      </span>
+    );
+  });
+}
+
+function renderDomNode(
+  node: Node,
+  key: string,
+  prefix: "H" | "G",
+  onLookup: (num: string) => void,
+  onRefClick?: (target: string, label: string) => void
+): React.ReactNode {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent ?? "";
+    return <span key={key}>{linkifyStrongsText(text, prefix, onLookup, key)}</span>;
+  }
+
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const el = node as HTMLElement;
+    const tag = el.tagName.toUpperCase();
+    const children = Array.from(el.childNodes).map((child, idx) =>
+      renderDomNode(child, `${key}-${idx}`, prefix, onLookup, onRefClick)
+    );
+
+    if (tag === "B" || tag === "STRONG") {
+      return (
+        <strong key={key} className="font-semibold text-on-surface">
+          {children}
+        </strong>
+      );
+    }
+
+    if (tag === "I" || tag === "EM") {
+      return (
+        <em key={key} className="italic text-on-surface-variant">
+          {children}
+        </em>
+      );
+    }
+
+    if (tag === "REF") {
+      const target = el.getAttribute("target") || el.textContent || "";
+      const label = el.textContent || "";
+      const parsed = parseScriptureRef(target) || parseScriptureRef(label);
+      const tooltip = parsed
+        ? `Go to ${parsed.book} ${parsed.chapter}:${parsed.verse}`
+        : target
+        ? `Go to ${target}`
+        : undefined;
+
+      return (
+        <button
+          key={key}
+          type="button"
+          onClick={() => onRefClick?.(target, label)}
+          className="inline-flex items-baseline px-1 py-0.5 rounded text-primary hover:text-primary/80 hover:bg-primary/10 font-medium underline decoration-dotted transition-colors cursor-pointer"
+          title={tooltip}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    return <span key={key}>{children}</span>;
+  }
+
+  return null;
+}
+
+function TextWithLinks({
+  text,
+  prefix,
+  onLookup,
+  onRefClick,
+}: {
+  text: string;
+  prefix: "H" | "G";
+  onLookup: (num: string) => void;
+  onRefClick?: (target: string, label: string) => void;
+}) {
+  const rendered = useMemo(() => {
+    if (!text) return null;
+    if (!text.includes("<")) {
+      return linkifyStrongsText(text, prefix, onLookup, "txt");
+    }
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<body>${text}</body>`, "text/html");
+      return Array.from(doc.body.childNodes).map((child, idx) =>
+        renderDomNode(child, `n-${idx}`, prefix, onLookup, onRefClick)
+      );
+    } catch {
+      return linkifyStrongsText(text, prefix, onLookup, "err");
+    }
+  }, [text, prefix, onLookup, onRefClick]);
+
+  return <>{rendered}</>;
+}
+
+const FONT_FAMILY_CSS: Record<string, string> = {
+  system: `-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif`,
+  serif:  `Georgia, "Palatino Linotype", Palatino, serif`,
+  times:  `"Times New Roman", Times, serif`,
+  mono:   `"Courier New", Courier, monospace`,
+};
+
+// "ours" is always our bundled bare Strong's data; anything else is a
+// module_id understood by the get_strongs_entry command — either a SWORD
+// module or (for these) a STEPBible-Data source id handled by
+// src-tauri/src/sword/stepbible.rs, fetched from GitHub on first use and
+// cached locally.
+type LexiconSourceId = "ours" | string;
+
+interface LexiconPill {
+  id: LexiconSourceId;
+  label: string;
+}
+
+// Richer, public-domain companion lexicons keyed to the same Strong's
+// numbers as our bundled data, from STEPBible-Data (Tyndale House Cambridge,
+// CC BY 4.0). Language-specific, so the pill switcher only offers the ones
+// that apply to the number's own prefix.
+// - TBESG: Abbott-Smith (1922), corrected and gap-filled by Tyndale
+//   scholars, with a clean human-curated one-word gloss.
+// - TBESH: Hebrew, the full numbered Brown-Driver-Briggs sense breakdown
+//   (not just a short gloss).
+// - TFLSJ: the complete Liddell-Scott-Jones lexicon reformatted for Bible
+//   words — the deepest option (covers all of Greek literature, not just
+//   NT usage), Greek only.
+const LEXICON_PILLS: Record<"H" | "G", LexiconPill[]> = {
+  H: [{ id: "TBESH", label: "BDB" }],
+  G: [
+    { id: "TBESG", label: "Abbott-Smith" },
+    { id: "THAYER", label: "Thayer" },
+    { id: "TFLSJ", label: "Full LSJ" },
+  ],
+};
+
+/**
+ * The operator's interactive lexicon view. The audience never sees this — the
+ * output screen renders StrongsLive, and only once the operator presses "Show
+ * on output". `docked` fills its parent (the Live Show console's Preview
+ * column) instead of floating over the page. `output`, when given, is the
+ * output screen's size and theme: it enables the Show/Clear and page controls,
+ * paginated exactly as the output will lay the text out.
+ */
+export default function StrongsSheet({ docked = false, output }: {
+  docked?: boolean;
+  output?: { stage: StrongsStage; theme: PresentationTheme | null };
+}) {
+  const {
+    selectedStrongs,
+    setSelectedStrongs,
+    strongsGroup,
+    setStrongsGroup,
+    strongsSource,
+    setStrongsSource,
+    primaryModule,
+    readingFontSize,
+    isFullscreen,
+    displayPrefs,
+    setDisplayPrefs,
+    setCurrentRef,
+    setView,
+    strongsLive,
+    setStrongsLive,
+    strongsPage,
+    setStrongsPage,
+    setStrongsDoc,
+    presentationActive,
+  } = useAppStore();
+  const fontFamily = FONT_FAMILY_CSS[displayPrefs.fontFamily] ?? FONT_FAMILY_CSS.system;
+  // Docked in the live console, readingFontSize is the *output's* projector-sized
+  // text — far too large for an operator panel — so it gets a fixed UI size.
+  const bodyFontSize = docked ? 16 : readingFontSize;
+
+  const handleRefClick = useCallback(
+    (target: string, label: string) => {
+      const parsed = parseScriptureRef(target) || parseScriptureRef(label);
+      if (parsed) {
+        setCurrentRef(parsed);
+        setView("reading");
+      }
+    },
+    [setCurrentRef, setView]
+  );
+  // Stack of sheets left behind by clicking a cross-reference from inside
+  // the sheet — each entry is a snapshot of what was on screen *before*
+  // that click, so Back can restore it exactly (including multi-number
+  // phrase groups, not just a single Strong's number).
+  const [history, setHistory] = useState<{ number: string | null; group: string[] | null }[]>([]);
+  const [showMarkers, setShowMarkers] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
+
+  const isOpen = selectedStrongs !== null;
+  const prefix: "H" | "G" = selectedStrongs?.startsWith("H") ? "H" : "G";
+
+  // Which lexicon to fetch from: our bundled bare Strong's data, or a richer
+  // supplementary lexicon for comparison (Abbott-Smith/BDB, or full LSJ —
+  // see LEXICON_PILLS above). Seeded from the user's "Default Strong's
+  // source" setting each time a new word is looked up, so switching sources
+  // via the pill row is a deliberate per-word override, not sticky. LSJ has
+  // no Hebrew equivalent, so that preference falls back to the richer
+  // Hebrew source (BDB) instead of silently doing nothing.
+  const defaultSourceFor = useCallback(
+    (lang: "H" | "G"): LexiconSourceId => defaultLexiconSourceFor(displayPrefs.defaultLexiconSource, lang),
+    [displayPrefs.defaultLexiconSource]
+  );
+  // source lives in the store so it syncs to the presentation window.
+  // Seed it to the user's default whenever a new word is opened.
+  const source: LexiconSourceId = strongsSource ?? defaultSourceFor(prefix);
+  const setSource = (s: LexiconSourceId) => setStrongsSource(s);
+  useEffect(() => { setStrongsSource(defaultSourceFor(prefix)); }, [selectedStrongs, strongsGroup, defaultSourceFor, prefix]);
+
+  const drag = useDraggableHeight(
+    displayPrefs.strongsSheetHeight,
+    (h) => setDisplayPrefs({ strongsSheetHeight: h }),
+  );
+
+  // A phrase with more than one Strong's number is resolved as: the real
+  // content word (shown as the entry, same as a single-number lookup) plus
+  // any grammatical markers (e.g. H0853, the Hebrew direct-object marker —
+  // see is_untranslated_marker in src-tauri/src/sword/lexicon.rs) tucked
+  // behind a disclosure instead of presented as a second, equally-weighted
+  // definition. If every number in the group turns out to be a marker (a
+  // word that's ONLY the direct-object marker, like "and" in Genesis 1:1),
+  // fall back to showing it — but labelled as a marker, not a plain entry.
+  const { loading, error, entry, extraContentEntries, hiddenMarkers, etymology, pages, doc } = useStrongsPages(
+    strongsNumbers(selectedStrongs, strongsGroup),
+    source,
+    primaryModule,
+    output?.stage ?? null,
+    output?.theme ?? null,
+    displayPrefs,
+  );
+  const activePage = Math.min(strongsPage, Math.max(0, pages.length - 1));
+
+  // Hand the finished, paginated lookup to the store so the sync hooks can send
+  // it to the output. Re-published on every (re)selection so clicking the same
+  // word again — which doesn't refetch — still leaves the store with its doc.
+  // Not cleared on unmount: the store drops it when the selection changes, and
+  // keeping it across a source switch means a live page doesn't blink out while
+  // the new lexicon loads.
+  const publishes = !!output; // `output` itself is a fresh object every render
+  useEffect(() => {
+    if (!publishes || !doc || loading) return;
+    // Zustand notifies on every set, and this component re-renders on any
+    // store change — so only write when it would actually change something.
+    if (useAppStore.getState().strongsDoc !== doc) setStrongsDoc(doc);
+  }, [publishes, doc, loading, selectedStrongs, setStrongsDoc]);
+
+  // Closing the output window takes the lookup off it — otherwise it would
+  // jump back on screen the next time the window opens.
+  useEffect(() => {
+    if (!presentationActive && strongsLive) setStrongsLive(false);
+  }, [presentationActive, strongsLive, setStrongsLive]);
+
+  const visible = useSheetVisibility(isOpen);
+
+  const lookup = useCallback(
+    (num: string) => {
+      // Push what's currently on screen — not the word we're navigating
+      // to — so Back returns to it. Skipped when nothing was on screen yet
+      // (the sheet's very first open), since there's nothing to go back to.
+      if (selectedStrongs) {
+        setHistory((h) => [{ number: selectedStrongs, group: strongsGroup }, ...h]);
+      }
+      setStrongsGroup(null);
+      setSelectedStrongs(num);
+    },
+    [selectedStrongs, strongsGroup, setSelectedStrongs, setStrongsGroup]
+  );
+
+  const goBack = useCallback(() => {
+    const [prev, ...rest] = history;
+    if (!prev) return;
+    setHistory(rest);
+    setStrongsGroup(prev.group);
+    setSelectedStrongs(prev.number);
+  }, [history, setSelectedStrongs, setStrongsGroup]);
+
+  const close = useCallback(() => {
+    setSelectedStrongs(null);
+    setStrongsGroup(null);
+    setHistory([]);
+  }, [setSelectedStrongs, setStrongsGroup]);
+
+  // Collapse the disclosures whenever a different word/source is shown.
+  useEffect(() => {
+    setShowMarkers(false);
+    setShowUsage(false);
+  }, [selectedStrongs, strongsGroup, source]);
+
+  // Escape key closes sheet
+  useEffect(() => {
+    if (!isOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close();
+      }
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [isOpen, close]);
+
+  // Reset scroll to top when the entry changes
+  useEffect(() => {
+    bodyScrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
+  }, [selectedStrongs, strongsGroup, source]);
+
+  // PageUp / PageDown step the output's page while Strong's is on screen.
+  useEffect(() => {
+    if (!isOpen || !strongsLive || pages.length < 2) return;
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "PageDown") { e.preventDefault(); setStrongsPage(Math.min(activePage + 1, pages.length - 1)); }
+      if (e.key === "PageUp") { e.preventDefault(); setStrongsPage(Math.max(activePage - 1, 0)); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, strongsLive, pages.length, activePage, setStrongsPage]);
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      {/* Backdrop */}
+      {!docked && (
+        <div
+          className="fixed inset-0 z-40 bg-black/10"
+          onClick={close}
+        />
+      )}
+
+      {/* Sheet */}
+      <div
+        className={docked
+          ? "flex-1 min-h-0 flex flex-col"
+          : `fixed bottom-3 left-1/2 -translate-x-1/2 z-50 w-full flex flex-col transition-all duration-300 ease-out glass glass-strong rounded-3xl ${
+              visible ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+            }`}
+        style={docked ? undefined : { maxWidth: isFullscreen ? "90%" : "56rem", height: drag.height }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Drag-to-resize strip */}
+        {!docked && (
+          <div
+            className="flex justify-center pt-2 pb-1 shrink-0 cursor-ns-resize select-none group"
+            onPointerDown={drag.onPointerDown}
+            onPointerMove={drag.onPointerMove}
+            onPointerUp={drag.onPointerUp}
+            title="Drag to resize"
+          >
+            <div className="w-10 h-1 rounded-full bg-outline-variant group-hover:bg-primary transition-colors" />
+          </div>
+        )}
+
+        {/* Header */}
+        <div className="px-6 pt-2 pb-4 border-b border-outline-variant shrink-0">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              {loading ? (
+                <div className="h-7 w-32 bg-surface-container-low rounded animate-pulse" />
+              ) : entry ? (
+                <div>
+                  <div className="flex items-baseline gap-3 flex-wrap mb-1.5">
+                    <span className="font-body-reading text-[28px] font-semibold text-primary leading-tight">
+                      {entry.lemma}
+                    </span>
+                    {entry.transliteration && (
+                      <span className="font-metadata-mono text-[14px] text-on-surface-variant">
+                        {entry.transliteration}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-metadata-mono text-[12px] tracking-wide">
+                      Strong's {entry.number}
+                    </span>
+                    {entry.part_of_speech && (
+                      <span className="font-body-ui text-[12px] text-on-surface-variant italic">
+                        {entry.part_of_speech}
+                      </span>
+                    )}
+                    {entry.is_untranslated_marker && (
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded bg-secondary-container text-on-secondary-container font-body-ui text-[12px]"
+                        title="This Strong's number has no independent English rendering — it's grammatical, not a translated word."
+                      >
+                        Grammatical marker
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <span className="font-metadata-mono text-[13px] text-on-surface-variant">
+                  {selectedStrongs}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Back to the word open before the last cross-reference click */}
+              {history.length > 0 && (
+                <button
+                  className="p-1.5 rounded text-secondary hover:bg-surface-container-low transition-colors"
+                  title="Back to previous word" aria-label="Back to previous word"
+                  onClick={goBack}
+                >
+                  <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+                </button>
+              )}
+              <button
+                className="p-1.5 rounded text-secondary hover:bg-surface-container-low transition-colors"
+                onClick={close}
+                title="Close (Esc)" aria-label="Close"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Lexicon source switcher — compare our bundled Strong's data
+            against richer companion lexicons for the same number. */}
+        <div className="flex items-center gap-1.5 px-6 py-2.5 border-b border-outline-variant shrink-0">
+          {([{ id: "ours", label: "Strong's" }, ...LEXICON_PILLS[prefix]] as LexiconPill[]).map((pill) => (
+            <button
+              key={pill.id}
+              type="button"
+              className={`px-3 py-1 rounded-md font-body-ui text-[12px] font-medium transition-colors ${
+                source === pill.id
+                  ? "btn-primary"
+                  : "ctl text-on-surface-variant"
+              }`}
+              onClick={() => setSource(pill.id)}
+            >
+              {pill.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Output control — a lookup stays private until it is shown here. */}
+        {output && (
+          <div className="flex items-center gap-2 px-6 py-2.5 border-b border-outline-variant shrink-0">
+            <button
+              type="button"
+              disabled={!presentationActive || loading || !entry || !doc}
+              onClick={() => setStrongsLive(!strongsLive)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md font-body-ui text-[12px] font-bold disabled:opacity-40 disabled:cursor-not-allowed ${
+                strongsLive ? "btn-primary" : "ctl text-on-surface"
+              }`}
+              title={presentationActive ? "Show this lookup full screen on the output (PageUp / PageDown step its pages)" : "Open the output window first"}
+            >
+              <span className="material-symbols-outlined text-[16px]">{strongsLive ? "cancel_presentation" : "cast"}</span>
+              {strongsLive ? "On output — Clear" : "Show on output"}
+            </button>
+            {pages.length > 0 && (
+              <div className="ml-auto flex items-center gap-1">
+                <button
+                  type="button"
+                  className="p-1 rounded-md ctl text-on-surface-variant disabled:opacity-40"
+                  disabled={activePage <= 0}
+                  onClick={() => setStrongsPage(activePage - 1)}
+                  aria-label="Previous page"
+                  title="Previous page (PageUp)"
+                >
+                  <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                </button>
+                <span className="font-metadata-mono text-[12px] text-on-surface-variant tabular-nums px-1">
+                  {activePage + 1} / {pages.length}
+                </span>
+                <button
+                  type="button"
+                  className="p-1 rounded-md ctl text-on-surface-variant disabled:opacity-40"
+                  disabled={activePage >= pages.length - 1}
+                  onClick={() => setStrongsPage(activePage + 1)}
+                  aria-label="Next page"
+                  title="Next page (PageDown)"
+                >
+                  <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Body */}
+        <div ref={bodyScrollRef} className="flex-1 overflow-y-auto">
+          {loading && (
+            <div className="flex items-center justify-center h-32">
+              <span className="font-body-ui text-body-ui text-on-surface-variant">
+                Loading…
+              </span>
+            </div>
+          )}
+
+          {error && (
+            <div className="p-6">
+              {error.includes("Module not found") ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+                  <span className="material-symbols-outlined text-[40px] text-on-surface-variant">
+                    menu_book
+                  </span>
+                  <p className="font-body-ui text-[14px] text-on-surface-variant">
+                    {source === "ours"
+                      ? (prefix === "G" ? "Strong's Greek" : "Strong's Hebrew")
+                      : LEXICON_PILLS[prefix].find((p) => p.id === source)?.label ?? source}{" "}
+                    not installed.
+                  </p>
+                </div>
+              ) : error.includes("not found") ? (
+                // The dictionary module IS installed — this specific number
+                // just isn't in it (a real, if rare, gap in that module's own
+                // data — a full-Bible audit found ~30 such Greek numbers, and
+                // the supplementary lexicons cover a partial, if large,
+                // subset of numbers too). "Not installed" would be actively
+                // misleading here.
+                <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+                  <span className="material-symbols-outlined text-[40px] text-on-surface-variant">
+                    search_off
+                  </span>
+                  <p className="font-body-ui text-[14px] text-on-surface-variant">
+                    No entry for Strong's {selectedStrongs} in {source === "ours" ? "Strong's" : (LEXICON_PILLS[prefix].find((p) => p.id === source)?.label ?? source)}.
+                  </p>
+                </div>
+              ) : (
+                <p className="font-body-ui text-body-ui text-error">{error}</p>
+              )}
+            </div>
+          )}
+
+          {!loading && !error && entry && (
+            <div className="px-6 py-5 space-y-5">
+              {output && pages.length > 0 && (
+                <section>
+                  <style>{`.strongs-card .sref{color:var(--color-primary, #8ab4f8)}.strongs-card b{font-weight:700}`}</style>
+                  <p className="font-body-ui font-medium text-[12px] text-on-surface-variant mb-2">
+                    Output pages — {pages.length}
+                  </p>
+                  <div className="space-y-1.5">
+                    {pages.map((html, i) => {
+                      const active = i === activePage;
+                      return (
+                        <div
+                          key={i}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setStrongsPage(i)}
+                          onDoubleClick={() => { setStrongsPage(i); if (presentationActive && doc) setStrongsLive(true); }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setStrongsPage(i); }
+                          }}
+                          title="Click to select • Double-click to show on output"
+                          className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border transition-colors cursor-pointer select-none ${
+                            active ? "row-selected border-primary/40" : "border-outline-variant/50 hover:bg-surface-container-low"
+                          }`}
+                        >
+                          <span className={`font-metadata-mono text-[12px] shrink-0 mt-0.5 ${active ? "text-primary font-bold" : "text-on-surface-variant"}`}>{i + 1}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className={`font-body-ui text-[12px] font-bold ${active ? "text-primary" : "text-on-surface"}`}>
+                              Strong's {entry.number} · {i + 1}/{pages.length}
+                            </p>
+                            <div
+                              className="strongs-card font-body-reading text-[13px] leading-snug text-on-surface mt-0.5"
+                              dangerouslySetInnerHTML={{ __html: html }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+              {/* Usage was a persistent 220px side column that squeezed the
+                  definition down to a narrower measure on every screen — now
+                  a collapsed bar so the definition/lexicon entry can use the
+                  sheet's full width, matching how the marker disclosure
+                  below already behaves. */}
+              <button
+                type="button"
+                className="w-full flex items-center justify-between px-3 py-2 rounded ctl text-on-surface-variant font-body-ui font-medium text-[12px] transition-colors"
+                onClick={() => setShowUsage((v) => !v)}
+              >
+                <span>{entry.usage_count > 0 ? `Occurs ${entry.usage_count}× in the Bible` : "Usage"}</span>
+                <span className="material-symbols-outlined text-[16px]">
+                  {showUsage ? "expand_less" : "expand_more"}
+                </span>
+              </button>
+              {showUsage && (
+                <div className="p-4 ctl rounded-xl">
+                  {entry.usage_count > 0 ? (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-0.5">
+                        {entry.usage_by_book.map((u) => (
+                          <div
+                            key={u.book}
+                            className="flex items-center justify-between py-1 px-1.5 rounded hover:bg-surface-container-low transition-colors"
+                          >
+                            <span className="font-body-ui text-[13px] text-on-surface">
+                              {u.book}
+                            </span>
+                            <span className="font-metadata-mono text-[12px] text-on-surface-variant tabular-nums">
+                              {u.count}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <button className="mt-3 w-full py-1.5 border border-outline-variant text-on-surface font-body-ui text-[12px] rounded hover:bg-surface-container-low transition-colors">
+                        Search all occurrences
+                      </button>
+                    </>
+                  ) : (
+                    <p className="font-body-ui text-[13px] text-on-surface-variant italic">
+                      Usage data will be available after the index finishes building.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-5">
+                {/* The old "Definition" section (short_def) was dropped —
+                    it's an auto-extracted opening clause of long_def itself
+                    (see split_at_sentence in lexicon.rs), so it read as a
+                    near-duplicate of the Lexicon Entry below rather than
+                    distinct information. Headword replaces it with the
+                    thing that section never actually gave: the original
+                    word on its own, not folded into English prose. Labeled
+                    "Headword" (this entry's own word), not "Root Word" —
+                    the Lexicon Entry text below may itself say "from XXXX"
+                    to name a *different*, earlier Strong's number as the
+                    true etymological root, which we don't have as separate
+                    structured data. */}
+                <section>
+                  <p className="font-body-ui font-medium text-[12px] text-on-surface-variant mb-2">
+                    Headword
+                  </p>
+                  <div className="flex items-baseline gap-3 flex-wrap">
+                    <span className="font-body-reading text-[22px] font-semibold text-primary leading-tight">
+                      {entry.lemma}
+                    </span>
+                    {entry.transliteration && (
+                      <span className="font-metadata-mono text-[13px] text-on-surface-variant">
+                        {entry.transliteration}
+                      </span>
+                    )}
+                  </div>
+                </section>
+
+                {etymology && (
+                  <section>
+                    <p className="font-body-ui font-medium text-[12px] text-on-surface-variant mb-2">
+                      Root Word (Etymology)
+                    </p>
+                    <div
+                      className="flex items-baseline gap-2 flex-wrap font-body-ui"
+                      style={{ fontSize: `${bodyFontSize - 2}px`, fontFamily }}
+                    >
+                      <span className="text-on-surface-variant">From</span>
+                      <span className="text-primary font-semibold">{etymology.lemma}</span>
+                      <button
+                        className="underline decoration-dotted text-primary hover:text-primary/80 font-medium transition-colors"
+                        onClick={() => lookup(etymology.number)}
+                      >
+                        {etymology.number}
+                      </button>
+                    </div>
+                  </section>
+                )}
+
+                {entry.long_def && (
+                  <section>
+                    <p className="font-body-ui font-medium text-[12px] text-on-surface-variant mb-2">
+                      Lexicon Entry
+                    </p>
+                    <p className="font-body-ui leading-relaxed text-on-surface-variant whitespace-pre-wrap" style={{ fontSize: `${bodyFontSize - 2}px`, fontFamily }}>
+                      <TextWithLinks
+                        text={entry.long_def}
+                        prefix={prefix}
+                        onLookup={lookup}
+                        onRefClick={handleRefClick}
+                      />
+                    </p>
+                  </section>
+                )}
+
+                {/* Rare: the phrase genuinely compounds two content words
+                    (not a grammatical marker riding along), so both carry
+                    real meaning and are shown as peers rather than tucked away. */}
+                {extraContentEntries.map((extra) => (
+                  <section key={extra.number} className="pt-4 border-t border-outline-variant">
+                    <p className="font-body-ui font-medium text-[12px] text-on-surface-variant mb-2">
+                      Also in this phrase — Strong's {extra.number}
+                    </p>
+                    <div className="flex items-baseline gap-2 mb-1.5">
+                      <span className="font-body-reading text-[18px] font-semibold text-primary leading-tight">
+                        {extra.lemma}
+                      </span>
+                      {extra.transliteration && (
+                        <span className="font-metadata-mono text-[12px] text-on-surface-variant">
+                          {extra.transliteration}
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-body-ui leading-relaxed text-on-surface" style={{ fontSize: `${bodyFontSize - 1}px`, fontFamily }}>
+                      <TextWithLinks text={extra.short_def} prefix={prefix} onLookup={lookup} onRefClick={handleRefClick} />
+                    </p>
+                  </section>
+                ))}
+
+                {/* Grammatical markers (e.g. H0853) tucked behind a disclosure —
+                    real data, but not a competing definition for the phrase. */}
+                {hiddenMarkers.length > 0 && (
+                  <section className="pt-4 border-t border-outline-variant">
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 font-metadata-mono text-[12px] text-on-surface-variant hover:text-on-surface transition-colors"
+                      onClick={() => setShowMarkers((v) => !v)}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        {showMarkers ? "expand_less" : "expand_more"}
+                      </span>
+                      {hiddenMarkers.length === 1 ? "1 grammatical marker also in this phrase" : `${hiddenMarkers.length} grammatical markers also in this phrase`}
+                    </button>
+                    {showMarkers && (
+                      <div className="mt-3 space-y-3">
+                        {hiddenMarkers.map((marker) => (
+                          <div key={marker.number} className="pl-1 border-l-2 border-outline-variant">
+                            <div className="flex items-center gap-2 pl-3 mb-1">
+                              <span className="font-metadata-mono text-[12px] text-on-surface-variant">
+                                Strong's {marker.number} · {marker.lemma}
+                              </span>
+                            </div>
+                            <p className="pl-3 font-body-ui text-[12px] text-on-surface-variant leading-relaxed">
+                              <TextWithLinks text={marker.short_def} prefix={prefix} onLookup={lookup} onRefClick={handleRefClick} />
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}

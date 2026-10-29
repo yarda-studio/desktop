@@ -1,0 +1,47 @@
+# Rust / Tauri
+target/
+debug/
+src-tauri/target/
+src-tauri/gen/
+**/*.rs.bk
+*.pdb
+**/mutants.out*/
+
+# Node
+node_modules/
+dist/
+
+# Python (services/)
+.venv/
+__pycache__/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Supabase generated / temp
+supabase/.temp/
+supabase/seed/*.sql
+supabase/.env.local
+
+# Design-skill working files
+.taste-skill/
+
+# Local output of scripts/test-search.sh (contains an email address)
+scripts/last-run.txt

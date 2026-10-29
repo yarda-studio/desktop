@@ -1,0 +1,197 @@
+import { useEffect, useRef, useState } from "react";
+import { useAppStore } from "../store/app";
+import { api, type SearchResult } from "../lib/tauri";
+import { sanitizeSnippet } from "../lib/sanitize";
+import SearchScopeBar from "./SearchScopeBar";
+
+interface Props {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export default function FullscreenSearchPalette({ isOpen, onClose }: Props) {
+  const { primaryModule, setCurrentRef, setCurrentSearchResults, setSearchResultIndex, setLastHistoryRef, addToSearchHistory, searchTestament, searchBooks } = useAppStore();
+
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [visible, setVisible] = useState(false);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number | null>(null);
+  const savedQuery = useRef("");
+
+  // Animate in
+  useEffect(() => {
+    if (isOpen) {
+      rafRef.current = requestAnimationFrame(() => {
+        setVisible(true);
+        setTimeout(() => inputRef.current?.focus(), 50);
+      });
+    } else {
+      setVisible(false);
+      setQuery("");
+      setResults([]);
+      setActiveIdx(0);
+    }
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [isOpen]);
+
+  // Debounced search
+  useEffect(() => {
+    if (!isOpen || !query.trim() || !primaryModule) {
+      setResults([]);
+      return;
+    }
+    setLoading(true);
+    const scopeOptions = searchBooks.length > 0
+      ? { book_filter: searchBooks }
+      : searchTestament !== "all"
+        ? { testament: searchTestament as "OT" | "NT" }
+        : {};
+    const timer = setTimeout(() => {
+      api
+        .search(query, { modules: [primaryModule], page_size: 30, ...scopeOptions })
+        .then((r) => {
+          setResults(r);
+          setActiveIdx(0);
+          if (query.trim() !== savedQuery.current) {
+            savedQuery.current = query.trim();
+            addToSearchHistory(query.trim());
+          }
+        })
+        .catch(() => setResults([]))
+        .finally(() => setLoading(false));
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [query, primaryModule, isOpen, searchTestament, searchBooks]);
+
+  // Keep active item scrolled into view
+  useEffect(() => {
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-idx="${activeIdx}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [activeIdx]);
+
+  function navigate(r: SearchResult, idx: number) {
+    const ref = { book: r.book, chapter: r.chapter, verse: r.verse };
+    setCurrentRef(ref);
+    setCurrentSearchResults(results);
+    setSearchResultIndex(idx);
+    setLastHistoryRef(ref);
+    onClose();
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(i + 1, results.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter" && results[activeIdx]) {
+      navigate(results[activeIdx], activeIdx);
+    }
+  }
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-start justify-center pt-[12vh]"
+      onClick={onClose}
+    >
+      {/* Backdrop */}
+      <div className={`absolute inset-0 bg-black/25 transition-opacity duration-200 ${visible ? "opacity-100" : "opacity-0"}`} />
+
+      {/* Palette */}
+      <div
+        className={`relative w-full max-w-2xl mx-4 flex flex-col overflow-hidden transition-all duration-200 glass glass-strong rounded-3xl ${
+          visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-3"
+        }`}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search"
+      >
+        {/* Input row */}
+        <div className="flex items-center gap-3 px-4 py-3.5 ">
+          <span className="material-symbols-outlined text-[20px] text-secondary shrink-0">search</span>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search words or phrases"
+            placeholder="Search words or phrases…"
+            className="flex-1 bg-transparent font-body-ui text-body-ui text-on-surface placeholder:text-on-surface-variant outline-none"
+          />
+          {loading && (
+            <span className="material-symbols-outlined text-[18px] text-secondary animate-spin shrink-0">progress_activity</span>
+          )}
+          <kbd className="text-[12px] font-metadata-mono text-on-surface-variant px-1.5 py-0.5 shrink-0 field rounded-md">Esc</kbd>
+        </div>
+
+        {/* Scope bar */}
+        <div className="px-4 py-2 border-b border-outline-variant bg-surface-container-low/50">
+          <SearchScopeBar compact />
+        </div>
+
+        {/* Results */}
+        <div ref={listRef} className="overflow-y-auto" style={{ maxHeight: "55vh" }}>
+          {results.length === 0 && query.trim() && !loading && (
+            <p className="text-center text-on-surface-variant font-body-ui text-[13px] py-10">
+              No results for "{query}"
+            </p>
+          )}
+
+          {results.length === 0 && !query.trim() && (
+            <p className="text-center text-on-surface-variant font-body-ui text-[13px] py-10">
+              {searchBooks.length > 0
+                ? `Type to search in ${searchBooks.length} selected book${searchBooks.length !== 1 ? "s" : ""}`
+                : searchTestament !== "all"
+                  ? `Type to search the ${searchTestament === "OT" ? "Old Testament" : "New Testament"}`
+                  : `Type to search across ${primaryModule ?? "the loaded module"}`}
+            </p>
+          )}
+
+          {results.map((r, idx) => {
+            const active = idx === activeIdx;
+            return (
+              <button
+                key={`${r.book}-${r.chapter}-${r.verse}-${idx}`}
+                data-idx={idx}
+                onClick={() => navigate(r, idx)}
+                onMouseEnter={() => setActiveIdx(idx)}
+                className={`w-full text-left px-4 py-3 flex gap-3 items-start transition-colors border-b border-outline-variant/50 last:border-0 ${
+                  active ? "bg-secondary-container" : "hover:bg-surface-container-low"
+                }`}
+              >
+                <span className="font-metadata-mono text-[12px] text-primary font-semibold shrink-0 mt-0.5 w-24">
+                  {r.book} {r.chapter}:{r.verse}
+                </span>
+                <span
+                  className="font-body-ui text-[13px] text-on-surface leading-relaxed [&_mark]:bg-secondary/30 [&_mark]:text-on-surface [&_mark]:rounded-sm"
+                  dangerouslySetInnerHTML={{ __html: sanitizeSnippet(r.text) }}
+                />
+              </button>
+            );
+          })}
+        </div>
+
+        {results.length > 0 && (
+          <div className="px-4 py-2 border-t border-outline-variant flex items-center justify-between">
+            <span className="font-metadata-mono text-[12px] text-on-surface-variant">
+              {results.length} result{results.length !== 1 ? "s" : ""}
+            </span>
+            <span className="font-metadata-mono text-[12px] text-on-surface-variant">
+              ↑↓ navigate · Enter select
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+

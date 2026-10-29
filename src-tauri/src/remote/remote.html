@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
+<title>Yarda Remote</title>
+<style>
+  :root { --bg:#0b0d12; --card:#161a22; --line:#262c38; --text:#f2f4f8; --dim:#9aa3b2; --accent:#6d7cff; --danger:#ff5d5d; --ok:#4ade80; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+  body { min-height:100dvh; padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); display:flex; flex-direction:column; gap:12px; }
+  button { font:inherit; color:inherit; touch-action:manipulation; cursor:pointer; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  h1 { font-size:15px; margin:0; font-weight:600; letter-spacing:.02em; }
+  .conn { font-size:13px; color:var(--dim); display:flex; align-items:center; gap:6px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--danger); }
+  .conn.on .dot { background:var(--ok); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; }
+  .tab { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:0 0 4px; }
+  .label { font-size:15px; font-weight:600; margin:0 0 6px; }
+  .text { font-size:18px; margin:0; white-space:pre-wrap; max-height:32dvh; overflow:auto; }
+  .empty { color:var(--dim); }
+  .pills { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .pill { font-size:12px; padding:3px 10px; border-radius:99px; background:#2a3140; color:var(--text); }
+  .pill.warn { background:#4a2323; color:#ffb4b4; }
+  .nav { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .nav button { min-height:30dvh; border-radius:20px; border:1px solid var(--line); background:var(--card); font-size:22px; font-weight:700; }
+  .nav button.next { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .nav button:active { filter:brightness(1.25); }
+  .row { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .row button, .timer button { min-height:56px; border-radius:14px; border:1px solid var(--line); background:var(--card); font-weight:600; }
+  .row button[aria-pressed="true"] { background:#fff; color:#000; }
+  .row button.danger[aria-pressed="true"] { background:var(--danger); color:#fff; border-color:var(--danger); }
+  .timer { display:flex; align-items:center; gap:10px; }
+  .timer .time { flex:1; font-size:30px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .timer .time small { display:block; font-size:12px; font-weight:400; color:var(--dim); }
+  .timer button { padding:0 18px; }
+  button:disabled { opacity:.4; }
+  button:focus-visible { outline:3px solid #fff; outline-offset:2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Yarda Remote</h1>
+  <span class="conn" id="conn" role="status"><span class="dot"></span><span id="connText">Connecting…</span></span>
+</header>
+
+<section class="card" aria-live="polite">
+  <p class="tab" id="tab">—</p>
+  <p class="label" id="label"></p>
+  <p class="text empty" id="text">Nothing live</p>
+  <div class="pills" id="pills"></div>
+</section>
+
+<div class="nav">
+  <button id="prev" aria-label="Previous">◀ Back</button>
+  <button id="next" class="next" aria-label="Next">Next ▶</button>
+</div>
+
+<div class="row">
+  <button id="black" aria-pressed="false">Black</button>
+  <button id="standby" class="danger" aria-pressed="false">Standby</button>
+  <button id="clear">Clear</button>
+</div>
+
+<section class="card timer" id="timerCard" hidden>
+  <div class="time"><span id="timeLeft">0:00</span><small id="timeTitle"></small></div>
+  <button id="timerToggle">Start</button>
+  <button id="timerReset">Reset</button>
+</section>
+
+<script>
+(function () {
+  var key = new URLSearchParams(location.search).get("k") || "";
+  var q = "?k=" + encodeURIComponent(key);
+  var $ = function (id) { return document.getElementById(id); };
+  var skew = 0, snap = null, ok = false, busy = false;
+
+  function fmt(ms) {
+    var t = Math.ceil(Math.max(0, ms) / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60;
+    return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s).padStart(2, "0");
+  }
+  function setConn(on) {
+    ok = on;
+    $("conn").className = "conn" + (on ? " on" : "");
+    $("connText").textContent = on ? "Connected" : "Reconnecting…";
+    ["prev", "next", "black", "standby", "clear", "timerToggle", "timerReset"].forEach(function (id) { $(id).disabled = !on; });
+  }
+  function pill(text, warn) {
+    var s = document.createElement("span");
+    s.className = "pill" + (warn ? " warn" : "");
+    s.textContent = text;
+    $("pills").appendChild(s);
+  }
+  function render() {
+    var s = snap;
+    $("tab").textContent = s ? ({ scriptures: "Scriptures", songs: "Songs", slides: "Slides" }[s.tab] || "Yarda") : "—";
+    $("label").textContent = s && s.label || "";
+    var t = $("text");
+    t.textContent = s && s.text ? s.text : "Nothing live";
+    t.className = "text" + (s && s.text ? "" : " empty");
+    $("pills").textContent = "";
+    if (s && s.emergency) pill("Standby screen showing", true);
+    else if (s && s.black) pill("Output is black", true);
+    $("black").setAttribute("aria-pressed", String(!!(s && s.black)));
+    $("standby").setAttribute("aria-pressed", String(!!(s && s.emergency)));
+    var timer = s && s.timer, card = $("timerCard");
+    card.hidden = !timer || timer.status === "idle" && !timer.configured;
+    if (timer) {
+      var left = timer.status === "running" ? timer.endsAt - (Date.now() + skew) : timer.status === "paused" ? timer.remainingMs : 0;
+      $("timeLeft").textContent = timer.status === "idle" ? "—:——" : fmt(left);
+      $("timeTitle").textContent = (timer.title || "Countdown") + (timer.status === "paused" ? " · paused" : timer.status === "finished" ? " · time is up" : "");
+      $("timerToggle").textContent = timer.status === "running" ? "Pause" : timer.status === "paused" ? "Resume" : "Start";
+    }
+  }
+  function poll() {
+    fetch("/api/state" + q, { cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    }).then(function (d) {
+      skew = d.now - Date.now(); snap = d.state; setConn(true); render();
+    }).catch(function () { setConn(false); });
+  }
+  function send(action) {
+    if (navigator.vibrate) navigator.vibrate(15);
+    if (busy) return; busy = true;
+    fetch("/api/command" + q, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: action }) })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); setTimeout(poll, 150); })
+      .catch(function () { setConn(false); })
+      .finally(function () { busy = false; });
+  }
+  [["prev", "prev"], ["next", "next"], ["black", "black"], ["standby", "standby"], ["clear", "clear"], ["timerToggle", "timer-toggle"], ["timerReset", "timer-reset"]]
+    .forEach(function (p) { $(p[0]).addEventListener("click", function () { send(p[1]); }); });
+
+  setConn(false);
+  poll();
+  setInterval(poll, 1000);
+  setInterval(function () { if (ok && snap && snap.timer && snap.timer.status === "running") render(); }, 250);
+})();
+</script>
+</body>
+</html>

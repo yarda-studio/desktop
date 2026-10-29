@@ -1,0 +1,59 @@
+import { useEffect } from "react";
+import { emitPresentation } from "../lib/presentation";
+import { useAppStore } from "../store/app";
+import type { VerseRef, DisplayPrefs } from "../store/app";
+import type { PresentationTheme } from "../lib/tauri";
+
+/** Broadcasts the current reading state to the Scriptura Live window whenever it changes. */
+export function usePresentationSync(args: {
+  presentationActive: boolean;
+  primaryModule: string | null;
+  currentRef: VerseRef;
+  parallelModule: string | null;
+  parallelMode: boolean;
+  selectedStrongs: string | null;
+  strongsGroup: string[] | null;
+  strongsSource: string | null;
+  displayPrefs: DisplayPrefs;
+  readingFontSize: number;
+  presentationTheme: PresentationTheme | null;
+  /** Live Show console only — ReadingView's plain Go Live flow has no blackout/emergency controls. */
+  black?: boolean;
+  emergency?: boolean;
+  /** Which split part of the active verse to show (0 = a, 1 = b, …). */
+  versePart?: number;
+}) {
+  // A Strong's lookup stays private to the operator until "Show on output" —
+  // the selection only goes out while it is live.
+  const strongsLive = useAppStore((s) => s.strongsLive);
+  const strongsPage = useAppStore((s) => s.strongsPage);
+  const strongsDoc = useAppStore((s) => s.strongsDoc);
+  const {
+    presentationActive, primaryModule, currentRef, parallelModule,
+    parallelMode, selectedStrongs, strongsGroup, strongsSource, displayPrefs,
+    readingFontSize, presentationTheme, black, emergency, versePart,
+  } = args;
+
+  useEffect(() => {
+    if (!presentationActive || !primaryModule) return;
+    emitPresentation({
+      book: currentRef.book,
+      chapter: currentRef.chapter,
+      verse: currentRef.verse,
+      primaryModule,
+      parallelModule,
+      parallelMode,
+      selectedStrongs: strongsLive ? selectedStrongs : null,
+      strongsGroup: strongsLive ? strongsGroup : null,
+      strongsSource: strongsLive ? strongsSource : null,
+      strongsPage: strongsLive ? strongsPage : undefined,
+      strongsDoc: strongsLive ? strongsDoc : null,
+      displayPrefs,
+      readingFontSize,
+      presentationTheme,
+      black,
+      emergency,
+      versePart,
+    });
+  }, [presentationActive, currentRef, primaryModule, parallelModule, parallelMode, selectedStrongs, strongsGroup, strongsSource, strongsLive, strongsPage, strongsDoc, displayPrefs, readingFontSize, presentationTheme, black, emergency, versePart]);
+}

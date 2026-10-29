@@ -1,0 +1,3682 @@
+use crate::types::*;
+use crate::versification::BOOK_NAMES;
+use rusqlite::{params, Connection, OptionalExtension};
+use std::path::Path;
+use std::sync::{Mutex, MutexGuard};
+use zip::write::SimpleFileOptions;
+use zip::{ZipArchive, ZipWriter};
+
+pub struct Database(Mutex<Connection>);
+
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+impl Database {
+    pub fn open(path: &Path) -> Result<Self> {
+        let conn = Connection::open(path)?;
+        conn.execute_batch(
+            "
+            PRAGMA journal_mode=WAL;
+            PRAGMA foreign_keys=ON;
+            PRAGMA cache_size=-65536;
+            PRAGMA mmap_size=134217728;
+            PRAGMA synchronous=NORMAL;
+            PRAGMA temp_store=MEMORY;
+        ",
+        )?;
+        let db = Self(Mutex::new(conn));
+        db.migrate()?;
+        Ok(db)
+    }
+
+    /// Every query in this module goes through here instead of locking self.0
+    /// directly. A plain `.lock().unwrap()` panics forever on every future call
+    /// once poisoned — a panic in *any* one query (even one triggered by unrelated,
+    /// buggy caller input) would permanently break notes, bookmarks, search,
+    /// preferences, reading position, and installed-module records all at once,
+    /// since they all share this one connection/mutex. Recovering the guard from
+    /// a poisoned lock instead means one bad query degrades to "that query failed,"
+    /// not "the entire persistence layer is dead until the app restarts." This is
+    /// safe here specifically because a panic on the Rust side (e.g. an unwrap on a
+    /// row conversion) doesn't leave the underlying SQLite connection itself in a
+    /// corrupt state — the connection is fine, only the guard was poisoned.
+    fn conn(&self) -> MutexGuard<'_, Connection> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Numbered migrations, applied in order, each in its own transaction so a
+    /// failure partway through one migration can't leave the schema half-upgraded
+    /// with user_version already bumped (or not bumped but tables half-created).
+    /// Each entry's SQL must NOT set PRAGMA user_version itself — the runner does
+    /// that after a successful commit, once, consistently.
+    fn migrations() -> &'static [(i32, &'static str)] {
+        &[
+            (2, SCHEMA_FTS_V2),
+            (3, SCHEMA_V3_STRONGS_RESET),
+            (4, SCHEMA_V4_CONSOLIDATE_STORAGE),
+            (5, SCHEMA_V5_STRONGS_MULTIPLE_KEYS_RESET),
+            (6, SCHEMA_V6_PRESENTATION_THEMES),
+            (7, SCHEMA_V7_PRESENTATION_THEME_TYPOGRAPHY),
+            (8, SCHEMA_V8_PRESENTATION_THEME_REFERENCE_POSITION),
+            (9, SCHEMA_V9_PRESENTATION_THEME_LAYOUT),
+            (10, SCHEMA_V10_SERVICE_ITEM_PRESENTATION_OVERRIDES),
+            (11, SCHEMA_V11_DEFAULT_LEXICON_SOURCE),
+            (12, SCHEMA_V12_PRESENTATION_THEME_BUILTIN_FLAG),
+            (13, SCHEMA_V13_WORKSPACE),
+            (14, SCHEMA_V14_SPLIT_LONG_VERSES),
+            (15, SCHEMA_V15_SCROLL_V_PADDING),
+            (16, SCHEMA_V16_ACCENT),
+            (17, SCHEMA_V17_THEME_LIVE_TEXT_AND_MEDIA),
+            (18, SCHEMA_V18_BUILTIN_PRESET_THEMES),
+            (19, SCHEMA_V19_THEME_BACKGROUND_VIDEO),
+            (20, SCHEMA_V20_SYNC_STATE),
+        ]
+    }
+
+    fn migrate(&self) -> Result<()> {
+        let mut conn = self.conn();
+        // Create all permanent tables first (idempotent)
+        conn.execute_batch(SCHEMA_TABLES)?;
+
+        let ver: i32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap_or(0);
+
+        for (target_version, sql) in Self::migrations() {
+            if ver < *target_version {
+                let tx = conn.transaction()?;
+                tx.execute_batch(sql)?;
+                tx.execute_batch(&format!("PRAGMA user_version = {target_version};"))?;
+                tx.commit()?;
+            }
+        }
+        Ok(())
+    }
+
+    const PREFS_COLUMNS: &'static str = "theme, font_size_reading, show_strongs, show_morph, \
+        verse_display, default_commentary, show_commentary, show_notes, show_cross_refs, \
+        show_red_letter, font_family, text_align, margins, line_spacing, letter_spacing, \
+        strongs_sheet_height, presentation_context, default_lexicon_source, workspace, \
+        split_long_verses, accent";
+
+    fn read_preferences(conn: &Connection) -> rusqlite::Result<Option<Preferences>> {
+        let result = conn.query_row(
+            &format!("SELECT {} FROM preferences LIMIT 1", Self::PREFS_COLUMNS),
+            [],
+            |row| {
+                Ok(Preferences {
+                    theme: row.get(0)?,
+                    font_size_reading: row.get(1)?,
+                    show_strongs: row.get(2)?,
+                    show_morph: row.get(3)?,
+                    verse_display: row.get(4)?,
+                    default_commentary: row.get(5)?,
+                    show_commentary: row.get(6)?,
+                    show_notes: row.get(7)?,
+                    show_cross_refs: row.get(8)?,
+                    show_red_letter: row.get(9)?,
+                    font_family: row.get(10)?,
+                    text_align: row.get(11)?,
+                    margins: row.get(12)?,
+                    line_spacing: row.get(13)?,
+                    letter_spacing: row.get(14)?,
+                    strongs_sheet_height: row.get(15)?,
+                    presentation_context: row.get(16)?,
+                    default_lexicon_source: row.get(17)?,
+                    workspace: row.get(18)?,
+                    split_long_verses: row.get::<_, i32>(19).map(|v| v != 0).unwrap_or(false),
+                    accent: row.get(20)?,
+                })
+            },
+        );
+        match result {
+            Ok(p) => Ok(Some(p)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn write_preferences(conn: &Connection, prefs: &Preferences) -> rusqlite::Result<()> {
+        conn.execute(
+            "INSERT INTO preferences (id, theme, font_size_reading, show_strongs, show_morph,
+                verse_display, default_commentary, show_commentary, show_notes, show_cross_refs,
+                show_red_letter, font_family, text_align, margins, line_spacing, letter_spacing,
+                strongs_sheet_height, presentation_context, default_lexicon_source, workspace,
+                split_long_verses, accent)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+             ON CONFLICT(id) DO UPDATE SET
+               theme=excluded.theme,
+               font_size_reading=excluded.font_size_reading,
+               show_strongs=excluded.show_strongs,
+               show_morph=excluded.show_morph,
+               verse_display=excluded.verse_display,
+               default_commentary=excluded.default_commentary,
+               show_commentary=excluded.show_commentary,
+               show_notes=excluded.show_notes,
+               show_cross_refs=excluded.show_cross_refs,
+               show_red_letter=excluded.show_red_letter,
+               font_family=excluded.font_family,
+               text_align=excluded.text_align,
+               margins=excluded.margins,
+               line_spacing=excluded.line_spacing,
+               letter_spacing=excluded.letter_spacing,
+               strongs_sheet_height=excluded.strongs_sheet_height,
+               presentation_context=excluded.presentation_context,
+               default_lexicon_source=excluded.default_lexicon_source,
+               workspace=excluded.workspace,
+               split_long_verses=excluded.split_long_verses,
+               accent=excluded.accent",
+            params![
+                prefs.theme,
+                prefs.font_size_reading,
+                prefs.show_strongs,
+                prefs.show_morph,
+                prefs.verse_display,
+                prefs.default_commentary,
+                prefs.show_commentary,
+                prefs.show_notes,
+                prefs.show_cross_refs,
+                prefs.show_red_letter,
+                prefs.font_family,
+                prefs.text_align,
+                prefs.margins,
+                prefs.line_spacing,
+                prefs.letter_spacing,
+                prefs.strongs_sheet_height,
+                prefs.presentation_context,
+                prefs.default_lexicon_source,
+                prefs.workspace,
+                prefs.split_long_verses as i32,
+                prefs.accent,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_preferences(&self) -> Result<Preferences> {
+        let conn = self.conn();
+        Ok(Self::read_preferences(&conn)?.unwrap_or_default())
+    }
+
+    /// Merges a partial JSON patch into the current preferences and writes the
+    /// result back, all under one lock acquisition. This used to be two separate
+    /// calls (get_preferences, then a full-replace set_preferences) made from the
+    /// command layer, which meant two independent lock/unlock cycles — if two
+    /// set_preferences invocations happened to interleave (Tauri can run separate
+    /// sync command calls concurrently on its thread pool), the second call's
+    /// read could miss the first call's write, and the first call's update would
+    /// be silently lost. Holding the lock across the whole read-modify-write
+    /// closes that window: the two calls now fully serialize instead of
+    /// interleaving.
+    pub fn update_preferences(&self, patch: &serde_json::Value) -> Result<Preferences> {
+        let conn = self.conn();
+        let mut current = Self::read_preferences(&conn)?.unwrap_or_default();
+
+        if let Some(obj) = patch.as_object() {
+            if let Some(v) = obj.get("theme").and_then(|v| v.as_str()) {
+                current.theme = v.to_string();
+            }
+            if let Some(v) = obj.get("font_size_reading").and_then(|v| v.as_u64()) {
+                current.font_size_reading = v as u32;
+            }
+            if let Some(v) = obj.get("show_strongs").and_then(|v| v.as_bool()) {
+                current.show_strongs = v;
+            }
+            if let Some(v) = obj.get("show_morph").and_then(|v| v.as_bool()) {
+                current.show_morph = v;
+            }
+            if let Some(v) = obj.get("verse_display").and_then(|v| v.as_str()) {
+                current.verse_display = v.to_string();
+            }
+            if let Some(v) = obj.get("default_commentary").and_then(|v| v.as_str()) {
+                current.default_commentary = Some(v.to_string());
+            }
+            if let Some(v) = obj.get("show_commentary").and_then(|v| v.as_bool()) {
+                current.show_commentary = v;
+            }
+            if let Some(v) = obj.get("show_notes").and_then(|v| v.as_bool()) {
+                current.show_notes = v;
+            }
+            if let Some(v) = obj.get("show_cross_refs").and_then(|v| v.as_bool()) {
+                current.show_cross_refs = v;
+            }
+            if let Some(v) = obj.get("show_red_letter").and_then(|v| v.as_bool()) {
+                current.show_red_letter = v;
+            }
+            if let Some(v) = obj.get("font_family").and_then(|v| v.as_str()) {
+                current.font_family = v.to_string();
+            }
+            if let Some(v) = obj.get("text_align").and_then(|v| v.as_str()) {
+                current.text_align = v.to_string();
+            }
+            if let Some(v) = obj.get("margins").and_then(|v| v.as_u64()) {
+                current.margins = v as u32;
+            }
+            if let Some(v) = obj.get("line_spacing").and_then(|v| v.as_f64()) {
+                current.line_spacing = v;
+            }
+            if let Some(v) = obj.get("letter_spacing").and_then(|v| v.as_f64()) {
+                current.letter_spacing = v;
+            }
+            if let Some(v) = obj.get("strongs_sheet_height").and_then(|v| v.as_u64()) {
+                current.strongs_sheet_height = v as u32;
+            }
+            if let Some(v) = obj.get("presentation_context").and_then(|v| v.as_u64()) {
+                current.presentation_context = v as u32;
+            }
+            if let Some(v) = obj.get("default_lexicon_source").and_then(|v| v.as_str()) {
+                current.default_lexicon_source = v.to_string();
+            }
+            if let Some(v) = obj.get("workspace").and_then(|v| v.as_str()) {
+                current.workspace = v.to_string();
+            }
+            if let Some(v) = obj.get("split_long_verses").and_then(|v| v.as_bool()) {
+                current.split_long_verses = v;
+            }
+            if let Some(v) = obj.get("accent").and_then(|v| v.as_str()) {
+                current.accent = v.to_string();
+            }
+        }
+
+        Self::write_preferences(&conn, &current)?;
+        Ok(current)
+    }
+
+    pub fn get_reading_position(&self) -> Result<Option<ReadingPosition>> {
+        let conn = self.conn();
+        let result = conn.query_row(
+            "SELECT book, chapter, verse, module_id FROM reading_position LIMIT 1",
+            [],
+            |row| {
+                Ok(ReadingPosition {
+                    book: row.get(0)?,
+                    chapter: row.get(1)?,
+                    verse: row.get(2)?,
+                    module_id: row.get(3)?,
+                })
+            },
+        );
+        match result {
+            Ok(p) => Ok(Some(p)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn set_reading_position(&self, pos: &ReadingPosition) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO reading_position (id, book, chapter, verse, module_id) VALUES (1, ?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET book=excluded.book, chapter=excluded.chapter, verse=excluded.verse, module_id=excluded.module_id",
+            params![pos.book, pos.chapter, pos.verse, pos.module_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn add_bookmark(
+        &self,
+        book: &str,
+        chapter: u32,
+        verse: u32,
+        module_id: &str,
+    ) -> Result<Bookmark> {
+        let conn = self.conn();
+        let sync_uuid = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO bookmarks (sync_uuid, book, chapter, verse, module_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![sync_uuid, book, chapter, verse, module_id],
+        )?;
+        let id = conn.last_insert_rowid();
+        let bm = conn.query_row(
+            "SELECT id, book, chapter, verse, module_id, created_at, note FROM bookmarks WHERE id=?1",
+            params![id],
+            |row| Ok(Bookmark {
+                id: row.get(0)?, book: row.get(1)?, chapter: row.get(2)?,
+                verse: row.get(3)?, module_id: row.get(4)?,
+                created_at: row.get(5)?, note: row.get(6)?,
+            }),
+        )?;
+        Ok(bm)
+    }
+
+    pub fn remove_bookmark(&self, id: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM bookmarks WHERE id=?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn list_bookmarks(&self) -> Result<Vec<Bookmark>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, book, chapter, verse, module_id, created_at, note FROM bookmarks ORDER BY created_at DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Bookmark {
+                id: row.get(0)?,
+                book: row.get(1)?,
+                chapter: row.get(2)?,
+                verse: row.get(3)?,
+                module_id: row.get(4)?,
+                created_at: row.get(5)?,
+                note: row.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn add_note(
+        &self,
+        book: &str,
+        chapter: u32,
+        verse: Option<u32>,
+        module_id: &str,
+        content: &str,
+    ) -> Result<Note> {
+        let conn = self.conn();
+        let sync_uuid = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO notes (sync_uuid, book, chapter, verse, module_id, content) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![sync_uuid, book, chapter, verse, module_id, content],
+        )?;
+        let id = conn.last_insert_rowid();
+        let note = conn.query_row(
+            "SELECT id, book, chapter, verse, module_id, content, created_at, updated_at FROM notes WHERE id=?1",
+            params![id],
+            row_to_note,
+        )?;
+        Ok(note)
+    }
+
+    pub fn update_note(&self, id: i64, content: &str) -> Result<Note> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE notes SET content=?1, updated_at=datetime('now') WHERE id=?2",
+            params![content, id],
+        )?;
+        let note = conn.query_row(
+            "SELECT id, book, chapter, verse, module_id, content, created_at, updated_at FROM notes WHERE id=?1",
+            params![id],
+            row_to_note,
+        )?;
+        Ok(note)
+    }
+
+    pub fn delete_note(&self, id: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM notes WHERE id=?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn list_notes(&self) -> Result<Vec<Note>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, book, chapter, verse, module_id, content, created_at, updated_at FROM notes ORDER BY updated_at DESC"
+        )?;
+        let rows = stmt.query_map([], row_to_note)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Full-text search across indexed verse content
+    pub fn search_fts(
+        &self,
+        query: &str,
+        options: &SearchOptions,
+    ) -> Result<Vec<crate::types::SearchResult>> {
+        let fts_query = build_fts_query(query, options.whole_word.unwrap_or(false));
+        if fts_query.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let conn = self.conn();
+        let page = options.page.unwrap_or(0).min(10_000);
+        let page_size = options.page_size.unwrap_or(100).clamp(1, 500);
+        let offset = page.saturating_mul(page_size);
+
+        // Build module filter
+        let module_placeholders: String = options
+            .modules
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 2))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        // Resolve which books to restrict to, if any.
+        // Explicit book_filter takes priority; testament is a shorthand for the full list.
+        let effective_books: Option<Vec<String>> = if let Some(ref bf) = options.book_filter {
+            if bf.is_empty() {
+                None
+            } else {
+                Some(bf.clone())
+            }
+        } else {
+            match options.testament.as_deref() {
+                Some("OT") => Some(BOOK_NAMES[..39].iter().map(|s| s.to_string()).collect()),
+                Some("NT") => Some(BOOK_NAMES[39..].iter().map(|s| s.to_string()).collect()),
+                _ => None,
+            }
+        };
+
+        let book_clause = if let Some(ref books) = effective_books {
+            let base = options.modules.len() + 2; // ?1=query, ?2..?{n+1}=modules
+            let placeholders: String = (0..books.len())
+                .map(|i| format!("?{}", base + i))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("AND book IN ({placeholders})")
+        } else {
+            String::new()
+        };
+
+        let sql = format!(
+            "SELECT module_id, book, chapter, verse, snippet(verse_fts, 4, '<mark>', '</mark>', '…', 64) as text
+             FROM verse_fts
+             WHERE verse_fts MATCH ?1
+               AND module_id IN ({module_placeholders})
+               {book_clause}
+             ORDER BY rank
+             LIMIT {page_size} OFFSET {offset}"
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(fts_query)];
+        for m in &options.modules {
+            params_vec.push(Box::new(m.clone()));
+        }
+        if let Some(ref books) = effective_books {
+            for b in books {
+                params_vec.push(Box::new(b.clone()));
+            }
+        }
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(params_refs.as_slice(), |row| {
+            Ok(crate::types::SearchResult {
+                module_id: row.get(0)?,
+                book: row.get(1)?,
+                chapter: row.get(2)?,
+                verse: row.get(3)?,
+                text: row.get(4)?,
+                highlights: vec![],
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Delete all FTS rows for a module then insert `verses` in a single transaction.
+    /// `verses` is `(book, chapter, verse, plain_text)`.
+    /// Much faster than calling `index_verse` in a loop — one fsync instead of N.
+    pub fn replace_module_index(
+        &self,
+        module_id: &str,
+        verses: &[(&str, u32, u32, String)],
+    ) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM verse_fts WHERE module_id=?1",
+            params![module_id],
+        )?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO verse_fts (module_id, book, chapter, verse, content) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
+            for (book, chapter, verse, text) in verses {
+                stmt.execute(params![module_id, book, chapter, verse, text])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn record_installed_module(
+        &self,
+        id: &str,
+        name: &str,
+        path: &str,
+        version: &str,
+        category: &str,
+    ) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO installed_modules (id, name, install_path, version, category) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET name=excluded.name, install_path=excluded.install_path, version=excluded.version",
+            params![id, name, path, version, category],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_installed_module_records(
+        &self,
+    ) -> Result<Vec<(String, String, String, String, String, bool)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, install_path, version, category, index_built FROM installed_modules",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, bool>(5)?,
+            ))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Replace all strongs occurrence counts for a module in one transaction.
+    /// `counts` is `(strongs_number, book, count)`.
+    pub fn replace_strongs_counts(
+        &self,
+        module_id: &str,
+        counts: &[(String, String, u32)],
+    ) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM strongs_counts WHERE module_id=?1",
+            params![module_id],
+        )?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO strongs_counts (module_id, strongs, book, count) VALUES (?1, ?2, ?3, ?4)",
+            )?;
+            for (strongs, book, count) in counts {
+                stmt.execute(params![module_id, strongs, book, count])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Query total occurrences and per-book breakdown for one Strong's number.
+    /// Returns `(total, Vec<BookUsage>)` sorted by count descending.
+    pub fn get_strongs_counts(
+        &self,
+        module_id: &str,
+        strongs: &str,
+    ) -> Result<(u32, Vec<crate::types::BookUsage>)> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT book, count FROM strongs_counts
+             WHERE module_id=?1 AND strongs=?2
+             ORDER BY count DESC",
+        )?;
+        let rows = stmt.query_map(params![module_id, strongs], |row| {
+            Ok(crate::types::BookUsage {
+                book: row.get(0)?,
+                count: row.get::<_, u32>(1)?,
+            })
+        })?;
+        let by_book: Vec<crate::types::BookUsage> = rows.collect::<rusqlite::Result<_>>()?;
+        let total: u32 = by_book.iter().map(|b| b.count).sum();
+        Ok((total, by_book))
+    }
+
+    pub fn mark_index_built(&self, module_id: &str) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE installed_modules SET index_built=1 WHERE id=?1",
+            params![module_id],
+        )?;
+        Ok(())
+    }
+
+    // ── Presentation themes ────────────────────────────────────────────────
+
+    pub fn list_presentation_themes(&self) -> Result<Vec<PresentationTheme>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, background_color, background_gradient, text_color, reference_color,
+                    font_family, text_align, font_scale, text_font_weight, reference_font_scale,
+                    reference_font_weight, safe_margin, text_shadow, reference_position,
+                    verse_box_x, verse_box_y, verse_box_width, verse_box_height,
+                    reference_box_x, reference_box_y, reference_box_width, reference_box_height,
+                    auto_layout, min_font_scale, transition_type, transition_duration,
+                    scroll_v_padding, font_size, line_spacing, letter_spacing, background_image,
+                    background_image_dim, verse_box_fill, background_video, is_default, is_builtin, created_at, updated_at
+             FROM presentation_themes
+             ORDER BY is_default DESC, name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], presentation_theme_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn create_presentation_theme(
+        &self,
+        input: &PresentationThemeInput,
+    ) -> Result<PresentationTheme> {
+        let (background_image, verse_box_fill, background_video) = validated_theme_media(input)?;
+        let conn = self.conn();
+        let id = format!("theme-{}", now_millis());
+        conn.execute(
+            "INSERT INTO presentation_themes (
+                id, name, background_color, background_gradient, text_color, reference_color,
+                font_family, text_align, font_scale, text_font_weight, reference_font_scale,
+                reference_font_weight, safe_margin, text_shadow, reference_position,
+                verse_box_x, verse_box_y, verse_box_width, verse_box_height,
+                reference_box_x, reference_box_y, reference_box_width, reference_box_height,
+                auto_layout, min_font_scale, transition_type, transition_duration,
+                scroll_v_padding, font_size, line_spacing, letter_spacing, background_image,
+                background_image_dim, verse_box_fill, background_video
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35)",
+            params![
+                id, input.name, input.background_color, input.background_gradient,
+                input.text_color, input.reference_color, input.font_family, input.text_align,
+                input.font_scale.clamp(0.5, 2.0), input.text_font_weight.clamp(100, 900),
+                input.reference_font_scale.clamp(0.5, 2.0), input.reference_font_weight.clamp(100, 900),
+                input.safe_margin.min(25), input.text_shadow, input.reference_position,
+                input.verse_box_x.clamp(0.0, 90.0), input.verse_box_y.clamp(0.0, 90.0),
+                input.verse_box_width.clamp(10.0, 100.0), input.verse_box_height.clamp(8.0, 100.0),
+                input.reference_box_x.clamp(0.0, 90.0), input.reference_box_y.clamp(0.0, 90.0),
+                input.reference_box_width.clamp(10.0, 100.0), input.reference_box_height.clamp(5.0, 100.0),
+                input.auto_layout, input.min_font_scale.clamp(0.5, 1.0),
+                input.transition_type, input.transition_duration.clamp(0, 2_000),
+                input.scroll_v_padding.min(50),
+                input.font_size.clamp(12.0, 300.0), input.line_spacing.clamp(0.0, 2.0),
+                input.letter_spacing.clamp(-1.0, 2.0), background_image,
+                input.background_image_dim.clamp(0.0, 0.9), verse_box_fill, background_video,
+            ],
+        )?;
+        self.presentation_theme_by_id(&conn, &id)
+    }
+
+    pub fn update_presentation_theme(
+        &self,
+        id: &str,
+        input: &PresentationThemeInput,
+    ) -> Result<PresentationTheme> {
+        let (background_image, verse_box_fill, background_video) = validated_theme_media(input)?;
+        let conn = self.conn();
+        let changed = conn.execute(
+            "UPDATE presentation_themes SET
+                name=?2, background_color=?3, background_gradient=?4, text_color=?5,
+                reference_color=?6, font_family=?7, text_align=?8, font_scale=?9,
+                text_font_weight=?10, reference_font_scale=?11, reference_font_weight=?12,
+                safe_margin=?13, text_shadow=?14, reference_position=?15,
+                verse_box_x=?16, verse_box_y=?17, verse_box_width=?18, verse_box_height=?19,
+                reference_box_x=?20, reference_box_y=?21, reference_box_width=?22, reference_box_height=?23,
+                auto_layout=?24, min_font_scale=?25, transition_type=?26, transition_duration=?27,
+                scroll_v_padding=?28, font_size=?29, line_spacing=?30, letter_spacing=?31,
+                background_image=?32, background_image_dim=?33, verse_box_fill=?34,
+                background_video=?35, updated_at=datetime('now')
+             WHERE id=?1",
+            params![
+                id, input.name, input.background_color, input.background_gradient,
+                input.text_color, input.reference_color, input.font_family, input.text_align,
+                input.font_scale.clamp(0.5, 2.0), input.text_font_weight.clamp(100, 900),
+                input.reference_font_scale.clamp(0.5, 2.0), input.reference_font_weight.clamp(100, 900),
+                input.safe_margin.min(25), input.text_shadow, input.reference_position,
+                input.verse_box_x.clamp(0.0, 90.0), input.verse_box_y.clamp(0.0, 90.0),
+                input.verse_box_width.clamp(10.0, 100.0), input.verse_box_height.clamp(8.0, 100.0),
+                input.reference_box_x.clamp(0.0, 90.0), input.reference_box_y.clamp(0.0, 90.0),
+                input.reference_box_width.clamp(10.0, 100.0), input.reference_box_height.clamp(5.0, 100.0),
+                input.auto_layout, input.min_font_scale.clamp(0.5, 1.0),
+                input.transition_type, input.transition_duration.clamp(0, 2_000),
+                input.scroll_v_padding.min(50),
+                input.font_size.clamp(12.0, 300.0), input.line_spacing.clamp(0.0, 2.0),
+                input.letter_spacing.clamp(-1.0, 2.0), background_image,
+                input.background_image_dim.clamp(0.0, 0.9), verse_box_fill, background_video,
+            ],
+        )?;
+        if changed == 0 {
+            return Err(AppError::Other(format!(
+                "presentation theme not found: {id}"
+            )));
+        }
+        self.presentation_theme_by_id(&conn, id)
+    }
+
+    /// Only the seeded built-in themes (`is_builtin`: Midnight, Lower Third,
+    /// Dusk Landscape) are protected from
+    /// deletion — every user-created theme stays personal and deletable no
+    /// matter what, including one that's currently the active/default
+    /// theme (previously `is_default` alone blocked deletion, so picking
+    /// "Make default" for your own theme made it act like a global,
+    /// permanent one instead of staying yours to remove).
+    pub fn delete_presentation_theme(&self, id: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let is_builtin: Option<bool> = conn
+            .query_row(
+                "SELECT is_builtin FROM presentation_themes WHERE id=?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match is_builtin {
+            None => {
+                return Err(AppError::Other(format!(
+                    "presentation theme not found: {id}"
+                )));
+            }
+            Some(true) => {
+                return Err(AppError::Other(
+                    "built-in themes cannot be deleted — duplicate one to make your own".into(),
+                ));
+            }
+            Some(false) => {}
+        }
+
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM presentation_themes WHERE id=?1", params![id])?;
+        // Deleting the currently-active theme would otherwise leave no row
+        // with is_default=1 — every other reader (list_presentation_themes'
+        // ordering, the frontend's activePresentationTheme hydration)
+        // assumes there's always exactly one, so fall back to the one
+        // theme guaranteed to still exist: the built-in.
+        tx.execute(
+            "UPDATE presentation_themes SET is_default=1
+             WHERE id='builtin-midnight'
+               AND NOT EXISTS (SELECT 1 FROM presentation_themes WHERE is_default=1)",
+            [],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn set_default_presentation_theme(&self, id: &str) -> Result<PresentationTheme> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute("UPDATE presentation_themes SET is_default=0", [])?;
+        if tx.execute(
+            "UPDATE presentation_themes SET is_default=1, updated_at=datetime('now') WHERE id=?1",
+            params![id],
+        )? == 0
+        {
+            return Err(AppError::Other(format!(
+                "presentation theme not found: {id}"
+            )));
+        }
+        tx.commit()?;
+        self.presentation_theme_by_id(&conn, id)
+    }
+
+    fn presentation_theme_by_id(&self, conn: &Connection, id: &str) -> Result<PresentationTheme> {
+        conn.query_row(
+            "SELECT id, name, background_color, background_gradient, text_color, reference_color,
+                    font_family, text_align, font_scale, text_font_weight, reference_font_scale,
+                    reference_font_weight, safe_margin, text_shadow, reference_position,
+                    verse_box_x, verse_box_y, verse_box_width, verse_box_height,
+                    reference_box_x, reference_box_y, reference_box_width, reference_box_height,
+                    auto_layout, min_font_scale, transition_type, transition_duration,
+                    scroll_v_padding, font_size, line_spacing, letter_spacing, background_image,
+                    background_image_dim, verse_box_fill, background_video, is_default, is_builtin, created_at, updated_at
+             FROM presentation_themes WHERE id=?1",
+            params![id],
+            presentation_theme_from_row,
+        )
+        .map_err(Into::into)
+    }
+
+    // ── Search history ───────────────────────────────────────────────────────
+
+    pub fn list_search_history(&self) -> Result<Vec<SearchHistoryEntry>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, query, timestamp, ref_book, ref_chapter, ref_verse
+             FROM search_history ORDER BY timestamp DESC, id DESC LIMIT 100",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(SearchHistoryEntry {
+                id: row.get(0)?,
+                query: row.get(1)?,
+                timestamp: row.get(2)?,
+                ref_book: row.get(3)?,
+                ref_chapter: row.get(4)?,
+                ref_verse: row.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Adds an entry, de-duplicating by query text (matching the old localStorage
+    /// behavior: re-searching something already in history moves it to the top
+    /// instead of creating a second row) and capping total history at 100 rows.
+    pub fn add_search_history_entry(&self, query: &str) -> Result<()> {
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM search_history WHERE query = ?1",
+            params![trimmed],
+        )?;
+        let sync_uuid = uuid::Uuid::new_v4().to_string();
+        tx.execute(
+            "INSERT INTO search_history (sync_uuid, query, timestamp) VALUES (?1, ?2, ?3)",
+            params![sync_uuid, trimmed, now_millis()],
+        )?;
+        // Trim anything beyond the most recent 100 — same cap the old
+        // localStorage implementation enforced.
+        tx.execute(
+            "DELETE FROM search_history WHERE id NOT IN (
+                SELECT id FROM search_history ORDER BY timestamp DESC, id DESC LIMIT 100
+             )",
+            [],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Attaches the verse the user navigated to onto the most recent search
+    /// history entry (mirrors setLastHistoryRef's old localStorage behavior).
+    pub fn set_last_search_history_ref(&self, book: &str, chapter: u32, verse: u32) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE search_history SET ref_book = ?1, ref_chapter = ?2, ref_verse = ?3
+             WHERE id = (SELECT id FROM search_history ORDER BY timestamp DESC, id DESC LIMIT 1)",
+            params![book, chapter, verse],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_search_history(&self) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM search_history", [])?;
+        Ok(())
+    }
+
+    // ── Service order ────────────────────────────────────────────────────────
+
+    pub fn list_service_order(&self) -> Result<Vec<ServiceOrderItem>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, book, chapter, verse, text, module, presentation_override
+             FROM service_order_items ORDER BY position ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let override_json: Option<String> = row.get(6)?;
+            let presentation_override = override_json
+                .map(|json| serde_json::from_str(&json))
+                .transpose()
+                .map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        6,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?;
+            Ok(ServiceOrderItem {
+                id: row.get(0)?,
+                book: row.get(1)?,
+                chapter: row.get(2)?,
+                verse: row.get(3)?,
+                text: row.get(4)?,
+                module: row.get(5)?,
+                presentation_override,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Replaces the entire ordered list in one transaction. The frontend already
+    /// treats the service order as one unit it reads/reorders/writes back as a
+    /// whole (add/remove/reorder are all local array operations before persisting),
+    /// so this matches that shape rather than exposing narrower per-row commands.
+    pub fn set_service_order(&self, items: &[ServiceOrderItem]) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM service_order_items", [])?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO service_order_items (id, book, chapter, verse, text, module, presentation_override, position)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )?;
+            for (position, item) in items.iter().enumerate() {
+                stmt.execute(params![
+                    item.id,
+                    item.book,
+                    item.chapter,
+                    item.verse,
+                    item.text,
+                    item.module,
+                    item.presentation_override
+                        .as_ref()
+                        .map(serde_json::to_string)
+                        .transpose()
+                        .map_err(|error| AppError::Other(error.to_string()))?,
+                    position as i64,
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    // ── app_meta / one-time legacy localStorage import ─────────────────────────
+
+    fn meta_get(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
+        conn.query_row(
+            "SELECT value FROM app_meta WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        )
+        .optional()
+    }
+
+    const LEGACY_IMPORT_MARKER: &'static str = "legacy_localstorage_imported";
+
+    pub fn legacy_import_done(&self) -> Result<bool> {
+        let conn = self.conn();
+        Ok(Self::meta_get(&conn, Self::LEGACY_IMPORT_MARKER)?.is_some())
+    }
+
+    /// One-time import of the four payloads that used to live in browser
+    /// localStorage (search history, service order, display prefs, study-panel
+    /// visibility). Idempotent: if the marker is already set, this is a no-op
+    /// that returns Ok immediately without touching any data, so the frontend
+    /// can call it unconditionally on startup without checking first itself —
+    /// and, more importantly, so a retry after a partial failure (app killed
+    /// mid-import) can't double-import or clobber data written since. Everything
+    /// — the search history rows, the service order rows, the merged
+    /// preferences, and the marker itself — commits in one transaction: either
+    /// the whole import lands, or none of it does.
+    pub fn import_legacy_local_storage(&self, payload: &LegacyLocalStorageImport) -> Result<()> {
+        let mut conn = self.conn();
+
+        if Self::meta_get(&conn, Self::LEGACY_IMPORT_MARKER)?.is_some() {
+            return Ok(());
+        }
+
+        let tx = conn.transaction()?;
+
+        for entry in &payload.search_history {
+            let (ref_book, ref_chapter, ref_verse) = match &entry.selected_ref {
+                Some(r) => (Some(r.book.clone()), Some(r.chapter), Some(r.verse)),
+                None => (None, None, None),
+            };
+            tx.execute(
+                "INSERT INTO search_history (query, timestamp, ref_book, ref_chapter, ref_verse)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    entry.query,
+                    entry.timestamp,
+                    ref_book,
+                    ref_chapter,
+                    ref_verse
+                ],
+            )?;
+        }
+
+        for (position, item) in payload.service_order.iter().enumerate() {
+            tx.execute(
+                "INSERT OR IGNORE INTO service_order_items
+                    (id, book, chapter, verse, text, module, position)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    item.id,
+                    item.book,
+                    item.chapter,
+                    item.verse,
+                    item.text,
+                    item.module,
+                    position as i64,
+                ],
+            )?;
+        }
+
+        if payload.display_prefs.is_some() || payload.study_ui.is_some() {
+            let mut current = Self::read_preferences(&tx)?.unwrap_or_default();
+            if let Some(dp) = &payload.display_prefs {
+                current.font_family = dp.font_family.clone();
+                current.text_align = dp.text_align.clone();
+                current.margins = dp.margins;
+                current.line_spacing = dp.line_spacing;
+                current.letter_spacing = dp.letter_spacing;
+                current.strongs_sheet_height = dp.strongs_sheet_height;
+                current.presentation_context = dp.presentation_context;
+            }
+            if let Some(su) = &payload.study_ui {
+                current.show_commentary = su.show_commentary;
+                current.show_notes = su.show_notes;
+                current.show_cross_refs = su.show_cross_refs;
+                current.show_red_letter = su.show_red_letter;
+            }
+            Self::write_preferences(&tx, &current)?;
+        }
+
+        tx.execute(
+            "INSERT INTO app_meta (key, value) VALUES (?1, '1')",
+            params![Self::LEGACY_IMPORT_MARKER],
+        )?;
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    // ── Cloud sync (personal Pro) ────────────────────────────────────────────
+
+    pub fn get_sync_cursor(&self) -> Result<i64> {
+        let conn = self.conn();
+        let val: rusqlite::Result<String> = conn.query_row(
+            "SELECT value FROM app_meta WHERE key = 'sync_cursor'",
+            [],
+            |r| r.get(0),
+        );
+        match val {
+            Ok(s) => Ok(s.parse::<i64>().unwrap_or(0)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn set_sync_cursor(&self, cursor: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO app_meta (key, value) VALUES ('sync_cursor', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![cursor.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_dirty_sync_records(&self, limit: usize) -> Result<Vec<DirtySyncRecord>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT collection, record_id, deleted, updated_at
+             FROM sync_state
+             WHERE dirty = 1
+             ORDER BY updated_at ASC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)? != 0,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+
+        let mut dirty_records = Vec::new();
+
+        for r in rows {
+            let (collection, record_id, deleted, updated_at) = r?;
+            if deleted {
+                dirty_records.push(DirtySyncRecord {
+                    collection,
+                    record_id,
+                    data: serde_json::json!({}),
+                    deleted: true,
+                    client_updated_at: updated_at,
+                });
+                continue;
+            }
+
+            let (data, mark_deleted) = match collection.as_str() {
+                "bookmarks" => {
+                    let bm = conn
+                        .query_row(
+                            "SELECT book, chapter, verse, module_id, note, created_at FROM bookmarks WHERE sync_uuid = ?1",
+                            params![record_id],
+                            |row| {
+                                Ok(serde_json::json!({
+                                    "book": row.get::<_, String>(0)?,
+                                    "chapter": row.get::<_, u32>(1)?,
+                                    "verse": row.get::<_, u32>(2)?,
+                                    "module_id": row.get::<_, String>(3)?,
+                                    "note": row.get::<_, Option<String>>(4)?,
+                                    "created_at": row.get::<_, String>(5)?,
+                                }))
+                            },
+                        )
+                        .optional()?;
+                    match bm {
+                        Some(v) => (v, false),
+                        None => (serde_json::json!({}), true),
+                    }
+                }
+                "notes" => {
+                    let note = conn
+                        .query_row(
+                            "SELECT book, chapter, verse, module_id, content, created_at, updated_at FROM notes WHERE sync_uuid = ?1",
+                            params![record_id],
+                            |row| {
+                                Ok(serde_json::json!({
+                                    "book": row.get::<_, String>(0)?,
+                                    "chapter": row.get::<_, u32>(1)?,
+                                    "verse": row.get::<_, Option<u32>>(2)?,
+                                    "module_id": row.get::<_, String>(3)?,
+                                    "content": row.get::<_, String>(4)?,
+                                    "created_at": row.get::<_, String>(5)?,
+                                    "updated_at": row.get::<_, String>(6)?,
+                                }))
+                            },
+                        )
+                        .optional()?;
+                    match note {
+                        Some(v) => (v, false),
+                        None => (serde_json::json!({}), true),
+                    }
+                }
+                "search_history" => {
+                    let sh = conn
+                        .query_row(
+                            "SELECT query, timestamp, ref_book, ref_chapter, ref_verse FROM search_history WHERE sync_uuid = ?1",
+                            params![record_id],
+                            |row| {
+                                Ok(serde_json::json!({
+                                    "query": row.get::<_, String>(0)?,
+                                    "timestamp": row.get::<_, i64>(1)?,
+                                    "ref_book": row.get::<_, Option<String>>(2)?,
+                                    "ref_chapter": row.get::<_, Option<u32>>(3)?,
+                                    "ref_verse": row.get::<_, Option<u32>>(4)?,
+                                }))
+                            },
+                        )
+                        .optional()?;
+                    match sh {
+                        Some(v) => (v, false),
+                        None => (serde_json::json!({}), true),
+                    }
+                }
+                "service_order_items" => {
+                    let soi = conn
+                        .query_row(
+                            "SELECT book, chapter, verse, text, module, presentation_override, position FROM service_order_items WHERE id = ?1",
+                            params![record_id],
+                            |row| {
+                                let override_str: Option<String> = row.get(5)?;
+                                let presentation_override = override_str
+                                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+                                Ok(serde_json::json!({
+                                    "id": record_id,
+                                    "book": row.get::<_, String>(0)?,
+                                    "chapter": row.get::<_, u32>(1)?,
+                                    "verse": row.get::<_, u32>(2)?,
+                                    "text": row.get::<_, String>(3)?,
+                                    "module": row.get::<_, String>(4)?,
+                                    "presentation_override": presentation_override,
+                                    "position": row.get::<_, i64>(6)?,
+                                }))
+                            },
+                        )
+                        .optional()?;
+                    match soi {
+                        Some(v) => (v, false),
+                        None => (serde_json::json!({}), true),
+                    }
+                }
+                "presentation_themes" => {
+                    let theme = conn
+                        .query_row(
+                            "SELECT id, name, background_color, background_gradient, text_color, reference_color,
+                                    font_family, text_align, font_scale, safe_margin, text_shadow, is_default,
+                                    text_font_weight, reference_font_scale, reference_font_weight, reference_position,
+                                    verse_box_x, verse_box_y, verse_box_width, verse_box_height,
+                                    reference_box_x, reference_box_y, reference_box_width, reference_box_height,
+                                    auto_layout, min_font_scale, transition_type, transition_duration,
+                                    scroll_v_padding, font_size, line_spacing, letter_spacing,
+                                    background_image, background_image_dim, verse_box_fill, background_video
+                             FROM presentation_themes WHERE id = ?1 AND is_builtin = 0",
+                            params![record_id],
+                            |row| {
+                                Ok(serde_json::json!({
+                                    "id": row.get::<_, String>(0)?,
+                                    "name": row.get::<_, String>(1)?,
+                                    "background_color": row.get::<_, String>(2)?,
+                                    "background_gradient": row.get::<_, Option<String>>(3)?,
+                                    "text_color": row.get::<_, String>(4)?,
+                                    "reference_color": row.get::<_, String>(5)?,
+                                    "font_family": row.get::<_, String>(6)?,
+                                    "text_align": row.get::<_, String>(7)?,
+                                    "font_scale": row.get::<_, f64>(8)?,
+                                    "safe_margin": row.get::<_, u32>(9)?,
+                                    "text_shadow": row.get::<_, i32>(10)? != 0,
+                                    "is_default": row.get::<_, i32>(11)? != 0,
+                                    "text_font_weight": row.get::<_, u32>(12)?,
+                                    "reference_font_scale": row.get::<_, f64>(13)?,
+                                    "reference_font_weight": row.get::<_, u32>(14)?,
+                                    "reference_position": row.get::<_, String>(15)?,
+                                    "verse_box_x": row.get::<_, f64>(16)?,
+                                    "verse_box_y": row.get::<_, f64>(17)?,
+                                    "verse_box_width": row.get::<_, f64>(18)?,
+                                    "verse_box_height": row.get::<_, f64>(19)?,
+                                    "reference_box_x": row.get::<_, f64>(20)?,
+                                    "reference_box_y": row.get::<_, f64>(21)?,
+                                    "reference_box_width": row.get::<_, f64>(22)?,
+                                    "reference_box_height": row.get::<_, f64>(23)?,
+                                    "auto_layout": row.get::<_, i32>(24)? != 0,
+                                    "min_font_scale": row.get::<_, f64>(25)?,
+                                    "transition_type": row.get::<_, String>(26)?,
+                                    "transition_duration": row.get::<_, u32>(27)?,
+                                    "scroll_v_padding": row.get::<_, u32>(28)?,
+                                    "font_size": row.get::<_, f64>(29)?,
+                                    "line_spacing": row.get::<_, f64>(30)?,
+                                    "letter_spacing": row.get::<_, f64>(31)?,
+                                    "background_image": row.get::<_, Option<String>>(32)?,
+                                    "background_image_dim": row.get::<_, f64>(33)?,
+                                    "verse_box_fill": row.get::<_, Option<String>>(34)?,
+                                    "background_video": row.get::<_, Option<String>>(35)?,
+                                    "is_builtin": false,
+                                }))
+                            },
+                        )
+                        .optional()?;
+                    match theme {
+                        Some(v) => (v, false),
+                        None => (serde_json::json!({}), true),
+                    }
+                }
+                "reading_position" => {
+                    let pos = conn
+                        .query_row(
+                            "SELECT book, chapter, verse, module_id FROM reading_position LIMIT 1",
+                            [],
+                            |row| {
+                                Ok(serde_json::json!({
+                                    "book": row.get::<_, String>(0)?,
+                                    "chapter": row.get::<_, u32>(1)?,
+                                    "verse": row.get::<_, u32>(2)?,
+                                    "module_id": row.get::<_, String>(3)?,
+                                }))
+                            },
+                        )
+                        .optional()?;
+                    match pos {
+                        Some(v) => (v, false),
+                        None => (serde_json::json!({}), true),
+                    }
+                }
+                "preferences" => {
+                    let prefs = Self::read_preferences(&conn)?.unwrap_or_default();
+                    let val = serde_json::json!({
+                        "theme": prefs.theme,
+                        "font_size_reading": prefs.font_size_reading,
+                        "show_strongs": prefs.show_strongs,
+                        "show_morph": prefs.show_morph,
+                        "verse_display": prefs.verse_display,
+                        "default_commentary": prefs.default_commentary,
+                        "show_commentary": prefs.show_commentary,
+                        "show_notes": prefs.show_notes,
+                        "show_cross_refs": prefs.show_cross_refs,
+                        "show_red_letter": prefs.show_red_letter,
+                        "font_family": prefs.font_family,
+                        "text_align": prefs.text_align,
+                        "margins": prefs.margins,
+                        "line_spacing": prefs.line_spacing,
+                        "letter_spacing": prefs.letter_spacing,
+                        "strongs_sheet_height": prefs.strongs_sheet_height,
+                        "presentation_context": prefs.presentation_context,
+                        "default_lexicon_source": prefs.default_lexicon_source,
+                        "workspace": prefs.workspace,
+                        "split_long_verses": prefs.split_long_verses,
+                        "accent": prefs.accent,
+                    });
+                    (val, false)
+                }
+                _ => (serde_json::json!({}), true),
+            };
+
+            dirty_records.push(DirtySyncRecord {
+                collection,
+                record_id,
+                data,
+                deleted: mark_deleted,
+                client_updated_at: updated_at,
+            });
+        }
+
+        Ok(dirty_records)
+    }
+
+    pub fn mark_sync_records_clean(&self, items: &[CleanRecordKey]) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        for item in items {
+            tx.execute(
+                "UPDATE sync_state
+                 SET dirty = 0
+                 WHERE collection = ?1 AND record_id = ?2 AND updated_at <= ?3",
+                params![item.collection, item.record_id, item.client_updated_at],
+            )?;
+            tx.execute(
+                "DELETE FROM sync_state
+                 WHERE collection = ?1 AND record_id = ?2 AND deleted = 1 AND dirty = 0",
+                params![item.collection, item.record_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn apply_remote_sync_records(&self, records: &[RemoteSyncRecord]) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+
+        let mut max_seq = 0i64;
+
+        for r in records {
+            if let Some(s) = r.seq {
+                if s > max_seq {
+                    max_seq = s;
+                }
+            }
+
+            let local_status: Option<(i32, String)> = tx
+                .query_row(
+                    "SELECT dirty, updated_at FROM sync_state WHERE collection = ?1 AND record_id = ?2",
+                    params![r.collection, r.record_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+
+            if let Some((dirty, local_updated_at)) = local_status {
+                if dirty != 0 && local_updated_at > r.client_updated_at {
+                    continue;
+                }
+            }
+
+            if r.deleted {
+                match r.collection.as_str() {
+                    "bookmarks" => {
+                        tx.execute(
+                            "DELETE FROM bookmarks WHERE sync_uuid = ?1",
+                            params![r.record_id],
+                        )?;
+                    }
+                    "notes" => {
+                        tx.execute(
+                            "DELETE FROM notes WHERE sync_uuid = ?1",
+                            params![r.record_id],
+                        )?;
+                    }
+                    "search_history" => {
+                        tx.execute(
+                            "DELETE FROM search_history WHERE sync_uuid = ?1",
+                            params![r.record_id],
+                        )?;
+                    }
+                    "service_order_items" => {
+                        tx.execute(
+                            "DELETE FROM service_order_items WHERE id = ?1",
+                            params![r.record_id],
+                        )?;
+                    }
+                    "presentation_themes" => {
+                        tx.execute(
+                            "DELETE FROM presentation_themes WHERE id = ?1 AND is_builtin = 0",
+                            params![r.record_id],
+                        )?;
+                    }
+                    "reading_position" => {
+                        tx.execute("DELETE FROM reading_position", [])?;
+                    }
+                    _ => {}
+                }
+                tx.execute(
+                    "INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+                     VALUES (?1, ?2, 0, 1, ?3)
+                     ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 0, deleted = 1, updated_at = excluded.updated_at",
+                    params![r.collection, r.record_id, r.client_updated_at],
+                )?;
+            } else {
+                match r.collection.as_str() {
+                    "bookmarks" => {
+                        let d = &r.data;
+                        let book = d.get("book").and_then(|v| v.as_str()).unwrap_or("");
+                        let chapter = d.get("chapter").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+                        let verse = d.get("verse").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+                        let module_id = d.get("module_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let note = d.get("note").and_then(|v| v.as_str());
+                        let created_at = d.get("created_at").and_then(|v| v.as_str()).unwrap_or("");
+
+                        tx.execute(
+                            "INSERT INTO bookmarks (sync_uuid, book, chapter, verse, module_id, note, created_at)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, COALESCE(NULLIF(?7, ''), datetime('now')))
+                             ON CONFLICT(sync_uuid) DO UPDATE SET
+                               book = excluded.book,
+                               chapter = excluded.chapter,
+                               verse = excluded.verse,
+                               module_id = excluded.module_id,
+                               note = excluded.note",
+                            params![r.record_id, book, chapter, verse, module_id, note, created_at],
+                        )?;
+                    }
+                    "notes" => {
+                        let d = &r.data;
+                        let book = d.get("book").and_then(|v| v.as_str()).unwrap_or("");
+                        let chapter = d.get("chapter").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+                        let verse = d.get("verse").and_then(|v| v.as_u64()).map(|v| v as u32);
+                        let module_id = d.get("module_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let content = d.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                        let created_at = d.get("created_at").and_then(|v| v.as_str()).unwrap_or("");
+                        let updated_at = d
+                            .get("updated_at")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&r.client_updated_at);
+
+                        tx.execute(
+                            "INSERT INTO notes (sync_uuid, book, chapter, verse, module_id, content, created_at, updated_at)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, COALESCE(NULLIF(?7, ''), datetime('now')), COALESCE(NULLIF(?8, ''), datetime('now')))
+                             ON CONFLICT(sync_uuid) DO UPDATE SET
+                               book = excluded.book,
+                               chapter = excluded.chapter,
+                               verse = excluded.verse,
+                               module_id = excluded.module_id,
+                               content = excluded.content,
+                               updated_at = excluded.updated_at",
+                            params![r.record_id, book, chapter, verse, module_id, content, created_at, updated_at],
+                        )?;
+                    }
+                    "search_history" => {
+                        let d = &r.data;
+                        let query = d.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                        let timestamp = d
+                            .get("timestamp")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or_else(now_millis);
+                        let ref_book = d.get("ref_book").and_then(|v| v.as_str());
+                        let ref_chapter = d
+                            .get("ref_chapter")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as u32);
+                        let ref_verse = d
+                            .get("ref_verse")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as u32);
+
+                        tx.execute(
+                            "INSERT INTO search_history (sync_uuid, query, timestamp, ref_book, ref_chapter, ref_verse)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                             ON CONFLICT(sync_uuid) DO UPDATE SET
+                               query = excluded.query,
+                               timestamp = excluded.timestamp,
+                               ref_book = excluded.ref_book,
+                               ref_chapter = excluded.ref_chapter,
+                               ref_verse = excluded.ref_verse",
+                            params![r.record_id, query, timestamp, ref_book, ref_chapter, ref_verse],
+                        )?;
+                    }
+                    "service_order_items" => {
+                        let d = &r.data;
+                        let book = d.get("book").and_then(|v| v.as_str()).unwrap_or("");
+                        let chapter = d.get("chapter").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+                        let verse = d.get("verse").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+                        let text = d.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                        let module = d.get("module").and_then(|v| v.as_str()).unwrap_or("");
+                        let position = d.get("position").and_then(|v| v.as_i64()).unwrap_or(0);
+                        let presentation_override =
+                            d.get("presentation_override").map(|v| v.to_string());
+
+                        tx.execute(
+                            "INSERT INTO service_order_items (id, book, chapter, verse, text, module, presentation_override, position)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                             ON CONFLICT(id) DO UPDATE SET
+                               book = excluded.book,
+                               chapter = excluded.chapter,
+                               verse = excluded.verse,
+                               text = excluded.text,
+                               module = excluded.module,
+                               presentation_override = excluded.presentation_override,
+                               position = excluded.position",
+                            params![r.record_id, book, chapter, verse, text, module, presentation_override, position],
+                        )?;
+                    }
+                    "presentation_themes" => {
+                        let d = &r.data;
+                        let name = d
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Custom Theme");
+                        let bg_color = d
+                            .get("background_color")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("#000000");
+                        let bg_gradient = d.get("background_gradient").and_then(|v| v.as_str());
+                        let text_color = d
+                            .get("text_color")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("#ffffff");
+                        let ref_color = d
+                            .get("reference_color")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("#b8c4d8");
+                        let font_family = d
+                            .get("font_family")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("system");
+                        let text_align = d
+                            .get("text_align")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("center");
+                        let font_scale =
+                            d.get("font_scale").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                        let safe_margin =
+                            d.get("safe_margin").and_then(|v| v.as_u64()).unwrap_or(5) as u32;
+                        let text_shadow = if d
+                            .get("text_shadow")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true)
+                        {
+                            1
+                        } else {
+                            0
+                        };
+                        let is_default = if d
+                            .get("is_default")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                        {
+                            1
+                        } else {
+                            0
+                        };
+                        let text_font_weight = d
+                            .get("text_font_weight")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(600) as u32;
+                        let ref_font_scale = d
+                            .get("reference_font_scale")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(1.0);
+                        let ref_font_weight = d
+                            .get("reference_font_weight")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(500) as u32;
+                        let ref_pos = d
+                            .get("reference_position")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("bottom-center");
+                        let vx = d
+                            .get("verse_box_x")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(10.0);
+                        let vy = d
+                            .get("verse_box_y")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(24.0);
+                        let vw = d
+                            .get("verse_box_width")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(80.0);
+                        let vh = d
+                            .get("verse_box_height")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(48.0);
+                        let rx = d
+                            .get("reference_box_x")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(10.0);
+                        let ry = d
+                            .get("reference_box_y")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(76.0);
+                        let rw = d
+                            .get("reference_box_width")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(80.0);
+                        let rh = d
+                            .get("reference_box_height")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(10.0);
+                        let auto_layout = if d
+                            .get("auto_layout")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true)
+                        {
+                            1
+                        } else {
+                            0
+                        };
+                        let min_font_scale = d
+                            .get("min_font_scale")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.65);
+                        let trans_type = d
+                            .get("transition_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("fade");
+                        let trans_dur = d
+                            .get("transition_duration")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(300) as u32;
+                        let scroll_v_pad = d
+                            .get("scroll_v_padding")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(32) as u32;
+                        let font_size = d.get("font_size").and_then(|v| v.as_f64()).unwrap_or(56.0);
+                        let line_spacing = d
+                            .get("line_spacing")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.3);
+                        let letter_spacing = d
+                            .get("letter_spacing")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        let bg_img = d.get("background_image").and_then(|v| v.as_str());
+                        let bg_img_dim = d
+                            .get("background_image_dim")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.35);
+                        let verse_box_fill = d.get("verse_box_fill").and_then(|v| v.as_str());
+                        let bg_video = d.get("background_video").and_then(|v| v.as_str());
+
+                        tx.execute(
+                            "INSERT INTO presentation_themes (
+                                id, name, background_color, background_gradient, text_color, reference_color,
+                                font_family, text_align, font_scale, safe_margin, text_shadow, is_default,
+                                text_font_weight, reference_font_scale, reference_font_weight, reference_position,
+                                verse_box_x, verse_box_y, verse_box_width, verse_box_height,
+                                reference_box_x, reference_box_y, reference_box_width, reference_box_height,
+                                auto_layout, min_font_scale, transition_type, transition_duration, is_builtin,
+                                scroll_v_padding, font_size, line_spacing, letter_spacing,
+                                background_image, background_image_dim, verse_box_fill, background_video
+                             ) VALUES (
+                                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                                ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, 0,
+                                ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36
+                             ) ON CONFLICT(id) DO UPDATE SET
+                                name = excluded.name,
+                                background_color = excluded.background_color,
+                                background_gradient = excluded.background_gradient,
+                                text_color = excluded.text_color,
+                                reference_color = excluded.reference_color,
+                                font_family = excluded.font_family,
+                                text_align = excluded.text_align,
+                                font_scale = excluded.font_scale,
+                                safe_margin = excluded.safe_margin,
+                                text_shadow = excluded.text_shadow,
+                                is_default = excluded.is_default,
+                                text_font_weight = excluded.text_font_weight,
+                                reference_font_scale = excluded.reference_font_scale,
+                                reference_font_weight = excluded.reference_font_weight,
+                                reference_position = excluded.reference_position,
+                                verse_box_x = excluded.verse_box_x,
+                                verse_box_y = excluded.verse_box_y,
+                                verse_box_width = excluded.verse_box_width,
+                                verse_box_height = excluded.verse_box_height,
+                                reference_box_x = excluded.reference_box_x,
+                                reference_box_y = excluded.reference_box_y,
+                                reference_box_width = excluded.reference_box_width,
+                                reference_box_height = excluded.reference_box_height,
+                                auto_layout = excluded.auto_layout,
+                                min_font_scale = excluded.min_font_scale,
+                                transition_type = excluded.transition_type,
+                                transition_duration = excluded.transition_duration,
+                                scroll_v_padding = excluded.scroll_v_padding,
+                                font_size = excluded.font_size,
+                                line_spacing = excluded.line_spacing,
+                                letter_spacing = excluded.letter_spacing,
+                                background_image = excluded.background_image,
+                                background_image_dim = excluded.background_image_dim,
+                                verse_box_fill = excluded.verse_box_fill,
+                                background_video = excluded.background_video
+                             WHERE presentation_themes.is_builtin = 0",
+                            params![
+                                r.record_id, name, bg_color, bg_gradient, text_color, ref_color,
+                                font_family, text_align, font_scale, safe_margin, text_shadow, is_default,
+                                text_font_weight, ref_font_scale, ref_font_weight, ref_pos,
+                                vx, vy, vw, vh, rx, ry, rw, rh,
+                                auto_layout, min_font_scale, trans_type, trans_dur,
+                                scroll_v_pad, font_size, line_spacing, letter_spacing,
+                                bg_img, bg_img_dim, verse_box_fill, bg_video
+                            ],
+                        )?;
+                    }
+                    "reading_position" => {
+                        let d = &r.data;
+                        let book = d.get("book").and_then(|v| v.as_str()).unwrap_or("Genesis");
+                        let chapter = d.get("chapter").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+                        let verse = d.get("verse").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+                        let module_id = d.get("module_id").and_then(|v| v.as_str()).unwrap_or("");
+
+                        tx.execute(
+                            "INSERT INTO reading_position (id, book, chapter, verse, module_id)
+                             VALUES (1, ?1, ?2, ?3, ?4)
+                             ON CONFLICT(id) DO UPDATE SET
+                               book = excluded.book,
+                               chapter = excluded.chapter,
+                               verse = excluded.verse,
+                               module_id = excluded.module_id",
+                            params![book, chapter, verse, module_id],
+                        )?;
+                    }
+                    "preferences" => {
+                        let d = &r.data;
+                        let mut current = Self::read_preferences(&tx)?.unwrap_or_default();
+                        if let Some(v) = d.get("theme").and_then(|v| v.as_str()) {
+                            current.theme = v.to_string();
+                        }
+                        if let Some(v) = d.get("font_size_reading").and_then(|v| v.as_u64()) {
+                            current.font_size_reading = v as u32;
+                        }
+                        if let Some(v) = d.get("show_strongs").and_then(|v| v.as_bool()) {
+                            current.show_strongs = v;
+                        }
+                        if let Some(v) = d.get("show_morph").and_then(|v| v.as_bool()) {
+                            current.show_morph = v;
+                        }
+                        if let Some(v) = d.get("verse_display").and_then(|v| v.as_str()) {
+                            current.verse_display = v.to_string();
+                        }
+                        if let Some(v) = d.get("default_commentary").and_then(|v| v.as_str()) {
+                            current.default_commentary = Some(v.to_string());
+                        }
+                        if let Some(v) = d.get("show_commentary").and_then(|v| v.as_bool()) {
+                            current.show_commentary = v;
+                        }
+                        if let Some(v) = d.get("show_notes").and_then(|v| v.as_bool()) {
+                            current.show_notes = v;
+                        }
+                        if let Some(v) = d.get("show_cross_refs").and_then(|v| v.as_bool()) {
+                            current.show_cross_refs = v;
+                        }
+                        if let Some(v) = d.get("show_red_letter").and_then(|v| v.as_bool()) {
+                            current.show_red_letter = v;
+                        }
+                        if let Some(v) = d.get("font_family").and_then(|v| v.as_str()) {
+                            current.font_family = v.to_string();
+                        }
+                        if let Some(v) = d.get("text_align").and_then(|v| v.as_str()) {
+                            current.text_align = v.to_string();
+                        }
+                        if let Some(v) = d.get("margins").and_then(|v| v.as_u64()) {
+                            current.margins = v as u32;
+                        }
+                        if let Some(v) = d.get("line_spacing").and_then(|v| v.as_f64()) {
+                            current.line_spacing = v;
+                        }
+                        if let Some(v) = d.get("letter_spacing").and_then(|v| v.as_f64()) {
+                            current.letter_spacing = v;
+                        }
+                        if let Some(v) = d.get("strongs_sheet_height").and_then(|v| v.as_u64()) {
+                            current.strongs_sheet_height = v as u32;
+                        }
+                        if let Some(v) = d.get("presentation_context").and_then(|v| v.as_u64()) {
+                            current.presentation_context = v as u32;
+                        }
+                        if let Some(v) = d.get("default_lexicon_source").and_then(|v| v.as_str()) {
+                            current.default_lexicon_source = v.to_string();
+                        }
+                        if let Some(v) = d.get("workspace").and_then(|v| v.as_str()) {
+                            current.workspace = v.to_string();
+                        }
+                        if let Some(v) = d.get("split_long_verses").and_then(|v| v.as_bool()) {
+                            current.split_long_verses = v;
+                        }
+                        if let Some(v) = d.get("accent").and_then(|v| v.as_str()) {
+                            current.accent = v.to_string();
+                        }
+                        Self::write_preferences(&tx, &current)?;
+                    }
+                    _ => {}
+                }
+
+                tx.execute(
+                    "INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+                     VALUES (?1, ?2, 0, 0, ?3)
+                     ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 0, deleted = 0, updated_at = excluded.updated_at",
+                    params![r.collection, r.record_id, r.client_updated_at],
+                )?;
+            }
+        }
+
+        if max_seq > 0 {
+            tx.execute(
+                "INSERT INTO app_meta (key, value) VALUES ('sync_cursor', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(excluded.value AS INTEGER) > CAST(app_meta.value AS INTEGER)",
+                params![max_seq.to_string()],
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn reset_local_sync_state(&self, replace_with_cloud: bool) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+
+        if replace_with_cloud {
+            tx.execute("DELETE FROM bookmarks", [])?;
+            tx.execute("DELETE FROM notes", [])?;
+            tx.execute("DELETE FROM search_history", [])?;
+            tx.execute("DELETE FROM service_order_items", [])?;
+            tx.execute("DELETE FROM presentation_themes WHERE is_builtin = 0", [])?;
+            tx.execute("DELETE FROM reading_position", [])?;
+            tx.execute("DELETE FROM sync_state", [])?;
+        } else {
+            tx.execute("UPDATE sync_state SET dirty = 1", [])?;
+        }
+
+        tx.execute(
+            "INSERT INTO app_meta (key, value) VALUES ('sync_cursor', '0')
+             ON CONFLICT(key) DO UPDATE SET value = '0'",
+            [],
+        )?;
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn create_backup_zip(
+        &self,
+        song_store: &crate::songs::SongStore,
+        slide_store: &crate::slides::SlideStore,
+    ) -> Result<Vec<u8>> {
+        let temp_dir =
+            std::env::temp_dir().join(format!("scriptura-backup-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir)?;
+
+        let yarda_path = temp_dir.join("yarda.db");
+        let songs_path = temp_dir.join("songs.db");
+        let slides_path = temp_dir.join("slides.db");
+
+        {
+            let conn = self.conn();
+            conn.execute("VACUUM INTO ?1", params![yarda_path.to_str().unwrap()])?;
+        }
+
+        if let Ok(db) = song_store.db() {
+            let conn = db.conn();
+            let _ = conn.execute("VACUUM INTO ?1", params![songs_path.to_str().unwrap()]);
+        }
+
+        if let Ok(db) = slide_store.db() {
+            let conn = db.conn();
+            let _ = conn.execute("VACUUM INTO ?1", params![slides_path.to_str().unwrap()]);
+        }
+
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut buf);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+            let manifest = serde_json::json!({
+                "version": 1,
+                "created_at": chrono::Utc::now().to_rfc3339(),
+                "app_version": "0.1.41",
+            });
+            writer.start_file("manifest.json", options)?;
+            std::io::Write::write_all(&mut writer, manifest.to_string().as_bytes())?;
+
+            if yarda_path.exists() {
+                let data = std::fs::read(&yarda_path)?;
+                writer.start_file("yarda.db", options)?;
+                std::io::Write::write_all(&mut writer, &data)?;
+            }
+            if songs_path.exists() {
+                let data = std::fs::read(&songs_path)?;
+                writer.start_file("songs.db", options)?;
+                std::io::Write::write_all(&mut writer, &data)?;
+            }
+            if slides_path.exists() {
+                let data = std::fs::read(&slides_path)?;
+                writer.start_file("slides.db", options)?;
+                std::io::Write::write_all(&mut writer, &data)?;
+            }
+            writer.finish()?;
+        }
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        Ok(buf.into_inner())
+    }
+
+    pub fn restore_backup_zip(
+        &self,
+        song_store: &crate::songs::SongStore,
+        slide_store: &crate::slides::SlideStore,
+        bytes: &[u8],
+    ) -> Result<()> {
+        let temp_dir =
+            std::env::temp_dir().join(format!("scriptura-restore-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir)?;
+
+        let mut archive = ZipArchive::new(std::io::Cursor::new(bytes))
+            .map_err(|e| AppError::Other(format!("Invalid zip archive: {e}")))?;
+
+        for i in 0..archive.len() {
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| AppError::Other(format!("Failed to read zip entry: {e}")))?;
+            let name = file.name().to_string();
+            if name.ends_with(".db") || name == "manifest.json" {
+                let outpath = temp_dir.join(&name);
+                let mut outfile = std::fs::File::create(&outpath)?;
+                std::io::copy(&mut file, &mut outfile)?;
+            }
+        }
+
+        let yarda_path = temp_dir.join("yarda.db");
+        let scriptura_path = temp_dir.join("scriptura.db");
+        let main_db_path = if yarda_path.exists() {
+            Some(yarda_path)
+        } else if scriptura_path.exists() {
+            Some(scriptura_path)
+        } else {
+            None
+        };
+
+        if let Some(db_file) = main_db_path {
+            let backup_conn = Connection::open(&db_file)?;
+            let mut dest_conn = self.conn();
+            let backup = rusqlite::backup::Backup::new(&backup_conn, &mut *dest_conn)?;
+            backup.run_to_completion(100, std::time::Duration::from_millis(10), None)?;
+        }
+
+        let songs_path = temp_dir.join("songs.db");
+        if songs_path.exists() {
+            if let Ok(db) = song_store.db() {
+                let backup_conn = Connection::open(&songs_path)?;
+                let mut dest_conn = db.conn();
+                let backup = rusqlite::backup::Backup::new(&backup_conn, &mut *dest_conn)?;
+                let _ = backup.run_to_completion(100, std::time::Duration::from_millis(10), None);
+            }
+        }
+
+        let slides_path = temp_dir.join("slides.db");
+        if slides_path.exists() {
+            if let Ok(db) = slide_store.db() {
+                let backup_conn = Connection::open(&slides_path)?;
+                let mut dest_conn = db.conn();
+                let backup = rusqlite::backup::Backup::new(&backup_conn, &mut *dest_conn)?;
+                let _ = backup.run_to_completion(100, std::time::Duration::from_millis(10), None);
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        self.migrate()?;
+        Ok(())
+    }
+}
+
+/// Transform a raw user query into an FTS5 MATCH expression.
+///
+/// Each whitespace-separated word becomes a quoted, prefix-matched term so the
+/// search works letter-by-letter:
+///   "god so lov"  →  "god" * "so" * "lov" *
+/// With the unicode61 tokenizer this reliably matches "For God so loved …"
+/// because the prefix "lov" matches the stored token "loved".
+///
+/// Words are split on every non-alphanumeric character, exactly like the
+/// tokenizer splits the indexed text: "king's" (or the typographic "king’s"
+/// the KJV uses) is indexed as the tokens "king" and "s", so it is searched as
+/// the phrase "king s" with a prefix on the last token. Quoting every term also
+/// keeps FTS5 syntax (OR, NEAR, `:`, `-` …) in user input from being parsed.
+///
+/// Text in double quotes is one exact phrase ("good shepherd"), and `whole_word`
+/// drops the prefix wildcard so "love" no longer matches "loved".
+fn build_fts_query(raw: &str, whole_word: bool) -> String {
+    let suffix = if whole_word { "" } else { " *" };
+    // Split a word into the lowercase alphanumeric runs the tokenizer would see.
+    let tokens = |text: &str| -> Vec<String> {
+        text.split(|c: char| !c.is_alphanumeric())
+            .filter(|p| !p.is_empty())
+            .map(str::to_lowercase)
+            .collect()
+    };
+    let mut terms: Vec<String> = Vec::new();
+    // Odd-numbered segments sit between double quotes and match as one exact phrase.
+    for (i, segment) in raw.split('"').enumerate() {
+        if i % 2 == 1 {
+            let parts = tokens(segment);
+            if !parts.is_empty() {
+                terms.push(format!("\"{}\"{suffix}", parts.join(" ")));
+            }
+        } else {
+            for word in segment.split_whitespace() {
+                let parts = tokens(word);
+                if !parts.is_empty() {
+                    terms.push(format!("\"{}\"{suffix}", parts.join(" ")));
+                }
+            }
+        }
+    }
+    terms.join(" ")
+}
+
+fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
+    Ok(Note {
+        id: row.get(0)?,
+        book: row.get(1)?,
+        chapter: row.get(2)?,
+        verse: row.get(3)?,
+        module_id: row.get(4)?,
+        content: row.get(5)?,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+    })
+}
+
+/// All permanent (non-FTS) tables. Safe to run on every startup.
+const SCHEMA_TABLES: &str = r#"
+CREATE TABLE IF NOT EXISTS preferences (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    theme TEXT NOT NULL DEFAULT 'light',
+    font_size_reading INTEGER NOT NULL DEFAULT 18,
+    show_strongs INTEGER NOT NULL DEFAULT 1,
+    show_morph INTEGER NOT NULL DEFAULT 0,
+    verse_display TEXT NOT NULL DEFAULT 'verse-per-line',
+    default_commentary TEXT
+);
+
+CREATE TABLE IF NOT EXISTS reading_position (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    book TEXT NOT NULL,
+    chapter INTEGER NOT NULL,
+    verse INTEGER NOT NULL,
+    module_id TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bookmarks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book TEXT NOT NULL,
+    chapter INTEGER NOT NULL,
+    verse INTEGER NOT NULL,
+    module_id TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book TEXT NOT NULL,
+    chapter INTEGER NOT NULL,
+    verse INTEGER,
+    module_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS installed_modules (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    install_path TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '1.0',
+    category TEXT NOT NULL DEFAULT 'Bible',
+    index_built INTEGER NOT NULL DEFAULT 0
+);
+
+-- Strong's number occurrence counts per module + book
+CREATE TABLE IF NOT EXISTS strongs_counts (
+    module_id TEXT NOT NULL,
+    strongs   TEXT NOT NULL,
+    book      TEXT NOT NULL,
+    count     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (module_id, strongs, book)
+);
+
+CREATE TABLE IF NOT EXISTS presentation_themes (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    background_color TEXT NOT NULL DEFAULT '#000000',
+    background_gradient TEXT,
+    text_color TEXT NOT NULL DEFAULT '#ffffff',
+    reference_color TEXT NOT NULL DEFAULT '#b8c4d8',
+    font_family TEXT NOT NULL DEFAULT 'system',
+    text_align TEXT NOT NULL DEFAULT 'center',
+    font_scale REAL NOT NULL DEFAULT 1,
+    safe_margin INTEGER NOT NULL DEFAULT 5,
+    text_shadow INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"#;
+
+/// v3: strongs_counts were built with old OSIS parser (raw Greek word keys).
+/// Clear the table and force all modules to re-index so counts get rebuilt
+/// with correct G-/H-prefixed Strong's number keys.
+const SCHEMA_V3_STRONGS_RESET: &str = r#"
+DELETE FROM strongs_counts;
+UPDATE installed_modules SET index_built = 0;
+"#;
+
+/// v5: KJV OSIS phrases can contain more than one Strong's number. Earlier
+/// indexes kept only the first, which both hid valid concordance entries and
+/// made their per-book usage counts incomplete. Rebuild all module indexes.
+const SCHEMA_V5_STRONGS_MULTIPLE_KEYS_RESET: &str = r#"
+DELETE FROM strongs_counts;
+UPDATE installed_modules SET index_built = 0;
+"#;
+
+/// v6: reusable presentation themes replace one-off presentation styling.
+const SCHEMA_V6_PRESENTATION_THEMES: &str = r#"
+CREATE TABLE IF NOT EXISTS presentation_themes (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    background_color TEXT NOT NULL DEFAULT '#000000',
+    background_gradient TEXT,
+    text_color TEXT NOT NULL DEFAULT '#ffffff',
+    reference_color TEXT NOT NULL DEFAULT '#b8c4d8',
+    font_family TEXT NOT NULL DEFAULT 'system',
+    text_align TEXT NOT NULL DEFAULT 'center',
+    font_scale REAL NOT NULL DEFAULT 1,
+    safe_margin INTEGER NOT NULL DEFAULT 5,
+    text_shadow INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+INSERT OR IGNORE INTO presentation_themes (
+    id, name, background_color, background_gradient, text_color, reference_color,
+    font_family, text_align, font_scale, safe_margin, text_shadow, is_default
+) VALUES (
+    'builtin-midnight', 'Midnight Scripture', '#000000',
+    'linear-gradient(145deg, #07111e 0%, #000000 55%, #102a25 100%)',
+    '#ffffff', '#b8c4d8', 'system', 'center', 1, 5, 1, 1
+);
+"#;
+
+/// v7: verse and reference labels have independently editable typography.
+const SCHEMA_V7_PRESENTATION_THEME_TYPOGRAPHY: &str = r#"
+ALTER TABLE presentation_themes ADD COLUMN text_font_weight INTEGER NOT NULL DEFAULT 600;
+ALTER TABLE presentation_themes ADD COLUMN reference_font_scale REAL NOT NULL DEFAULT 1;
+ALTER TABLE presentation_themes ADD COLUMN reference_font_weight INTEGER NOT NULL DEFAULT 500;
+"#;
+
+/// v8: reference labels can be positioned around the verse block.
+const SCHEMA_V8_PRESENTATION_THEME_REFERENCE_POSITION: &str = r#"
+ALTER TABLE presentation_themes ADD COLUMN reference_position TEXT NOT NULL DEFAULT 'bottom-center';
+"#;
+
+/// v9: flexible output boxes, automatic fitting, and change transitions.
+const SCHEMA_V9_PRESENTATION_THEME_LAYOUT: &str = r#"
+ALTER TABLE presentation_themes ADD COLUMN verse_box_x REAL NOT NULL DEFAULT 10;
+ALTER TABLE presentation_themes ADD COLUMN verse_box_y REAL NOT NULL DEFAULT 24;
+ALTER TABLE presentation_themes ADD COLUMN verse_box_width REAL NOT NULL DEFAULT 80;
+ALTER TABLE presentation_themes ADD COLUMN verse_box_height REAL NOT NULL DEFAULT 48;
+ALTER TABLE presentation_themes ADD COLUMN reference_box_x REAL NOT NULL DEFAULT 10;
+ALTER TABLE presentation_themes ADD COLUMN reference_box_y REAL NOT NULL DEFAULT 76;
+ALTER TABLE presentation_themes ADD COLUMN reference_box_width REAL NOT NULL DEFAULT 80;
+ALTER TABLE presentation_themes ADD COLUMN reference_box_height REAL NOT NULL DEFAULT 10;
+ALTER TABLE presentation_themes ADD COLUMN auto_layout INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE presentation_themes ADD COLUMN min_font_scale REAL NOT NULL DEFAULT 0.65;
+ALTER TABLE presentation_themes ADD COLUMN transition_type TEXT NOT NULL DEFAULT 'fade';
+ALTER TABLE presentation_themes ADD COLUMN transition_duration INTEGER NOT NULL DEFAULT 300;
+"#;
+
+/// v10: individual service items can inherit a theme and override only the
+/// properties they need (stored as sparse JSON for forward compatibility).
+const SCHEMA_V10_SERVICE_ITEM_PRESENTATION_OVERRIDES: &str = r#"
+ALTER TABLE service_order_items ADD COLUMN presentation_override TEXT;
+"#;
+
+/// v11: which lexicon source the Strong's sheet opens to by default — "ours"
+/// (bundled bare Strong's), "rich" (BDB/Abbott-Smith), or "lsj" (full LSJ,
+/// Greek only — falls back to "rich" for Hebrew words). The sheet's pill
+/// switcher can still override per-lookup regardless of this default.
+const SCHEMA_V11_DEFAULT_LEXICON_SOURCE: &str = r#"
+ALTER TABLE preferences ADD COLUMN default_lexicon_source TEXT NOT NULL DEFAULT 'ours';
+"#;
+
+/// v12: separates "is this theme currently applied?" from "is this theme
+/// the app's permanent built-in one?" — previously `is_default` alone
+/// gated delete-protection, so a personal theme temporarily became
+/// undeletable the moment a user picked "Make default" for it, which read
+/// as their own theme going "global" instead of staying personal. Only
+/// the seeded Midnight theme should ever be un-deletable.
+const SCHEMA_V12_PRESENTATION_THEME_BUILTIN_FLAG: &str = r#"
+ALTER TABLE presentation_themes ADD COLUMN is_builtin INTEGER NOT NULL DEFAULT 0;
+UPDATE presentation_themes SET is_builtin = 1 WHERE id = 'builtin-midnight';
+"#;
+
+/// v13: which persona the app is set up for — "study" is the e-Sword-style
+/// Bible study experience alone (reading, lexicons, commentary, notes);
+/// "presentation" adds the EasyWorship-style live-show tools on top
+/// (service queue, Live Show console, presentation themes). Study mode
+/// genuinely doesn't expose presentation features, not just deprioritizes
+/// them — see the frontend's workspace-gated UI (SideNav, ReadingView,
+/// TopBar, useReadingShortcuts) for where that's enforced.
+const SCHEMA_V13_WORKSPACE: &str = r#"
+ALTER TABLE preferences ADD COLUMN workspace TEXT NOT NULL DEFAULT 'study';
+"#;
+
+/// v14: operator-side verse splitting — long verses can be broken into
+/// labelled parts (a, b, c…) so each part fits the presentation screen
+/// at the configured font size without excessive auto-shrinking.
+const SCHEMA_V14_SPLIT_LONG_VERSES: &str = r#"
+ALTER TABLE preferences ADD COLUMN split_long_verses INTEGER NOT NULL DEFAULT 0;
+"#;
+
+const SCHEMA_V15_SCROLL_V_PADDING: &str = r#"
+ALTER TABLE presentation_themes ADD COLUMN scroll_v_padding INTEGER NOT NULL DEFAULT 32;
+"#;
+
+/// v16: app accent colour preset (the app's "primary" hue). Existing installs
+/// keep the original indigo.
+const SCHEMA_V16_ACCENT: &str = r#"
+ALTER TABLE preferences ADD COLUMN accent TEXT NOT NULL DEFAULT 'indigo';
+"#;
+
+/// v17: live-output text styling moves from the global display preferences into
+/// the theme (font size, line spacing, letter spacing), and themes gain a
+/// picture background and a verse-box fill (lower thirds). Existing themes are
+/// seeded from the current preferences so the live output looks the same after
+/// upgrading; from then on Settings only affects reading text.
+const SCHEMA_V17_THEME_LIVE_TEXT_AND_MEDIA: &str = r#"
+ALTER TABLE presentation_themes ADD COLUMN font_size REAL NOT NULL DEFAULT 56;
+ALTER TABLE presentation_themes ADD COLUMN line_spacing REAL NOT NULL DEFAULT 0.3;
+ALTER TABLE presentation_themes ADD COLUMN letter_spacing REAL NOT NULL DEFAULT 0;
+ALTER TABLE presentation_themes ADD COLUMN background_image TEXT;
+ALTER TABLE presentation_themes ADD COLUMN background_image_dim REAL NOT NULL DEFAULT 0.35;
+ALTER TABLE presentation_themes ADD COLUMN verse_box_fill TEXT;
+UPDATE presentation_themes SET
+    font_size = COALESCE((SELECT font_size_reading FROM preferences LIMIT 1), 56),
+    line_spacing = COALESCE((SELECT line_spacing FROM preferences LIMIT 1), 0.3),
+    letter_spacing = COALESCE((SELECT letter_spacing FROM preferences LIMIT 1), 0);
+"#;
+
+/// v18: two more built-in themes alongside Midnight — a chroma-key lower
+/// third and a picture background (a bundled dusk landscape, as an SVG data
+/// URL; users replace it with their own photo by duplicating the theme).
+/// Built-in themes can't be deleted or edited in place, only duplicated.
+const SCHEMA_V18_BUILTIN_PRESET_THEMES: &str = r#"
+INSERT OR IGNORE INTO presentation_themes (
+    id, name, background_color, background_gradient, text_color, reference_color,
+    font_family, text_align, font_scale, safe_margin, text_shadow, is_default,
+    text_font_weight, reference_font_scale, reference_font_weight, reference_position,
+    verse_box_x, verse_box_y, verse_box_width, verse_box_height,
+    reference_box_x, reference_box_y, reference_box_width, reference_box_height,
+    auto_layout, min_font_scale, transition_type, transition_duration, is_builtin,
+    scroll_v_padding, font_size, line_spacing, letter_spacing,
+    background_image, background_image_dim, verse_box_fill
+) VALUES (
+    'builtin-lower-third', 'Lower Third', '#00b140', NULL, '#ffffff', '#ffffff',
+    'system', 'left', 1, 4, 0, 0,
+    700, 0.9, 700, 'top-left',
+    4, 78, 92, 16,
+    4, 71, 34, 6,
+    1, 0.6, 'fade', 250, 1,
+    32, 44, 0.3, 0,
+    NULL, 0.35, 'rgba(11, 18, 32, 0.92)'
+);
+
+INSERT OR IGNORE INTO presentation_themes (
+    id, name, background_color, background_gradient, text_color, reference_color,
+    font_family, text_align, font_scale, safe_margin, text_shadow, is_default,
+    text_font_weight, reference_font_scale, reference_font_weight, reference_position,
+    verse_box_x, verse_box_y, verse_box_width, verse_box_height,
+    reference_box_x, reference_box_y, reference_box_width, reference_box_height,
+    auto_layout, min_font_scale, transition_type, transition_duration, is_builtin,
+    scroll_v_padding, font_size, line_spacing, letter_spacing,
+    background_image, background_image_dim, verse_box_fill
+) VALUES (
+    'builtin-picture', 'Dusk Landscape', '#0b1b3a', NULL, '#ffffff', '#f2e4cf',
+    'system', 'center', 1, 5, 1, 0,
+    700, 1, 500, 'bottom-center',
+    10, 24, 80, 48,
+    10, 76, 80, 10,
+    1, 1, 'fade', 300, 1,
+    32, 64, 0.3, 0,
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIwIDEwODAiIHByZXNlcnZlQXNwZWN0UmF0aW89InhNaWRZTWlkIHNsaWNlIj4KPGRlZnM+CjxsaW5lYXJHcmFkaWVudCBpZD0ic2t5IiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjMGIxYjNhIi8+PHN0b3Agb2Zmc2V0PSIuNDUiIHN0b3AtY29sb3I9IiMzYjNmN2EiLz48c3RvcCBvZmZzZXQ9Ii43MiIgc3RvcC1jb2xvcj0iI2Q5OGE2YSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2YyYzY4YSIvPjwvbGluZWFyR3JhZGllbnQ+CjxyYWRpYWxHcmFkaWVudCBpZD0ic3VuIiBjeD0iLjUiIGN5PSIuNSIgcj0iLjUiPjxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI2ZmZjNkNiIgc3RvcC1vcGFjaXR5PSIuOTUiLz48c3RvcCBvZmZzZXQ9Ii4zNSIgc3RvcC1jb2xvcj0iI2ZmZDU5YSIgc3RvcC1vcGFjaXR5PSIuNTUiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNmZmQ1OWEiIHN0b3Atb3BhY2l0eT0iMCIvPjwvcmFkaWFsR3JhZGllbnQ+CjxsaW5lYXJHcmFkaWVudCBpZD0iZmFyIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNGE0YTdkIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMmEyYTUyIi8+PC9saW5lYXJHcmFkaWVudD4KPGxpbmVhckdyYWRpZW50IGlkPSJtaWQiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMyYzMxNTgiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMxNjFhMzgiLz48L2xpbmVhckdyYWRpZW50Pgo8bGluZWFyR3JhZGllbnQgaWQ9Im5lYXIiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMxNTFhMzMiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwNzBhMTgiLz48L2xpbmVhckdyYWRpZW50Pgo8L2RlZnM+CjxyZWN0IHdpZHRoPSIxOTIwIiBoZWlnaHQ9IjEwODAiIGZpbGw9InVybCgjc2t5KSIvPgo8Y2lyY2xlIGN4PSIxMjgwIiBjeT0iNzAwIiByPSI0MjAiIGZpbGw9InVybCgjc3VuKSIvPgo8cGF0aCBkPSJNMCA3NjAgTDIwMCA2MjAgTDM2MCA3MDAgTDU2MCA1NDAgTDc2MCA2OTAgTDk4MCA2MDAgTDEyMDAgNzIwIEwxNDIwIDU5MCBMMTY0MCA3MDAgTDE5MjAgNjIwIEwxOTIwIDEwODAgTDAgMTA4MFoiIGZpbGw9InVybCgjZmFyKSIvPgo8cGF0aCBkPSJNMCA4NjAgTDI2MCA3NDAgTDQ2MCA4MjAgTDcwMCA3MDAgTDk0MCA4MzAgTDExODAgNzYwIEwxNDQwIDg1MCBMMTcwMCA3NTAgTDE5MjAgODIwIEwxOTIwIDEwODAgTDAgMTA4MFoiIGZpbGw9InVybCgjbWlkKSIvPgo8cGF0aCBkPSJNMCA5NjAgTDMyMCA4ODAgTDYyMCA5NDAgTDk0MCA4NzAgTDEyNjAgOTUwIEwxNTYwIDg5MCBMMTkyMCA5NTAgTDE5MjAgMTA4MCBMMCAxMDgwWiIgZmlsbD0idXJsKCNuZWFyKSIvPgo8L3N2Zz4=', 0.4, NULL
+);
+"#;
+
+/// v19: themes can play a looping video behind the text. Only the file name is
+/// stored; the file itself lives in the app's media folder (see commands/media.rs).
+const SCHEMA_V19_THEME_BACKGROUND_VIDEO: &str = r#"
+ALTER TABLE presentation_themes ADD COLUMN background_video TEXT;
+"#;
+
+/// v20: cloud sync state tracking and stable UUIDs across devices
+const SCHEMA_V20_SYNC_STATE: &str = r#"
+CREATE TABLE IF NOT EXISTS sync_state (
+    collection TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    dirty INTEGER NOT NULL DEFAULT 1,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (collection, record_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_state_dirty ON sync_state(dirty);
+
+-- Stable UUIDs for tables with autoincrement primary keys
+ALTER TABLE bookmarks ADD COLUMN sync_uuid TEXT;
+UPDATE bookmarks SET sync_uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-a' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))) WHERE sync_uuid IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bookmarks_sync_uuid ON bookmarks(sync_uuid);
+
+ALTER TABLE notes ADD COLUMN sync_uuid TEXT;
+UPDATE notes SET sync_uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-a' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))) WHERE sync_uuid IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_sync_uuid ON notes(sync_uuid);
+
+ALTER TABLE search_history ADD COLUMN sync_uuid TEXT;
+UPDATE search_history SET sync_uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-a' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))) WHERE sync_uuid IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_search_history_sync_uuid ON search_history(sync_uuid);
+
+-- Change triggers for bookmarks
+CREATE TRIGGER IF NOT EXISTS trg_bookmarks_sync_insert
+AFTER INSERT ON bookmarks
+WHEN NEW.sync_uuid IS NOT NULL
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('bookmarks', NEW.sync_uuid, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_bookmarks_sync_update
+AFTER UPDATE ON bookmarks
+WHEN NEW.sync_uuid IS NOT NULL
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('bookmarks', NEW.sync_uuid, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_bookmarks_sync_delete
+AFTER DELETE ON bookmarks
+WHEN OLD.sync_uuid IS NOT NULL
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('bookmarks', OLD.sync_uuid, 1, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 1, updated_at = excluded.updated_at;
+END;
+
+-- Change triggers for notes
+CREATE TRIGGER IF NOT EXISTS trg_notes_sync_insert
+AFTER INSERT ON notes
+WHEN NEW.sync_uuid IS NOT NULL
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('notes', NEW.sync_uuid, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_notes_sync_update
+AFTER UPDATE ON notes
+WHEN NEW.sync_uuid IS NOT NULL
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('notes', NEW.sync_uuid, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_notes_sync_delete
+AFTER DELETE ON notes
+WHEN OLD.sync_uuid IS NOT NULL
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('notes', OLD.sync_uuid, 1, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 1, updated_at = excluded.updated_at;
+END;
+
+-- Change triggers for search_history
+CREATE TRIGGER IF NOT EXISTS trg_search_history_sync_insert
+AFTER INSERT ON search_history
+WHEN NEW.sync_uuid IS NOT NULL
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('search_history', NEW.sync_uuid, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_search_history_sync_update
+AFTER UPDATE ON search_history
+WHEN NEW.sync_uuid IS NOT NULL
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('search_history', NEW.sync_uuid, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_search_history_sync_delete
+AFTER DELETE ON search_history
+WHEN OLD.sync_uuid IS NOT NULL
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('search_history', OLD.sync_uuid, 1, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 1, updated_at = excluded.updated_at;
+END;
+
+-- Change triggers for service_order_items
+CREATE TRIGGER IF NOT EXISTS trg_service_order_items_sync_insert
+AFTER INSERT ON service_order_items
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('service_order_items', NEW.id, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_service_order_items_sync_update
+AFTER UPDATE ON service_order_items
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('service_order_items', NEW.id, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_service_order_items_sync_delete
+AFTER DELETE ON service_order_items
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('service_order_items', OLD.id, 1, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 1, updated_at = excluded.updated_at;
+END;
+
+-- Change triggers for presentation_themes (custom themes only, is_builtin = 0)
+CREATE TRIGGER IF NOT EXISTS trg_presentation_themes_sync_insert
+AFTER INSERT ON presentation_themes
+WHEN NEW.is_builtin = 0
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('presentation_themes', NEW.id, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_presentation_themes_sync_update
+AFTER UPDATE ON presentation_themes
+WHEN NEW.is_builtin = 0
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('presentation_themes', NEW.id, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_presentation_themes_sync_delete
+AFTER DELETE ON presentation_themes
+WHEN OLD.is_builtin = 0
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('presentation_themes', OLD.id, 1, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 1, updated_at = excluded.updated_at;
+END;
+
+-- Change triggers for reading_position
+CREATE TRIGGER IF NOT EXISTS trg_reading_position_sync_insert
+AFTER INSERT ON reading_position
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('reading_position', 'singleton', 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_reading_position_sync_update
+AFTER UPDATE ON reading_position
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('reading_position', 'singleton', 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+-- Change triggers for preferences
+CREATE TRIGGER IF NOT EXISTS trg_preferences_sync_insert
+AFTER INSERT ON preferences
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('preferences', 'singleton', 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_preferences_sync_update
+AFTER UPDATE ON preferences
+BEGIN
+    INSERT INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    VALUES ('preferences', 'singleton', 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(collection, record_id) DO UPDATE SET dirty = 1, deleted = 0, updated_at = excluded.updated_at;
+END;
+
+-- Initial sync seeding for existing records
+INSERT OR IGNORE INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    SELECT 'bookmarks', sync_uuid, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now') FROM bookmarks WHERE sync_uuid IS NOT NULL;
+INSERT OR IGNORE INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    SELECT 'notes', sync_uuid, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now') FROM notes WHERE sync_uuid IS NOT NULL;
+INSERT OR IGNORE INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    SELECT 'search_history', sync_uuid, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now') FROM search_history WHERE sync_uuid IS NOT NULL;
+INSERT OR IGNORE INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    SELECT 'service_order_items', id, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now') FROM service_order_items;
+INSERT OR IGNORE INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    SELECT 'presentation_themes', id, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now') FROM presentation_themes WHERE is_builtin = 0;
+INSERT OR IGNORE INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    SELECT 'reading_position', 'singleton', 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now') FROM reading_position;
+INSERT OR IGNORE INTO sync_state (collection, record_id, dirty, deleted, updated_at)
+    SELECT 'preferences', 'singleton', 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now') FROM preferences;
+"#;
+
+/// Upper bound on a stored background picture (a downscaled JPEG data URL is
+/// normally a few hundred KB) so a bad client can't bloat the database.
+const MAX_BACKGROUND_IMAGE_BYTES: usize = 6 * 1024 * 1024;
+
+fn validated_theme_media(
+    input: &PresentationThemeInput,
+) -> Result<(Option<String>, Option<String>, Option<String>)> {
+    let image = input
+        .background_image
+        .clone()
+        .filter(|s| !s.trim().is_empty());
+    if let Some(data) = &image {
+        if !data.starts_with("data:image/") {
+            return Err(AppError::Other(
+                "background image must be an image data URL".into(),
+            ));
+        }
+        if data.len() > MAX_BACKGROUND_IMAGE_BYTES {
+            return Err(AppError::Other("background image is too large".into()));
+        }
+    }
+    let fill = input
+        .verse_box_fill
+        .clone()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    if fill.as_ref().is_some_and(|f| f.len() > 64) {
+        return Err(AppError::Other(
+            "verse box fill is not a valid colour".into(),
+        ));
+    }
+    let video = input
+        .background_video
+        .clone()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    if let Some(name) = &video {
+        if !crate::commands::is_valid_media_name(name) {
+            return Err(AppError::Other(
+                "background video is not a valid media file".into(),
+            ));
+        }
+    }
+    Ok((image, fill, video))
+}
+
+fn presentation_theme_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PresentationTheme> {
+    Ok(PresentationTheme {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        background_color: row.get(2)?,
+        background_gradient: row.get(3)?,
+        text_color: row.get(4)?,
+        reference_color: row.get(5)?,
+        font_family: row.get(6)?,
+        text_align: row.get(7)?,
+        font_scale: row.get(8)?,
+        text_font_weight: row.get(9)?,
+        reference_font_scale: row.get(10)?,
+        reference_font_weight: row.get(11)?,
+        safe_margin: row.get(12)?,
+        text_shadow: row.get(13)?,
+        reference_position: row.get(14)?,
+        verse_box_x: row.get(15)?,
+        verse_box_y: row.get(16)?,
+        verse_box_width: row.get(17)?,
+        verse_box_height: row.get(18)?,
+        reference_box_x: row.get(19)?,
+        reference_box_y: row.get(20)?,
+        reference_box_width: row.get(21)?,
+        reference_box_height: row.get(22)?,
+        auto_layout: row.get(23)?,
+        min_font_scale: row.get(24)?,
+        transition_type: row.get(25)?,
+        transition_duration: row.get(26)?,
+        scroll_v_padding: row.get::<_, Option<u32>>(27)?.unwrap_or(32),
+        font_size: row.get(28)?,
+        line_spacing: row.get(29)?,
+        letter_spacing: row.get(30)?,
+        background_image: row.get(31)?,
+        background_image_dim: row.get(32)?,
+        verse_box_fill: row.get(33)?,
+        background_video: row.get(34)?,
+        is_default: row.get(35)?,
+        is_builtin: row.get(36)?,
+        created_at: row.get(37)?,
+        updated_at: row.get(38)?,
+    })
+}
+
+/// FTS migration v2: switch from 'porter ascii' to 'unicode61' so that prefix
+/// queries (e.g. "lov*") work predictably — unicode61 just case-folds tokens,
+/// no stemming, so "lov*" reliably matches "loved", "loves", "loveth", etc.
+/// Drops the old table, recreates it, and resets index_built so every module
+/// gets re-indexed on the next startup.
+const SCHEMA_FTS_V2: &str = r#"
+DROP TABLE IF EXISTS verse_fts;
+CREATE VIRTUAL TABLE verse_fts USING fts5(
+    module_id UNINDEXED,
+    book UNINDEXED,
+    chapter UNINDEXED,
+    verse UNINDEXED,
+    content,
+    tokenize = 'unicode61'
+);
+UPDATE installed_modules SET index_built = 0;
+"#;
+
+/// v4: consolidates browser localStorage into SQLite so the app has one
+/// persistence contract instead of two. Adds the study-panel-visibility and
+/// display/typography columns preferences was missing, plus tables for search
+/// history and the service order — both used to live only in localStorage,
+/// with no migrations, validation, or transactional writes, and silently
+/// swallowed errors on quota/write failure. app_meta is a general-purpose
+/// key/value table; its first use is the one-time-import marker (see
+/// Database::import_legacy_local_storage) — that marker is data, not a schema
+/// version, so it doesn't belong in PRAGMA user_version.
+const SCHEMA_V4_CONSOLIDATE_STORAGE: &str = r#"
+ALTER TABLE preferences ADD COLUMN show_commentary INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE preferences ADD COLUMN show_notes INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE preferences ADD COLUMN show_cross_refs INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE preferences ADD COLUMN show_red_letter INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE preferences ADD COLUMN font_family TEXT NOT NULL DEFAULT 'system';
+ALTER TABLE preferences ADD COLUMN text_align TEXT NOT NULL DEFAULT 'left';
+ALTER TABLE preferences ADD COLUMN margins INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE preferences ADD COLUMN line_spacing REAL NOT NULL DEFAULT 0.6;
+ALTER TABLE preferences ADD COLUMN letter_spacing REAL NOT NULL DEFAULT 0;
+ALTER TABLE preferences ADD COLUMN strongs_sheet_height INTEGER NOT NULL DEFAULT 360;
+ALTER TABLE preferences ADD COLUMN presentation_context INTEGER NOT NULL DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS search_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    ref_book TEXT,
+    ref_chapter INTEGER,
+    ref_verse INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS service_order_items (
+    id TEXT PRIMARY KEY,
+    book TEXT NOT NULL,
+    chapter INTEGER NOT NULL,
+    verse INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    module TEXT NOT NULL,
+    position INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{
+        LegacyDisplayPrefs, LegacyLocalStorageImport, LegacySearchHistoryEntry, LegacyStudyUi,
+        LegacyVerseRef, Preferences, ReadingPosition, ServiceOrderItem,
+    };
+
+    /// Each test gets its own on-disk file — WAL mode needs a real file, not
+    /// `:memory:`, and a unique name per test avoids cross-test interference
+    /// when tests run in parallel (the default for `cargo test`).
+    fn temp_db(name: &str) -> (Database, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!(
+            "scriptura-test-db-{name}-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let db = Database::open(&path).expect("open temp db");
+        (db, path)
+    }
+
+    fn cleanup(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn preferences_round_trip_and_defaults() {
+        let (db, path) = temp_db("prefs");
+
+        // No row yet — falls back to Preferences::default() rather than erroring.
+        let defaults = db.get_preferences().unwrap();
+        assert_eq!(defaults.theme, Preferences::default().theme);
+        assert_eq!(defaults.accent, "ink");
+
+        db.update_preferences(&serde_json::json!({
+            "theme": "dark",
+            "font_size_reading": 22,
+            "show_strongs": false,
+        }))
+        .unwrap();
+
+        let loaded = db.get_preferences().unwrap();
+        assert_eq!(loaded.theme, "dark");
+        assert_eq!(loaded.font_size_reading, 22);
+        assert!(!loaded.show_strongs);
+
+        // The accent colour persists and a later patch for other fields keeps it.
+        db.update_preferences(&serde_json::json!({ "accent": "teal" }))
+            .unwrap();
+        db.update_preferences(&serde_json::json!({ "show_notes": false }))
+            .unwrap();
+        assert_eq!(db.get_preferences().unwrap().accent, "teal");
+
+        // A second, disjoint patch shouldn't clobber fields the first patch set —
+        // this is exactly the read-modify-write correctness update_preferences
+        // replaced the old two-call get/set_preferences pattern to guarantee.
+        db.update_preferences(&serde_json::json!({ "show_morph": true }))
+            .unwrap();
+        let loaded2 = db.get_preferences().unwrap();
+        assert_eq!(loaded2.theme, "dark");
+        assert_eq!(loaded2.font_size_reading, 22);
+        assert!(loaded2.show_morph);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn presentation_theme_live_text_and_media_round_trip_and_validate() {
+        let (db, path) = temp_db("presentation-theme-media");
+        let base = db.list_presentation_themes().unwrap().remove(0);
+        assert!(base.font_size >= 12.0, "migration seeds a usable font size");
+
+        let make =
+            |image: Option<&str>, fill: Option<&str>, video: Option<&str>| PresentationThemeInput {
+                name: "Media".into(),
+                background_color: "#000000".into(),
+                background_gradient: None,
+                text_color: "#ffffff".into(),
+                reference_color: "#b8c4d8".into(),
+                font_family: "system".into(),
+                text_align: "left".into(),
+                font_scale: 1.0,
+                text_font_weight: 600,
+                reference_font_scale: 1.0,
+                reference_font_weight: 500,
+                safe_margin: 5,
+                text_shadow: true,
+                reference_position: "bottom-left".into(),
+                verse_box_x: 5.0,
+                verse_box_y: 76.0,
+                verse_box_width: 90.0,
+                verse_box_height: 17.0,
+                reference_box_x: 5.0,
+                reference_box_y: 69.0,
+                reference_box_width: 30.0,
+                reference_box_height: 6.0,
+                auto_layout: true,
+                min_font_scale: 0.65,
+                transition_type: "fade".into(),
+                transition_duration: 300,
+                scroll_v_padding: 32,
+                font_size: 900.0, // out of range: must clamp
+                line_spacing: 0.5,
+                letter_spacing: 0.2,
+                background_image: image.map(String::from),
+                background_image_dim: 5.0, // out of range: must clamp
+                verse_box_fill: fill.map(String::from),
+                background_video: video.map(String::from),
+            };
+
+        let created = db
+            .create_presentation_theme(&make(
+                Some("data:image/jpeg;base64,AAAA"),
+                Some(" rgba(0,0,0,.8) "),
+                Some("bg-1730000000000.mp4"),
+            ))
+            .unwrap();
+        assert_eq!(
+            created.background_image.as_deref(),
+            Some("data:image/jpeg;base64,AAAA")
+        );
+        assert_eq!(created.verse_box_fill.as_deref(), Some("rgba(0,0,0,.8)"));
+        assert_eq!(
+            created.background_video.as_deref(),
+            Some("bg-1730000000000.mp4")
+        );
+        assert_eq!(created.font_size, 300.0);
+        assert_eq!(created.background_image_dim, 0.9);
+        assert_eq!(created.line_spacing, 0.5);
+
+        // Clearing the picture and fill persists as NULL.
+        let cleared = db
+            .update_presentation_theme(&created.id, &make(None, Some("  "), None))
+            .unwrap();
+        assert!(cleared.background_image.is_none());
+        assert!(cleared.verse_box_fill.is_none());
+        assert!(cleared.background_video.is_none());
+
+        // Video names must be ones the media folder generated (no paths).
+        assert!(db
+            .create_presentation_theme(&make(None, None, Some("../../etc/passwd")))
+            .is_err());
+
+        // Only image data URLs are accepted.
+        assert!(db
+            .create_presentation_theme(&make(Some("https://example.com/a.png"), None, None))
+            .is_err());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn presentation_themes_have_a_default_and_support_crud() {
+        let (db, path) = temp_db("presentation-themes");
+        let initial = db.list_presentation_themes().unwrap();
+        assert_eq!(initial.iter().filter(|theme| theme.is_default).count(), 1);
+
+        let input = PresentationThemeInput {
+            name: "Lower third".into(),
+            background_color: "#102030".into(),
+            background_gradient: None,
+            text_color: "#ffffff".into(),
+            reference_color: "#aabbcc".into(),
+            font_family: "serif".into(),
+            text_align: "left".into(),
+            font_scale: 1.15,
+            text_font_weight: 700,
+            reference_font_scale: 1.1,
+            reference_font_weight: 600,
+            safe_margin: 8,
+            text_shadow: true,
+            reference_position: "bottom-left".into(),
+            verse_box_x: 12.0,
+            verse_box_y: 20.0,
+            verse_box_width: 76.0,
+            verse_box_height: 50.0,
+            reference_box_x: 12.0,
+            reference_box_y: 74.0,
+            reference_box_width: 76.0,
+            reference_box_height: 10.0,
+            auto_layout: true,
+            min_font_scale: 0.7,
+            transition_type: "slide".into(),
+            transition_duration: 450,
+            scroll_v_padding: 32,
+            font_size: 56.0,
+            line_spacing: 0.3,
+            letter_spacing: 0.0,
+            background_image: None,
+            background_image_dim: 0.35,
+            verse_box_fill: None,
+            background_video: None,
+        };
+        let created = db.create_presentation_theme(&input).unwrap();
+        assert_eq!(created.name, "Lower third");
+        assert_eq!(created.transition_type, "slide");
+        assert_eq!(created.verse_box_width, 76.0);
+
+        let defaulted = db.set_default_presentation_theme(&created.id).unwrap();
+        assert!(defaulted.is_default);
+        assert!(!defaulted.is_builtin);
+
+        let updated = db
+            .update_presentation_theme(
+                &created.id,
+                &PresentationThemeInput {
+                    name: "Sermon lower third".into(),
+                    ..input
+                },
+            )
+            .unwrap();
+        assert_eq!(updated.name, "Sermon lower third");
+
+        // Being the currently-active theme does not protect it from
+        // deletion — only the built-in Midnight theme is permanent. A
+        // personal theme stays personal (deletable) even while active.
+        assert!(db.delete_presentation_theme(&created.id).is_ok());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn deleting_the_active_personal_theme_falls_back_default_to_midnight() {
+        let (db, path) = temp_db("presentation-theme-active-delete");
+        let input = PresentationThemeInput {
+            name: "On-screen".into(),
+            background_color: "#102030".into(),
+            background_gradient: None,
+            text_color: "#ffffff".into(),
+            reference_color: "#aabbcc".into(),
+            font_family: "serif".into(),
+            text_align: "left".into(),
+            font_scale: 1.0,
+            text_font_weight: 700,
+            reference_font_scale: 1.0,
+            reference_font_weight: 600,
+            safe_margin: 8,
+            text_shadow: true,
+            reference_position: "bottom-left".into(),
+            verse_box_x: 12.0,
+            verse_box_y: 20.0,
+            verse_box_width: 76.0,
+            verse_box_height: 50.0,
+            reference_box_x: 12.0,
+            reference_box_y: 74.0,
+            reference_box_width: 76.0,
+            reference_box_height: 10.0,
+            auto_layout: true,
+            min_font_scale: 0.7,
+            transition_type: "slide".into(),
+            transition_duration: 450,
+            scroll_v_padding: 32,
+            font_size: 56.0,
+            line_spacing: 0.3,
+            letter_spacing: 0.0,
+            background_image: None,
+            background_image_dim: 0.35,
+            verse_box_fill: None,
+            background_video: None,
+        };
+        let created = db.create_presentation_theme(&input).unwrap();
+        db.set_default_presentation_theme(&created.id).unwrap();
+
+        db.delete_presentation_theme(&created.id).unwrap();
+
+        // Midnight must have picked up is_default again (not the other
+        // built-ins) — every reader (this list's own ordering, the
+        // frontend's activePresentationTheme hydration) assumes there's
+        // always exactly one default theme.
+        let remaining = db.list_presentation_themes().unwrap();
+        assert_eq!(remaining.len(), 3);
+        assert!(remaining.iter().all(|t| t.is_builtin));
+        assert_eq!(remaining.iter().filter(|t| t.is_default).count(), 1);
+        let default = remaining.iter().find(|t| t.is_default).unwrap();
+        assert_eq!(default.id, "builtin-midnight");
+
+        // The built-in themes themselves are still permanent.
+        for t in &remaining {
+            assert!(db.delete_presentation_theme(&t.id).is_err());
+        }
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn built_in_lower_third_and_picture_themes_are_seeded() {
+        let (db, path) = temp_db("builtin-presets");
+        let themes = db.list_presentation_themes().unwrap();
+        let get = |id: &str| {
+            themes
+                .iter()
+                .find(|t| t.id == id)
+                .unwrap_or_else(|| panic!("{id} missing"))
+        };
+
+        let lower = get("builtin-lower-third");
+        assert!(lower.is_builtin && !lower.is_default);
+        // A lower third is a filled bar in the bottom fifth of the frame.
+        assert!(lower.verse_box_fill.is_some());
+        assert!(lower.verse_box_y >= 70.0 && lower.verse_box_y + lower.verse_box_height <= 100.0);
+        assert_eq!(lower.background_color, "#00b140");
+
+        let picture = get("builtin-picture");
+        assert!(picture.is_builtin && !picture.is_default);
+        let image = picture
+            .background_image
+            .as_deref()
+            .expect("picture theme has an image");
+        assert!(image.starts_with("data:image/svg+xml;base64,"));
+        assert!(image.len() < 20_000, "bundled picture should stay small");
+        assert!(picture.background_image_dim > 0.0);
+
+        // Midnight stays the single default.
+        assert_eq!(themes.iter().filter(|t| t.is_default).count(), 1);
+        assert!(get("builtin-midnight").is_default);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn deleting_a_non_default_presentation_theme_actually_removes_it() {
+        // The CRUD test above only ever exercises delete against the DEFAULT
+        // theme (expected to fail) — it never confirms the success path
+        // actually removes a row. This is that missing coverage, reported by
+        // a user as "I can't delete created themes."
+        let (db, path) = temp_db("presentation-theme-delete");
+        let before = db.list_presentation_themes().unwrap();
+        assert_eq!(before.len(), 3); // the seeded built-ins (Midnight is the default)
+
+        let input = PresentationThemeInput {
+            name: "Custom theme".into(),
+            background_color: "#102030".into(),
+            background_gradient: None,
+            text_color: "#ffffff".into(),
+            reference_color: "#aabbcc".into(),
+            font_family: "serif".into(),
+            text_align: "left".into(),
+            font_scale: 1.0,
+            text_font_weight: 700,
+            reference_font_scale: 1.0,
+            reference_font_weight: 600,
+            safe_margin: 8,
+            text_shadow: true,
+            reference_position: "bottom-left".into(),
+            verse_box_x: 12.0,
+            verse_box_y: 20.0,
+            verse_box_width: 76.0,
+            verse_box_height: 50.0,
+            reference_box_x: 12.0,
+            reference_box_y: 74.0,
+            reference_box_width: 76.0,
+            reference_box_height: 10.0,
+            auto_layout: true,
+            min_font_scale: 0.7,
+            transition_type: "slide".into(),
+            transition_duration: 450,
+            scroll_v_padding: 32,
+            font_size: 56.0,
+            line_spacing: 0.3,
+            letter_spacing: 0.0,
+            background_image: None,
+            background_image_dim: 0.35,
+            verse_box_fill: None,
+            background_video: None,
+        };
+        let created = db.create_presentation_theme(&input).unwrap();
+        assert!(!created.is_default);
+
+        db.delete_presentation_theme(&created.id).unwrap();
+
+        let after = db.list_presentation_themes().unwrap();
+        assert_eq!(after.len(), 3, "the created theme should be gone");
+        assert!(after.iter().all(|t| t.id != created.id));
+
+        // Deleting an id that no longer exists (already gone, or never
+        // existed) must be a real error, not a silent success — otherwise
+        // the frontend's catch-and-report-errors path never fires and a
+        // failed delete looks indistinguishable from a successful one.
+        assert!(db.delete_presentation_theme(&created.id).is_err());
+        assert!(db
+            .delete_presentation_theme("theme-does-not-exist")
+            .is_err());
+
+        cleanup(&path);
+    }
+
+    /// Simulates a real device upgrading from a pre-v4 install: builds a database
+    /// by hand at exactly the v3 schema (the old preferences columns only, no
+    /// search_history/service_order_items/app_meta, user_version=3), writes a
+    /// preferences row through that old schema, then opens it through the real
+    /// Database::open — the same path a genuine upgrade takes — and confirms the
+    /// v4 migration both adds the new columns/tables AND preserves the existing
+    /// row's data rather than wiping it via a naive drop-and-recreate.
+    #[test]
+    fn v4_migration_preserves_existing_data_on_upgrade() {
+        let path = std::env::temp_dir().join(format!(
+            "scriptura-test-db-v3-upgrade-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(SCHEMA_TABLES).unwrap();
+            conn.execute_batch(SCHEMA_FTS_V2).unwrap();
+            conn.execute_batch(SCHEMA_V3_STRONGS_RESET).unwrap();
+            conn.execute(
+                "INSERT INTO preferences (id, theme, font_size_reading, show_strongs, show_morph, verse_display)
+                 VALUES (1, 'dark', 24, 1, 0, 'paragraph')",
+                [],
+            )
+            .unwrap();
+            conn.execute_batch("PRAGMA user_version = 3;").unwrap();
+        }
+
+        // Opening through the real constructor runs the real migrate().
+        let db = Database::open(&path).expect("should migrate v3 -> v4 cleanly");
+
+        let prefs = db.get_preferences().unwrap();
+        // Pre-existing data survived the migration...
+        assert_eq!(prefs.theme, "dark");
+        assert_eq!(prefs.font_size_reading, 24);
+        assert_eq!(prefs.verse_display, "paragraph");
+        // ...and the new v4 columns are present with their defaults, not NULL/error.
+        assert!(prefs.show_commentary);
+        assert_eq!(prefs.font_family, "system");
+        assert_eq!(prefs.strongs_sheet_height, 360);
+
+        // New tables exist and are queryable (would error if the CREATE TABLE
+        // portion of the migration hadn't run).
+        assert_eq!(db.list_search_history().unwrap().len(), 0);
+        assert_eq!(db.list_service_order().unwrap().len(), 0);
+
+        let conn = db.conn();
+        let ver: i32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        // Migrating from v3 should land on whatever the latest migration is,
+        // not a version hardcoded at the time this test was written — that's
+        // what actually broke here when v5 was added later.
+        let latest = Database::migrations().last().unwrap().0;
+        assert_eq!(ver, latest);
+        drop(conn);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn search_history_dedupes_and_caps_at_100() {
+        let (db, path) = temp_db("search-history");
+
+        db.add_search_history_entry("love").unwrap();
+        db.add_search_history_entry("grace").unwrap();
+        // Re-adding an existing query moves it to the top rather than duplicating.
+        db.add_search_history_entry("love").unwrap();
+
+        let history = db.list_search_history().unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].query, "love");
+
+        db.set_last_search_history_ref("John", 3, 16).unwrap();
+        let history = db.list_search_history().unwrap();
+        assert_eq!(history[0].ref_book.as_deref(), Some("John"));
+
+        for i in 0..110 {
+            db.add_search_history_entry(&format!("query-{i}")).unwrap();
+        }
+        assert_eq!(db.list_search_history().unwrap().len(), 100);
+
+        db.clear_search_history().unwrap();
+        assert_eq!(db.list_search_history().unwrap().len(), 0);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn service_order_round_trip_preserves_order() {
+        let (db, path) = temp_db("service-order");
+
+        let items = vec![
+            ServiceOrderItem {
+                id: "a".into(),
+                book: "John".into(),
+                chapter: 3,
+                verse: 16,
+                text: "For God so loved...".into(),
+                module: "KJV".into(),
+                presentation_override: Some(PresentationItemOverride {
+                    font_scale: Some(1.2),
+                    transition_type: Some("slide".into()),
+                    ..Default::default()
+                }),
+            },
+            ServiceOrderItem {
+                id: "b".into(),
+                book: "Genesis".into(),
+                chapter: 1,
+                verse: 1,
+                text: "In the beginning...".into(),
+                module: "KJV".into(),
+                presentation_override: None,
+            },
+        ];
+        db.set_service_order(&items).unwrap();
+
+        let loaded = db.list_service_order().unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].id, "a");
+        assert_eq!(loaded[1].id, "b");
+        assert_eq!(
+            loaded[0]
+                .presentation_override
+                .as_ref()
+                .and_then(|item| item.font_scale),
+            Some(1.2)
+        );
+
+        // Replacing with a reordered list should persist the new order, not append.
+        let reordered = vec![items[1].clone(), items[0].clone()];
+        db.set_service_order(&reordered).unwrap();
+        let loaded = db.list_service_order().unwrap();
+        assert_eq!(loaded[0].id, "b");
+        assert_eq!(loaded[1].id, "a");
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn legacy_import_is_idempotent_and_transactional() {
+        let (db, path) = temp_db("legacy-import");
+
+        assert!(!db.legacy_import_done().unwrap());
+
+        let payload = LegacyLocalStorageImport {
+            search_history: vec![LegacySearchHistoryEntry {
+                query: "faith".into(),
+                timestamp: 1000,
+                selected_ref: Some(LegacyVerseRef {
+                    book: "Hebrews".into(),
+                    chapter: 11,
+                    verse: 1,
+                }),
+            }],
+            service_order: vec![ServiceOrderItem {
+                id: "legacy-1".into(),
+                book: "Psalms".into(),
+                chapter: 23,
+                verse: 1,
+                text: "The LORD is my shepherd".into(),
+                module: "KJV".into(),
+                presentation_override: None,
+            }],
+            display_prefs: Some(LegacyDisplayPrefs {
+                font_family: "serif".into(),
+                text_align: "left".into(),
+                margins: 10,
+                line_spacing: 0.8,
+                letter_spacing: 0.1,
+                strongs_sheet_height: 400,
+                presentation_context: 2,
+            }),
+            study_ui: Some(LegacyStudyUi {
+                show_commentary: false,
+                show_notes: true,
+                show_cross_refs: false,
+                show_red_letter: true,
+            }),
+        };
+
+        db.import_legacy_local_storage(&payload).unwrap();
+        assert!(db.legacy_import_done().unwrap());
+        assert_eq!(db.list_search_history().unwrap().len(), 1);
+        assert_eq!(db.list_service_order().unwrap().len(), 1);
+        let prefs = db.get_preferences().unwrap();
+        assert_eq!(prefs.font_family, "serif");
+        assert!(!prefs.show_commentary);
+
+        // Calling again with different data must be a no-op — the marker already
+        // exists, so nothing should change (this is what makes it safe for the
+        // frontend to call unconditionally on every startup).
+        let second_payload = LegacyLocalStorageImport {
+            search_history: vec![LegacySearchHistoryEntry {
+                query: "should not be imported".into(),
+                timestamp: 2000,
+                selected_ref: None,
+            }],
+            ..Default::default()
+        };
+        db.import_legacy_local_storage(&second_payload).unwrap();
+        assert_eq!(db.list_search_history().unwrap().len(), 1);
+        assert_eq!(db.list_search_history().unwrap()[0].query, "faith");
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn reading_position_round_trip() {
+        let (db, path) = temp_db("readpos");
+
+        assert!(db.get_reading_position().unwrap().is_none());
+
+        let pos = ReadingPosition {
+            book: "Genesis".to_string(),
+            chapter: 3,
+            verse: 15,
+            module_id: "KJV".to_string(),
+        };
+        db.set_reading_position(&pos).unwrap();
+
+        let loaded = db.get_reading_position().unwrap().unwrap();
+        assert_eq!(loaded.book, "Genesis");
+        assert_eq!(loaded.chapter, 3);
+        assert_eq!(loaded.verse, 15);
+
+        // Setting again overwrites in place rather than accumulating rows.
+        db.set_reading_position(&ReadingPosition {
+            book: "Exodus".to_string(),
+            chapter: 1,
+            verse: 1,
+            module_id: "KJV".to_string(),
+        })
+        .unwrap();
+        assert_eq!(db.get_reading_position().unwrap().unwrap().book, "Exodus");
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bookmark_crud() {
+        let (db, path) = temp_db("bookmarks");
+
+        let bm = db.add_bookmark("John", 3, 16, "KJV").unwrap();
+        assert_eq!(bm.book, "John");
+
+        let all = db.list_bookmarks().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, bm.id);
+
+        db.remove_bookmark(bm.id).unwrap();
+        assert!(db.list_bookmarks().unwrap().is_empty());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn note_crud() {
+        let (db, path) = temp_db("notes");
+
+        let note = db
+            .add_note("Psalms", 23, Some(1), "KJV", "The LORD is my shepherd")
+            .unwrap();
+        assert_eq!(note.content, "The LORD is my shepherd");
+
+        let updated = db.update_note(note.id, "edited content").unwrap();
+        assert_eq!(updated.content, "edited content");
+
+        assert_eq!(db.list_notes().unwrap().len(), 1);
+        db.delete_note(note.id).unwrap();
+        assert!(db.list_notes().unwrap().is_empty());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn installed_module_records_round_trip() {
+        let (db, path) = temp_db("modules");
+
+        db.record_installed_module("KJV", "King James Version", "/path/KJV", "2.0", "Bible")
+            .unwrap();
+        let records = db.list_installed_module_records().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].0, "KJV");
+        assert!(!records[0].5, "index_built should start false");
+
+        db.mark_index_built("KJV").unwrap();
+        let records = db.list_installed_module_records().unwrap();
+        assert!(records[0].5, "index_built should be true after marking");
+
+        // Re-recording the same id updates in place (ON CONFLICT), not duplicates.
+        db.record_installed_module("KJV", "King James Version", "/path/KJV", "2.1", "Bible")
+            .unwrap();
+        assert_eq!(db.list_installed_module_records().unwrap().len(), 1);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn fts_search_finds_indexed_verses() {
+        let (db, path) = temp_db("search");
+
+        db.replace_module_index(
+            "KJV",
+            &[
+                ("John", 3, 16, "For God so loved the world".to_string()),
+                ("Genesis", 1, 1, "In the beginning God created".to_string()),
+            ],
+        )
+        .unwrap();
+
+        let results = db
+            .search_fts(
+                "loved",
+                &SearchOptions {
+                    modules: vec!["KJV".to_string()],
+                    testament: None,
+                    book_filter: None,
+                    strongs_filter: None,
+                    whole_word: None,
+                    page: None,
+                    page_size: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].book, "John");
+
+        // Re-indexing the same module replaces rather than appends.
+        db.replace_module_index(
+            "KJV",
+            &[("John", 3, 16, "For God so loved the world".to_string())],
+        )
+        .unwrap();
+        let all_kjv = db
+            .search_fts(
+                "God",
+                &SearchOptions {
+                    modules: vec!["KJV".to_string()],
+                    testament: None,
+                    book_filter: None,
+                    strongs_filter: None,
+                    whole_word: None,
+                    page: None,
+                    page_size: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            all_kjv.len(),
+            1,
+            "old Genesis row should be gone, not duplicated"
+        );
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn strongs_counts_round_trip() {
+        let (db, path) = temp_db("strongs");
+
+        db.replace_strongs_counts(
+            "KJV",
+            &[
+                ("G26".to_string(), "John".to_string(), 5),
+                ("G26".to_string(), "Romans".to_string(), 3),
+            ],
+        )
+        .unwrap();
+
+        let (total, by_book) = db.get_strongs_counts("KJV", "G26").unwrap();
+        assert_eq!(total, 8);
+        assert_eq!(by_book.len(), 2);
+        assert_eq!(by_book[0].book, "John"); // ordered by count DESC
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn survives_a_poisoned_mutex_from_an_unrelated_panic() {
+        // Simulates the exact scenario this fix targets: some unrelated command
+        // panics while holding the connection lock (a bug in search, module
+        // install progress reporting, whatever — anything that locks self.0).
+        // Before this fix, every future self.0.lock().unwrap() would panic
+        // forever afterward, taking down notes/bookmarks/preferences/etc. with
+        // it. After this fix, self.conn() recovers the guard instead.
+        let (db, path) = temp_db("poison");
+        let db = std::sync::Arc::new(db);
+
+        let db_clone = db.clone();
+        let result = std::thread::spawn(move || {
+            let _guard = db_clone.0.lock().unwrap();
+            panic!("simulated bug in an unrelated feature");
+        })
+        .join();
+        assert!(result.is_err(), "the spawned thread should have panicked");
+
+        // The mutex is now poisoned. A naive self.0.lock().unwrap() here would
+        // panic; going through self.conn() must not.
+        let bm = db.add_bookmark("John", 3, 16, "KJV");
+        assert!(
+            bm.is_ok(),
+            "database should keep working after an unrelated panic poisoned the mutex"
+        );
+        assert_eq!(db.list_bookmarks().unwrap().len(), 1);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn fts_query_sanitizes_syntax_characters_and_adds_prefix_wildcards() {
+        assert_eq!(build_fts_query("love", false), "\"love\" *");
+        assert_eq!(
+            build_fts_query("god so lov", false),
+            "\"god\" * \"so\" * \"lov\" *"
+        );
+        // Apostrophes (straight or typographic) split like the tokenizer does.
+        assert_eq!(
+            build_fts_query("God's love", false),
+            "\"god s\" * \"love\" *"
+        );
+        assert_eq!(build_fts_query("king\u{2019}s", false), "\"king s\" *");
+        // FTS5 syntax characters and operators must not reach the MATCH parser.
+        assert_eq!(
+            build_fts_query("\"love\" OR:test", false),
+            "\"love\" * \"or test\" *"
+        );
+        assert_eq!(build_fts_query("Jonath-elem", false), "\"jonath elem\" *");
+        assert_eq!(build_fts_query("'", false), "");
+        assert_eq!(build_fts_query("", false), "");
+        assert_eq!(build_fts_query("   ", false), "");
+        // Quoted text is one phrase; whole-word mode drops the prefix wildcard.
+        assert_eq!(
+            build_fts_query("\"good shepherd\" king", false),
+            "\"good shepherd\" * \"king\" *"
+        );
+        assert_eq!(
+            build_fts_query("\"good shepherd\" love", true),
+            "\"good shepherd\" \"love\""
+        );
+    }
+
+    #[test]
+    fn fts_search_handles_apostrophes() {
+        let (db, path) = temp_db("apostrophe");
+        db.replace_module_index(
+            "KJV",
+            &[
+                (
+                    "Esther",
+                    8,
+                    9,
+                    "Then were the king\u{2019}s scribes called".to_string(),
+                ),
+                ("Genesis", 1, 1, "In the beginning God created".to_string()),
+                ("Mark", 1, 1, "the kings of the earth".to_string()),
+            ],
+        )
+        .unwrap();
+        let search = |q: &str| {
+            db.search_fts(
+                q,
+                &SearchOptions {
+                    modules: vec!["KJV".to_string()],
+                    testament: None,
+                    book_filter: None,
+                    strongs_filter: None,
+                    whole_word: None,
+                    page: None,
+                    page_size: None,
+                },
+            )
+            .unwrap()
+        };
+
+        for q in ["king's", "king\u{2019}s", "king’s scribes", "KING'S"] {
+            let r = search(q);
+            assert!(
+                r.iter().any(|x| x.book == "Esther"),
+                "query {q:?} should find Esther 8:9"
+            );
+        }
+        assert_eq!(
+            search("king").len(),
+            2,
+            "plain prefix search still matches both"
+        );
+        assert!(search("'").is_empty());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_sync_state_triggers_and_crud() {
+        let (db, path) = temp_db("sync-state-test");
+
+        // 1. Write preferences -> trigger fires and records it in sync_state
+        db.update_preferences(&serde_json::json!({ "theme": "dark" }))
+            .unwrap();
+        let dirty = db.get_dirty_sync_records(100).unwrap();
+        assert!(dirty.iter().any(|r| r.collection == "preferences"));
+
+        // Mark clean
+        let clean_keys: Vec<CleanRecordKey> = dirty
+            .iter()
+            .map(|r| CleanRecordKey {
+                collection: r.collection.clone(),
+                record_id: r.record_id.clone(),
+                client_updated_at: r.client_updated_at.clone(),
+            })
+            .collect();
+        db.mark_sync_records_clean(&clean_keys).unwrap();
+
+        let dirty_after = db.get_dirty_sync_records(100).unwrap();
+        assert!(dirty_after.is_empty());
+
+        // 2. Add bookmark -> trigger fires
+        let bm = db.add_bookmark("Genesis", 1, 1, "kjv").unwrap();
+        let dirty = db.get_dirty_sync_records(100).unwrap();
+        let bm_dirty = dirty.iter().find(|r| r.collection == "bookmarks");
+        assert!(bm_dirty.is_some());
+        let bm_rec = bm_dirty.unwrap();
+        assert_eq!(bm_rec.deleted, false);
+        assert_eq!(bm_rec.data["book"], "Genesis");
+
+        // 3. Delete bookmark -> trigger marks deleted
+        db.remove_bookmark(bm.id).unwrap();
+        let dirty = db.get_dirty_sync_records(100).unwrap();
+        let bm_del = dirty.iter().find(|r| r.collection == "bookmarks").unwrap();
+        assert_eq!(bm_del.deleted, true);
+
+        // 4. Remote sync record application
+        let remote_note = RemoteSyncRecord {
+            collection: "notes".into(),
+            record_id: "test-note-uuid".into(),
+            data: serde_json::json!({
+                "book": "Exodus",
+                "chapter": 20,
+                "verse": 1,
+                "module_id": "kjv",
+                "content": "Ten Commandments",
+            }),
+            deleted: false,
+            client_updated_at: "2026-10-25T12:00:00Z".into(),
+            seq: Some(42),
+        };
+        db.apply_remote_sync_records(&[remote_note]).unwrap();
+
+        let notes = db.list_notes().unwrap();
+        let note = notes.iter().find(|n| n.content == "Ten Commandments");
+        assert!(note.is_some());
+
+        // Applied remote records are marked clean, not dirty
+        let dirty = db.get_dirty_sync_records(100).unwrap();
+        assert!(!dirty
+            .iter()
+            .any(|r| r.collection == "notes" && r.record_id == "test-note-uuid"));
+
+        // Cursor was advanced
+        assert_eq!(db.get_sync_cursor().unwrap(), 42);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_backup_and_restore_zip() {
+        let (db, path) = temp_db("backup-test");
+        let song_path = std::env::temp_dir().join(format!("song-test-{}.db", std::process::id()));
+        let slide_path = std::env::temp_dir().join(format!("slide-test-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&song_path);
+        let _ = std::fs::remove_file(&slide_path);
+
+        let song_store = crate::songs::SongStore::open(&song_path);
+        let slide_store = crate::slides::SlideStore::open(&slide_path);
+
+        // Add some data
+        db.add_note("John", 3, Some(16), "kjv", "For God so loved")
+            .unwrap();
+
+        let zip_bytes = db.create_backup_zip(&song_store, &slide_store).unwrap();
+        assert!(!zip_bytes.is_empty());
+
+        // Reset local DB
+        db.reset_local_sync_state(true).unwrap();
+        assert!(db.list_notes().unwrap().is_empty());
+
+        // Restore
+        db.restore_backup_zip(&song_store, &slide_store, &zip_bytes)
+            .unwrap();
+        let restored_notes = db.list_notes().unwrap();
+        assert_eq!(restored_notes.len(), 1);
+        assert_eq!(restored_notes[0].content, "For God so loved");
+
+        cleanup(&path);
+        let _ = std::fs::remove_file(&song_path);
+        let _ = std::fs::remove_file(&slide_path);
+    }
+}

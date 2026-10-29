@@ -1,0 +1,491 @@
+import { invoke } from "@tauri-apps/api/core";
+
+// ── Types mirroring Rust structs ─────────────────────────────────────────────
+
+export interface TextSpan {
+  text: string;
+  strongs?: string[];   // e.g. ["G25"] or multiple source words for one phrase
+  morph?: string;       // morphology tag
+  is_added?: boolean;   // italics / added words
+  is_footnote?: boolean;
+  is_red_letter?: boolean; // words of Jesus (red letter)
+  is_title?: boolean;      // canonical section heading, e.g. a Psalm superscription
+}
+
+export interface VerseText {
+  book: string;
+  chapter: number;
+  verse: number;
+  spans: TextSpan[];
+}
+
+export interface ChapterText {
+  module_id: string;
+  book: string;
+  chapter: number;
+  verses: VerseText[];
+}
+
+export interface StrongsEntry {
+  number: string;      // "G25"
+  lemma: string;       // "ἀγαπάω"
+  transliteration: string;
+  part_of_speech: string;
+  short_def: string;
+  long_def: string;
+  usage_count: number;
+  usage_by_book: BookUsage[];
+  // True when this is a grammatical particle with no independent English
+  // rendering (e.g. H0853, the Hebrew direct-object marker) rather than a
+  // translated content word.
+  is_untranslated_marker: boolean;
+}
+
+export interface BookUsage {
+  book: string;
+  count: number;
+}
+
+export interface SearchResult {
+  module_id: string;
+  book: string;
+  chapter: number;
+  verse: number;
+  text: string;
+  highlights: [number, number][]; // [start, end] byte ranges
+}
+
+export interface SearchOptions {
+  modules: string[];
+  testament?: "OT" | "NT" | "all";
+  book_filter?: string[];
+  whole_word?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+export interface ModuleInfo {
+  id: string;
+  name: string;
+  description: string;
+  language: string;
+  version: string;
+  category: "Bible" | "Commentary" | "Lexicon" | "Dictionary" | "Devotional" | "Other";
+  installed: boolean;
+  requires_key: boolean;
+  has_strongs: boolean;
+  size_bytes?: number;
+  // Only present on entries from list_available_modules (which repo — e.g.
+  // "CrossWire", "eBible.org" — the listing came from); the backend's
+  // InstalledModule struct doesn't carry this, so it's absent for installed items.
+  source?: string;
+}
+
+export interface InstalledModule extends ModuleInfo {
+  install_path: string;
+  index_built: boolean;
+}
+
+export interface MonitorInfo {
+  index: number;
+  name: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Physical px per CSS px — width/height above are physical. */
+  scale_factor: number;
+  is_primary: boolean;
+}
+
+export interface Bookmark {
+  id: number;
+  book: string;
+  chapter: number;
+  verse: number;
+  module_id: string;
+  created_at: string;
+  note?: string;
+}
+
+export interface Note {
+  id: number;
+  book: string;
+  chapter: number;
+  verse: number | null;
+  module_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Preferences {
+  theme: "light" | "dark" | "system";
+  font_size_reading: number;
+  show_strongs: boolean;
+  show_morph: boolean;
+  verse_display: "paragraph" | "verse-per-line";
+  default_commentary: string | null;
+
+  show_commentary: boolean;
+  show_notes: boolean;
+  show_cross_refs: boolean;
+  show_red_letter: boolean;
+
+  font_family: "system" | "serif" | "times" | "mono";
+  text_align: "left" | "justify";
+  margins: number;
+  line_spacing: number;
+  letter_spacing: number;
+  strongs_sheet_height: number;
+  presentation_context: 1 | 2 | 3 | 4;
+  default_lexicon_source: "ours" | "rich" | "thayer" | "lsj";
+  // Which persona the app is set up for — "study" is the personal Bible
+  // study experience alone (reading, lexicons, commentary, notes);
+  // "presentation" adds the live-show tools on top (service queue, Live
+  // Show console, presentation themes). Study mode genuinely doesn't
+  // expose presentation features, not just deprioritizes them.
+  workspace: "study" | "presentation";
+  /** Split long verses into labelled parts (a, b, c…) for the presentation screen. */
+  split_long_verses: boolean;
+  /** App accent colour preset — see lib/accents.ts. */
+  accent: string;
+}
+
+export interface ReadingPosition {
+  book: string;
+  chapter: number;
+  verse: number;
+  module_id: string;
+}
+
+export interface SearchHistoryEntry {
+  id: number;
+  query: string;
+  timestamp: number;
+  ref_book: string | null;
+  ref_chapter: number | null;
+  ref_verse: number | null;
+}
+
+export interface ServiceOrderItem {
+  id: string;
+  book: string;
+  chapter: number;
+  verse: number;
+  text: string;
+  module: string;
+  presentation_override?: PresentationItemOverride | null;
+}
+
+/** Sparse item-level changes layered over a selected presentation theme. */
+export interface PresentationItemOverride {
+  theme_id?: string;
+  font_scale?: number;
+  text_font_weight?: number;
+  reference_font_scale?: number;
+  reference_font_weight?: number;
+  reference_position?: "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right";
+  verse_box_x?: number;
+  verse_box_y?: number;
+  verse_box_width?: number;
+  verse_box_height?: number;
+  reference_box_x?: number;
+  reference_box_y?: number;
+  reference_box_width?: number;
+  reference_box_height?: number;
+  auto_layout?: boolean;
+  min_font_scale?: number;
+  transition_type?: "none" | "fade" | "slide";
+  transition_duration?: number;
+}
+
+/** Legacy browser localStorage payloads for the one-time import into SQLite. */
+export interface LegacyLocalStorageImport {
+  search_history: { query: string; timestamp: number; selected_ref?: { book: string; chapter: number; verse: number } }[];
+  service_order: ServiceOrderItem[];
+  display_prefs: {
+    font_family: string;
+    text_align: string;
+    margins: number;
+    line_spacing: number;
+    letter_spacing: number;
+    strongs_sheet_height: number;
+    presentation_context: number;
+  } | null;
+  study_ui: {
+    show_commentary: boolean;
+    show_notes: boolean;
+    show_cross_refs: boolean;
+    show_red_letter: boolean;
+  } | null;
+}
+
+export interface CrossReference {
+  book: string;
+  chapter: number;
+  verse: number;
+  end_verse?: number;
+}
+
+export interface PresentationTheme {
+  id: string;
+  name: string;
+  background_color: string;
+  background_gradient: string | null;
+  text_color: string;
+  reference_color: string;
+  font_family: string;
+  text_align: "left" | "center" | "right";
+  font_scale: number;
+  text_font_weight: number;
+  reference_font_scale: number;
+  reference_font_weight: number;
+  safe_margin: number;
+  text_shadow: boolean;
+  reference_position: "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right";
+  verse_box_x: number;
+  verse_box_y: number;
+  verse_box_width: number;
+  verse_box_height: number;
+  reference_box_x: number;
+  reference_box_y: number;
+  reference_box_width: number;
+  reference_box_height: number;
+  auto_layout: boolean;
+  min_font_scale: number;
+  transition_type: "none" | "fade" | "slide";
+  transition_duration: number;
+  scroll_v_padding: number;
+  // Live-output text styling lives here, not in Settings (which only styles
+  // reading text). font_size is px on a 1080p frame; font_scale multiplies it.
+  font_size: number;
+  line_spacing: number;   // line-height = 1 + value
+  letter_spacing: number; // tenths of an em
+  // A picture behind the text (downscaled JPEG data URL) and how much to darken it.
+  background_image: string | null;
+  background_image_dim: number;
+  // A looping video behind the text: the file name inside the app media folder.
+  background_video: string | null;
+  // Optional fill behind the verse box — what makes a lower-third bar.
+  verse_box_fill: string | null;
+  // Which theme is currently applied — a session preference, freely
+  // reassignable to any theme (including personal ones) and unrelated to
+  // whether it can be deleted. See is_builtin for that.
+  is_default: boolean;
+  // True only for the seeded "Midnight Scripture" theme — the one theme
+  // that's permanent and can't be deleted. User-created themes stay
+  // personal and deletable no matter what, regardless of is_default.
+  is_builtin: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type PresentationThemeInput = Omit<PresentationTheme, "id" | "is_default" | "is_builtin" | "created_at" | "updated_at">;
+
+// ── Cloud Sync types ────────────────────────────────────────────────────────
+
+export interface DirtySyncRecord {
+  collection: string;
+  record_id: string;
+  data: Record<string, unknown>;
+  deleted: boolean;
+  client_updated_at: string;
+}
+
+export interface RemoteSyncRecord {
+  collection: string;
+  record_id: string;
+  data: Record<string, unknown>;
+  deleted: boolean;
+  client_updated_at: string;
+  seq?: number | null;
+}
+
+export interface CleanRecordKey {
+  collection: string;
+  record_id: string;
+  client_updated_at: string;
+}
+
+// ── Command wrappers ─────────────────────────────────────────────────────────
+
+// Tauri 2.0 renames snake_case Rust command params to camelCase in invoke().
+// Nested struct fields (e.g. SearchOptions) use plain serde and stay snake_case.
+export const api = {
+  getChapter: (module_id: string, book: string, chapter: number) =>
+    invoke<ChapterText>("get_chapter", { moduleId: module_id, book, chapter }),
+
+  getVerse: (module_id: string, book: string, chapter: number, verse: number) =>
+    invoke<VerseText>("get_verse", { moduleId: module_id, book, chapter, verse }),
+
+  getStrongsEntry: (module_id: string, strongs_number: string, bible_module_id: string) =>
+    invoke<StrongsEntry>("get_strongs_entry", {
+      moduleId: module_id,
+      strongsNumber: strongs_number,
+      bibleModuleId: bible_module_id,
+    }),
+
+  // Pre-fetches a STEPBible-Data companion lexicon ("TBESG" | "TBESH" |
+  // "TFLSJ") so it's cached before the user's first lookup.
+  ensureStepBibleLexicon: (source_id: string) =>
+    invoke<void>("ensure_stepbible_lexicon", { sourceId: source_id }),
+
+  /** Strong's numbers that are grammatical markers (G3588, H853…), normalized. */
+  listMarkerStrongs: () => invoke<string[]>("list_marker_strongs"),
+
+  search: (query: string, options: SearchOptions) =>
+    invoke<SearchResult[]>("search", { query, options }),
+
+  searchStrongs: (strongs_number: string, modules: string[]) =>
+    invoke<SearchResult[]>("search", {
+      query: strongs_number,
+      options: { modules, strongs_filter: strongs_number },
+    }),
+
+  /** The output window's content size in CSS px, or null when it isn't open. */
+  getPresentationWindowSize: () =>
+    invoke<[number, number] | null>("get_presentation_window_size"),
+
+  getCommentary: (module_id: string, book: string, chapter: number, verse: number) =>
+    invoke<string>("get_commentary", { moduleId: module_id, book, chapter, verse }),
+
+  getCrossReferences: (book: string, chapter: number, verse: number) =>
+    invoke<CrossReference[]>("get_cross_references", { book, chapter, verse }),
+
+  listInstalledModules: () =>
+    invoke<InstalledModule[]>("list_installed_modules"),
+
+  rebuildSearchIndex: (module_id: string) =>
+    invoke<void>("rebuild_search_index", { moduleId: module_id }),
+
+  listAvailableModules: () =>
+    invoke<ModuleInfo[]>("list_available_modules"),
+
+  installModule: (module_id: string) =>
+    invoke<void>("install_module", { moduleId: module_id }),
+
+  installModuleWithKey: (module_id: string, key: string) =>
+    invoke<void>("install_module_with_key", { moduleId: module_id, key }),
+
+  addBookmark: (book: string, chapter: number, verse: number, module_id: string) =>
+    invoke<Bookmark>("add_bookmark", { book, chapter, verse, moduleId: module_id }),
+
+  removeBookmark: (id: number) =>
+    invoke<void>("remove_bookmark", { id }),
+
+  listBookmarks: () =>
+    invoke<Bookmark[]>("list_bookmarks"),
+
+  addNote: (book: string, chapter: number, verse: number | null, module_id: string, content: string) =>
+    invoke<Note>("add_note", { book, chapter, verse, moduleId: module_id, content }),
+
+  updateNote: (id: number, content: string) =>
+    invoke<Note>("update_note", { id, content }),
+
+  deleteNote: (id: number) =>
+    invoke<void>("delete_note", { id }),
+
+  listNotes: () =>
+    invoke<Note[]>("list_notes"),
+
+  getReadingPosition: () =>
+    invoke<ReadingPosition | null>("get_reading_position"),
+
+  setReadingPosition: (pos: ReadingPosition) =>
+    invoke<void>("set_reading_position", { ...pos }),
+
+  getPreferences: () =>
+    invoke<Preferences>("get_preferences"),
+
+  // Returns the full merged Preferences, so callers can sync their local state
+  // from the authoritative result instead of assuming their patch applied as-is.
+  setPreferences: (prefs: Partial<Preferences>) =>
+    invoke<Preferences>("set_preferences", { prefs }),
+
+  listPresentationThemes: () =>
+    invoke<PresentationTheme[]>("list_presentation_themes"),
+
+  createPresentationTheme: (theme: PresentationThemeInput) =>
+    invoke<PresentationTheme>("create_presentation_theme", { theme }),
+
+  updatePresentationTheme: (id: string, theme: PresentationThemeInput) =>
+    invoke<PresentationTheme>("update_presentation_theme", { id, theme }),
+
+  deletePresentationTheme: (id: string) =>
+    invoke<void>("delete_presentation_theme", { id }),
+
+  setDefaultPresentationTheme: (id: string) =>
+    invoke<PresentationTheme>("set_default_presentation_theme", { id }),
+
+  getMediaDir: () => invoke<string>("get_media_dir"),
+
+  // Copies a picked video into the app media folder; resolves to its stored file name.
+  importBackgroundVideo: (sourcePath: string) =>
+    invoke<string>("import_background_video", { sourcePath }),
+
+  listMonitors: () =>
+    invoke<MonitorInfo[]>("list_monitors"),
+
+  openStageWindow: (monitorIndex?: number) =>
+    invoke<void>("open_stage_window", { monitorIndex: monitorIndex ?? null }),
+
+  closeStageWindow: () => invoke<void>("close_stage_window"),
+
+  // The background clock that ticks into the output windows; enable only while needed.
+  setClockTicks: (enabled: boolean) => invoke<void>("set_clock_ticks", { enabled }),
+
+  openPresentationWindow: (monitorIndex?: number) =>
+    invoke<void>("open_presentation_window", { monitorIndex }),
+
+  closePresentationWindow: () =>
+    invoke<void>("close_presentation_window"),
+
+  listSearchHistory: () =>
+    invoke<SearchHistoryEntry[]>("list_search_history"),
+
+  addSearchHistoryEntry: (query: string) =>
+    invoke<void>("add_search_history_entry", { query }),
+
+  setLastSearchHistoryRef: (book: string, chapter: number, verse: number) =>
+    invoke<void>("set_last_search_history_ref", { book, chapter, verse }),
+
+  clearSearchHistory: () =>
+    invoke<void>("clear_search_history"),
+
+  listServiceOrder: () =>
+    invoke<ServiceOrderItem[]>("list_service_order"),
+
+  setServiceOrder: (items: ServiceOrderItem[]) =>
+    invoke<void>("set_service_order", { items }),
+
+  legacyImportDone: () =>
+    invoke<boolean>("legacy_import_done"),
+
+  importLegacyLocalStorage: (payload: LegacyLocalStorageImport) =>
+    invoke<void>("import_legacy_local_storage", { payload }),
+
+  getSyncCursor: () =>
+    invoke<number>("get_sync_cursor"),
+
+  setSyncCursor: (cursor: number) =>
+    invoke<void>("set_sync_cursor", { cursor }),
+
+  getDirtySyncRecords: (limit: number) =>
+    invoke<DirtySyncRecord[]>("get_dirty_sync_records", { limit }),
+
+  markSyncRecordsClean: (items: CleanRecordKey[]) =>
+    invoke<void>("mark_sync_records_clean", { items }),
+
+  applyRemoteSyncRecords: (records: RemoteSyncRecord[]) =>
+    invoke<void>("apply_remote_sync_records", { records }),
+
+  resetLocalSyncState: (replaceWithCloud: boolean) =>
+    invoke<void>("reset_local_sync_state", { replaceWithCloud }),
+
+  createBackupZip: () =>
+    invoke<number[]>("create_backup_zip"),
+
+  restoreBackupZip: (bytes: number[]) =>
+    invoke<void>("restore_backup_zip", { bytes }),
+};
