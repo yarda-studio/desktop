@@ -14,6 +14,7 @@ import OutputPreview from "../components/OutputPreview";
 import { registerScriptureStepper } from "../features/remote/registry";
 import { usePresentationStage } from "../hooks/usePresentationStage";
 import type { PresentState } from "../lib/presentation";
+import TranslationBar from "../components/TranslationBar";
 import PresentationSearchBar, { type PresentationSearchBarHandle } from "../components/PresentationSearchBar";
 import { ResizeHandle, useResizable } from "../hooks/useResizable";
 import AiSearchDock from "../components/aiSearch/AiSearchDock";
@@ -137,7 +138,7 @@ export default function LiveShowRunner() {
     versePart: displayPrefs.splitLongVerses ? versePart : undefined,
   });
 
-  const { chapter: previewChapter } = useChapterData(primaryModule, previewRef.book, previewRef.chapter, false, null);
+  const { chapter: previewChapter, parallelChapter: previewParallelChapter } = useChapterData(primaryModule, previewRef.book, previewRef.chapter, parallelMode, parallelModule);
   const { chapter: liveChapter, parallelChapter: liveParallelChapter } = useChapterData(primaryModule, currentRef.book, currentRef.chapter, parallelMode, parallelModule);
 
   // Splits verse text into presentation-sized parts by measuring against the
@@ -153,7 +154,13 @@ export default function LiveShowRunner() {
 
     let boxW: number;
     let boxH: number;
-    if (ctx === 1 && theme) {
+    if (parallelMode && parallelModule) {
+      // Two columns on the output (see ContextLayout in PresentationView): each
+      // verse gets half the safe width, less the gap between them.
+      const gap = ctx === 1 ? 64 : 48;
+      boxW = (((100 - 2 * hPadPct) / 100) * screenW - gap) / 2;
+      boxH = ctx === 1 ? screenH - 80 : screenH * (ctx === 3 ? 0.5 : 0.6);
+    } else if (ctx === 1 && theme) {
       boxW = (theme.verse_box_width / 100) * screenW;
       boxH = (theme.verse_box_height / 100) * screenH;
     } else if (ctx === 2 || ctx === 3) {
@@ -177,7 +184,7 @@ export default function LiveShowRunner() {
         textAlign: live.textAlign,
       },
     };
-  }, [displayPrefs, activePresentationTheme, stage.w, stage.h]);
+  }, [displayPrefs, activePresentationTheme, stage.w, stage.h, parallelMode, parallelModule]);
 
   const splitParts = useCallback((text: string) => measureVersePartsDOM(text.trim(), splitBox.boxW, splitBox.boxH, splitBox.style), [splitBox]);
 
@@ -634,7 +641,7 @@ export default function LiveShowRunner() {
   }), [currentRef, primaryModule, parallelModule, parallelMode, selectedStrongs, strongsGroup, strongsSource, strongsLive, strongsPage, strongsDoc, displayPrefs, readingFontSize, activePresentationTheme, liveBlack, liveEmergency, versePart]);
 
   // What the Preview Output thumbnail shows: the previewed slide,
-  // laid out exactly as it would go out (never black/emergency, no parallel).
+  // laid out exactly as it would go out (never black/emergency).
   const previewOutputState: PresentState = useMemo(() => {
     const sRef = currentPreviewSlide?.ref ?? previewRef;
     const sPart = currentPreviewSlide?.part ?? previewPart;
@@ -643,7 +650,6 @@ export default function LiveShowRunner() {
       book: sRef.book,
       chapter: sRef.chapter,
       verse: sRef.verse,
-      parallelMode: false,
       black: false,
       emergency: false,
       versePart: displayPrefs.splitLongVerses ? sPart : undefined,
@@ -902,7 +908,7 @@ export default function LiveShowRunner() {
             }}
             stage={stage}
           >
-            <OutputPreview state={previewOutputState} chapter={previewChapter} parallelChapter={null} stage={stage} outputOpen />
+            <OutputPreview state={previewOutputState} chapter={previewChapter} parallelChapter={previewParallelChapter} stage={stage} outputOpen />
           </OutputStrip>
         </section>
 
@@ -973,11 +979,7 @@ export default function LiveShowRunner() {
         {/* Left column: reference bar + verses list */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
           <div className="shrink-0 h-[49px] flex items-center gap-3 px-3.5 py-2 border-b border-outline-variant/40">
-            {primaryModule && (
-              <span className="font-metadata-mono text-[12px] font-bold text-on-surface-variant field px-2.5 py-1 rounded-lg shrink-0">
-                {primaryModule}
-              </span>
-            )}
+            <TranslationBar />
             <span className="font-body-ui text-[13px] font-semibold text-on-surface shrink-0">{rangeCitation}</span>
             <div className="flex items-center gap-2 shrink-0">
               <button onClick={() => stepChapter(-1)} className="p-1 rounded-md ctl text-on-surface-variant" title="Previous chapter (Ctrl+P)">

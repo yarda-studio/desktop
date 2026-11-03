@@ -329,11 +329,19 @@ function ContextLayout({ ctx, state, chapter, parallelChapter, fontSize, prefs, 
   }
 
   const rawActiveText = verseText(active);
+  const parallelOn = state.parallelMode && !!parallelChapter;
   // Measure whether the verse fits by actually rendering it in a hidden element
   // sized to match this context's real presentation box — no hardcoded ratios.
   const activeParts = useMemo(() => {
     if (!state.displayPrefs.splitLongVerses) return [rawActiveText];
     const style = measureStyle(prefs, fontSize, presentationTheme);
+    if (parallelOn) {
+      // Two columns: half the safe width each, less the gap (grid-gap 16 / 12 rem units below).
+      const gap = ctx === 1 ? 64 : 48;
+      const w = (stage.w * (100 - 2 * hPadPct) / 100 - gap) / 2;
+      const h = ctx === 1 ? stage.h - 80 : stage.h * (ctx === 3 ? 0.5 : 0.6);
+      return measureVersePartsDOM(rawActiveText.trim(), w, h, style);
+    }
     if (ctx === 1 && presentationTheme) {
       // Freeform layout: box is absolutely positioned at the theme percentages.
       const w = (presentationTheme.verse_box_width / 100) * stage.w;
@@ -347,7 +355,7 @@ function ContextLayout({ ctx, state, chapter, parallelChapter, fontSize, prefs, 
     const h = stage.h * activeVh / 100;
     return measureVersePartsDOM(rawActiveText.trim(), w, h, style);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawActiveText, ctx, presentationTheme, fontSize, prefs.lineSpacing, prefs.fontFamily, prefs.textAlign, hPadPct, state.displayPrefs.splitLongVerses, stage.w, stage.h]);
+  }, [rawActiveText, ctx, presentationTheme, fontSize, prefs.lineSpacing, prefs.fontFamily, prefs.textAlign, hPadPct, state.displayPrefs.splitLongVerses, stage.w, stage.h, parallelOn]);
   const isSplitVerse = activeParts.length > 1;
   const partIdx = state.versePart ?? 0;
   const activeDisplayText = isSplitVerse ? (activeParts[partIdx] ?? activeParts[0]) : rawActiveText;

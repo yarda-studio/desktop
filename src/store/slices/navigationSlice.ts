@@ -36,6 +36,14 @@ export const createNavigationSlice: StateCreator<AppState, [], [], NavigationSli
     set({ workspace });
     api.setPreferences({ workspace }).catch((e) => console.error("[workspace] failed to persist", e));
 
+    // Switching to Presentation always lands on the Live Show console, whichever
+    // Study screen was open. Focus mode is a Study-only overlay that would hide
+    // the presentation top bar, so leave it too.
+    if (workspace === "presentation" && get().hasModules) {
+      get().setIsFullscreen(false);
+      set({ view: "live" });
+    }
+
     // Switching to Study mode removes every presenting control from the UI —
     // an output window left running with no way to reach Black/Emergency/
     // Stop from the vanished controls would be a real problem, so shut it
