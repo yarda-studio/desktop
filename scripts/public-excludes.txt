@@ -1,0 +1,17 @@
+.git
+.github
+supabase
+services
+website
+docs/PRO_TEAMS_IMPLEMENTATION_PROMPT.md
+docs/hosted-outputs-design.md
+docs/lovable-ui-*
+.env*
+node_modules
+dist
+src-tauri/target
+.taste-skill
+.claude
+.agents
+.DS_Store
+* 2.*

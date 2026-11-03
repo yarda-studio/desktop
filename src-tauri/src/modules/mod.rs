@@ -250,7 +250,7 @@ impl ModuleRegistry {
         let client = Client::builder()
             .connect_timeout(std::time::Duration::from_secs(5))
             .timeout(std::time::Duration::from_secs(15))
-            .user_agent("Yarda/0.1 (Desktop; https://github.com/iamdokoye/scriptura)")
+            .user_agent("Yarda/0.1 (Desktop; https://github.com/yarda-studio/desktop)")
             .build()
             .ok()?;
 

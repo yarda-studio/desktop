@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "./store/app";
 import { api } from "./lib/tauri";
 import { applyAccent, isAccentId } from "./lib/accents";
@@ -21,6 +21,7 @@ import { ResizeHandle, useResizable } from "./hooks/useResizable";
 import { OnboardingHost } from "./features/onboarding";
 import { initEntitlementSync } from "./features/entitlements";
 import { startSyncEngine, FirstDevicePrompt } from "./features/sync";
+import { FirstRunSetup } from "./features/firstRun";
 
 export default function App() {
   const {
@@ -30,6 +31,10 @@ export default function App() {
     hydrateWorkspace, workspace, accent, setAccent, setMarkerStrongs,
   } = useAppStore();
   const presenting = workspace === "presentation";
+  // Set on a fresh install: the app is held behind a setup screen until the
+  // KJV and Strong's lexicons have fully downloaded.
+  const [firstRun, setFirstRun] = useState<{ required: string[]; installed: string[] } | null>(null);
+  const finishFirstRun = useRef<() => void>(() => {});
   const queueDrawerW = useResizable({
     storageKey: "scriptura.queueDrawerWidth", initial: 324, min: 280, axis: "x", invert: true,
     max: () => Math.round(window.innerWidth * 0.7),
@@ -121,8 +126,8 @@ export default function App() {
         // fatal — the Modules screen is still there to retry from.
         const installedIds = new Set(modules.map((m) => m.id));
         const hadBible = modules.some((m) => m.category === "Bible");
-        const wanted = hadBible ? ["StrongsGreek", "StrongsHebrew", "TSK"] : ["KJV", "StrongsGreek", "StrongsHebrew", "TSK"];
-        const missing = wanted.filter((id) => !installedIds.has(id));
+        const wanted = ["StrongsGreek", "StrongsHebrew", "TSK"];
+        const missing = hadBible ? wanted.filter((id) => !installedIds.has(id)) : [];
         const installsPromise = (async () => {
           for (const id of missing) {
             try {
@@ -134,8 +139,7 @@ export default function App() {
         })();
 
         // Grammatical markers (G3588, H853…) are left out of the clickable
-        // Strong's tags. On a first launch the lexicons are still being
-        // installed, so look again once those installs settle.
+        // Strong's tags. Look again once any lexicon installs settle.
         const loadMarkers = () => api.listMarkerStrongs().then(setMarkerStrongs).catch(() => {});
         loadMarkers();
         if (missing.length > 0) installsPromise.then(loadMarkers);
@@ -175,12 +179,21 @@ export default function App() {
         if (!start(modules)) {
           setHasModules(false);
           setView("modules");
-          // First launch: once the KJV (and lexicons) finish installing, open
-          // straight into reading.
-          installsPromise.then(async () => {
+          // First launch: hold the app behind the setup screen until the KJV
+          // and both Strong's lexicons are on disk, then open into reading.
+          // TSK (cross-references) is not needed to read, so it installs
+          // quietly afterwards.
+          const required = ["KJV", "StrongsGreek", "StrongsHebrew"];
+          finishFirstRun.current = async () => {
             const after = await api.listInstalledModules().catch(() => []);
+            loadMarkers();
             start(after);
-          });
+            setFirstRun(null);
+            if (!after.some((m) => m.id === "TSK")) {
+              api.installModule("TSK").catch((e) => console.error("[auto-install TSK]", e));
+            }
+          };
+          setFirstRun({ required, installed: required.filter((id) => installedIds.has(id)) });
         }
       } catch {
         // Backend not yet available (dev mode without Tauri) — show modules view
@@ -263,6 +276,14 @@ export default function App() {
           </div>
         )}
       </div>
+      {firstRun && (
+        <FirstRunSetup
+          required={firstRun.required}
+          installed={firstRun.installed}
+          onComplete={() => finishFirstRun.current()}
+          onSkip={() => setFirstRun(null)}
+        />
+      )}
       <OnboardingHost />
       <FirstDevicePrompt />
     </div>

@@ -21,25 +21,10 @@ else
 fi
 
 # 2. Sync client code, strictly excluding proprietary backend & secrets
+#    (the list lives in scripts/public-excludes.txt, shared with the CI sync)
 echo "==> Copying open-source client files..."
 rsync -av --delete \
-  --exclude '.git' \
-  --exclude '.github' \
-  --exclude 'supabase' \
-  --exclude 'services' \
-  --exclude 'website' \
-  --exclude 'docs/PRO_TEAMS_IMPLEMENTATION_PROMPT.md' \
-  --exclude 'docs/hosted-outputs-design.md' \
-  --exclude 'docs/lovable-ui-*' \
-  --exclude '.env*' \
-  --exclude 'node_modules' \
-  --exclude 'dist' \
-  --exclude 'src-tauri/target' \
-  --exclude '.taste-skill' \
-  --exclude '.claude' \
-  --exclude '.agents' \
-  --exclude '.DS_Store' \
-  --exclude '* 2.*' \
+  --exclude-from "$PROJECT_ROOT/scripts/public-excludes.txt" \
   "$PROJECT_ROOT/" "$TEMP_DIR/"
 
 # 3. Commit and push to the public repo
