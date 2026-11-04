@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAccountStore } from "../../store/accountStore";
 
 const RESEND_SECONDS = 60; // Supabase allows one code per address per minute
+const CODE_LENGTH = 8; // must match the project's Auth → Email OTP length
 
 interface Props {
   /** Why the person is being asked to sign in; shown above the email box. */
@@ -69,7 +70,7 @@ export default function SignInForm({
   }
 
   const emailOk = /^\S+@\S+\.\S+$/.test(email.trim());
-  const codeOk = /^\d{6,10}$/.test(code.trim());
+  const codeOk = code.trim().length === CODE_LENGTH;
 
   return (
     <form
@@ -88,37 +89,37 @@ export default function SignInForm({
       ) : (
         <>
           <p className="font-body-ui text-[12px] text-on-surface-variant leading-relaxed">
-            We sent a 6-digit code to <span className="text-on-surface">{email.trim()}</span>. Enter it below.
+            We sent an {CODE_LENGTH}-digit code to{" "}<span className="text-on-surface">{email.trim()}</span>. Enter it below.
             It can take a minute; check your spam folder if it doesn't arrive.
           </p>
           <label className="block">
             <span className="field-label">Code</span>
-            <input className="field-input font-metadata-mono tracking-[0.3em]" inputMode="numeric" value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
-              placeholder="123456" autoFocus autoComplete="one-time-code" readOnly={busy} />
+            <input className="field-input font-metadata-mono tracking-[0.15em] placeholder:tracking-[0.15em]" inputMode="numeric" value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, CODE_LENGTH))}
+              placeholder={"12345678".slice(0, CODE_LENGTH)} maxLength={CODE_LENGTH} autoFocus autoComplete="one-time-code" readOnly={busy} />
           </label>
         </>
       )}
 
       {err && <p className="font-body-ui text-[12px] text-error" role="alert">{err}</p>}
 
-      <div className="flex items-center gap-2">
+      <div className="space-y-2">
         <button
           type="submit"
           disabled={busy || (step === "email" ? !emailOk : !codeOk)}
-          className="btn-primary rounded-md px-3 py-1.5 font-body-ui text-[13px] font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+          className={`btn-primary rounded-md px-3 py-1.5 font-body-ui text-[13px] font-bold whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${step === "code" ? "w-full" : ""}`}
         >
           {busy ? "Please wait…" : step === "email" ? "Send code" : "Sign in"}
         </button>
         {step === "code" && (
-          <>
-            <button type="button" onClick={send} disabled={busy || wait > 0} className="ctl rounded-md px-3 py-1.5 font-body-ui text-[12px] disabled:opacity-40">
+          <div className="flex items-center justify-between gap-2">
+            <button type="button" onClick={send} disabled={busy || wait > 0} className="ctl rounded-md px-3 py-1.5 font-body-ui text-[12px] whitespace-nowrap disabled:opacity-40">
               {wait > 0 ? `Resend in ${wait}s` : "Resend code"}
             </button>
-            <button type="button" onClick={() => { setStep("email"); setErr(null); }} className="ghost rounded-md px-2 py-1.5 font-body-ui text-[12px] ml-auto">
+            <button type="button" onClick={() => { setStep("email"); setErr(null); }} className="ghost rounded-md px-2 py-1.5 font-body-ui text-[12px] whitespace-nowrap">
               Change email
             </button>
-          </>
+          </div>
         )}
       </div>
     </form>
