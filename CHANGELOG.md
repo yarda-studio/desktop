@@ -2,6 +2,16 @@
 
 All notable changes to Scriptura are listed here, newest first.
 
+## [0.2.3] - 2026-11-04
+
+### Added
+- **First-run setup.** A new setup screen walks you through downloading the KJV and Strong's before you start, so the app opens ready to use.
+- **Translation picker in Live Show.** Switch translations from a bar in Live Show, and show parallel verses on the output.
+
+### Changed
+- **Scriptura is now Yarda.** The app, its links and its update channel have moved to the new name and the public repository, yarda-studio/desktop.
+- **Live opens when you switch to Presentation.** Moving into Presentation takes you straight to the live view.
+
 ## [0.2.2] - 2026-10-28
 
 ### Added
