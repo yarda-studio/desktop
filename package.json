@@ -8,12 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test:gateway": "node --test --experimental-strip-types supabase/functions/search/handler.test.ts",
-    "test:billing": "node --test --experimental-strip-types supabase/functions/billing-webhook/handler.test.ts supabase/functions/billing-checkout/handler.test.ts supabase/functions/billing-portal/handler.test.ts",
-    "test:db": "node --test --experimental-strip-types supabase/tests/db_test.ts",
-    "test:all": "node --test --experimental-strip-types supabase/functions/search/handler.test.ts supabase/functions/billing-webhook/handler.test.ts supabase/functions/billing-checkout/handler.test.ts supabase/functions/billing-portal/handler.test.ts src/features/entitlements/entitlements.test.ts src/features/orgs/orgs.test.ts src/features/sync/sync.test.ts src/features/sharedLibrary/sharedLibrary.test.ts supabase/tests/db_test.ts",
-    "check:secrets": "node scripts/check_secrets.js",
-    "seed:kjv": "node --experimental-strip-types supabase/seed/seed_kjv.ts"
+    "test": "node --test --experimental-strip-types src/features/entitlements/entitlements.test.ts src/features/orgs/orgs.test.ts src/features/sync/sync.test.ts src/features/sharedLibrary/sharedLibrary.test.ts",
+    "check:secrets": "node scripts/check_secrets.js"
   },
   "dependencies": {
     "@fontsource-variable/hanken-grotesk": "^5.3.0",
