@@ -4,6 +4,8 @@ All notable changes to Scriptura are listed here, newest first.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-08
+
 ### Added
 - **Service plan.** One running order across scripture, songs and slides. A strip above the Live, Songs and Slides tabs shows what is on screen, what is next, and a service clock, and opens into an editable list. Add a song, a slide or a passage with its "Add to plan" button, plus cues for a black screen, a countdown (it starts the countdown timer) or a private note for the operator. Give each step a planned length and the clock shows how far ahead or behind you are as each step begins. Back and Next (or `Shift+Page Down` / `Shift+Page Up`) put the next step on screen and switch to the right tab; inside a song or a multi-page slide they move through its slides or pages first. When the plan is running, the phone remote's Next and Back step the plan too. The plan keeps its own file, so a problem with it cannot affect songs, slides or scripture.
 - **Multi-page free-form slides.** A free-form slide can now have several pages, each with its own text boxes, pictures and background. The slide editor gets a page strip with live thumbnails to add, duplicate, reorder and delete pages, and a "Use for all pages" button for the background. On the Slides tab, Page Down / Page Up (and the phone remote's Next / Back) step through a slide's pages before moving to the next scheduled slide, and going back lands on the previous slide's last page. Preview and Live show page buttons for jumping straight to a page, and the stage display lists the next page before the next slide. Slides you already have open as a single page, and old backups still restore.
