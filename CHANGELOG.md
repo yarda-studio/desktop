@@ -4,6 +4,8 @@ All notable changes to Scriptura are listed here, newest first.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-08
+
 ### Added
 - **Jump to a chapter and verse of the current book by typing `c1v3`.** In the Go-to box and the Live Show search bar, `c2v5`, `c2:v5` or `c2 v5` goes to chapter 2, verse 5 of the book you are in, and `c3` goes to chapter 3, verse 1. `v4` still goes to verse 4 of the chapter you are on. The box shows where it will land ("John 2:5") before you press Enter.
 - **Live column mirrors a Strong's lookup on the output.** While a Strong's definition is being shown on the presentation window, the Live column displays a banner ("Strong's G... is on the output") with a Clear button, lists the definition's pages with the current one highlighted (click to switch), and the strip's label and arrows step through its pages. Clearing it returns to the live verse. When the output window is closed, "Show on output" shows a visible hint explaining that the output window must be opened first.
