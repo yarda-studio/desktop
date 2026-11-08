@@ -7,12 +7,18 @@ const FOCUSABLE =
  * Modal-dialog behaviour for a container: moves focus inside on open, keeps Tab
  * cycling within it (WCAG 2.4.3 / 2.1.2), closes on Escape, and returns focus to
  * whatever opened it. Layout and markup stay with the caller.
+ *
+ * `initialFocus: "container"` starts focus on the dialog itself (give it
+ * `tabIndex={-1}`) instead of its first control. Use it when the first control is
+ * a choice that would look picked just from having focus, as on the welcome screen.
  */
 export function useDialogA11y(
   ref: RefObject<HTMLElement>,
   active: boolean,
   onClose: () => void,
+  options: { initialFocus?: "first" | "container" } = {},
 ) {
+  const initialFocus = options.initialFocus ?? "first";
   // Callers pass inline handlers; keep the latest in a ref so the effect (and its
   // focus restore on cleanup) only runs when the dialog opens or closes.
   const closeRef = useRef(onClose);
@@ -25,7 +31,7 @@ export function useDialogA11y(
     const opener = document.activeElement as HTMLElement | null;
 
     if (!root.contains(document.activeElement)) {
-      const first = root.querySelector<HTMLElement>(FOCUSABLE);
+      const first = initialFocus === "container" ? null : root.querySelector<HTMLElement>(FOCUSABLE);
       (first ?? root).focus({ preventScroll: true });
     }
 
@@ -43,7 +49,8 @@ export function useDialogA11y(
       const first = items[0];
       const last = items[items.length - 1];
       const current = document.activeElement;
-      if (e.shiftKey && (current === first || !root.contains(current))) {
+      // Focus on the dialog itself counts as outside the list: Shift+Tab from it wraps to the last control.
+      if (e.shiftKey && (current === first || current === root || !root.contains(current))) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && (current === last || !root.contains(current))) {
@@ -57,5 +64,5 @@ export function useDialogA11y(
       document.removeEventListener("keydown", onKeyDown, true);
       if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
     };
-  }, [ref, active]);
+  }, [ref, active, initialFocus]);
 }

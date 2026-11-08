@@ -26,7 +26,8 @@ export default function WelcomeScreen({ onDone }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   // Esc is deliberately ignored here: one stray keypress shouldn't dismiss the
   // only first-run screen. "Skip for now" is the explicit way out.
-  useDialogA11y(ref, true, () => {});
+  // Focus starts on the dialog, not on the first card: a card with focus looks chosen, and nothing is chosen until it is clicked.
+  useDialogA11y(ref, true, () => {}, { initialFocus: "container" });
 
   const [mode, setMode] = useState<TourWorkspace | null>(null);
   const [depth, setDepth] = useState<TourDepth>("essentials");
@@ -42,7 +43,8 @@ export default function WelcomeScreen({ onDone }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="welcome-title"
-        className="w-full max-w-[760px] glass glass-strong rounded-3xl p-8 my-auto"
+        tabIndex={-1}
+        className="w-full max-w-[760px] glass glass-strong rounded-3xl p-8 my-auto outline-none"
       >
         <div className="text-center mb-7">
           <p className="font-headline-md text-headline-md font-bold text-primary select-none">Yarda</p>
@@ -90,11 +92,12 @@ export default function WelcomeScreen({ onDone }: Props) {
               <button
                 key={d}
                 role="radio"
-                aria-checked={depth === d}
+                // The tour length has a default (Essentials), but it only looks chosen once the section is usable.
+                aria-checked={!!mode && depth === d}
                 disabled={!mode}
                 onClick={() => setDepth(d)}
                 className={`text-left rounded-xl px-4 py-3 border transition-colors ${
-                  depth === d ? "ctl-active border-primary" : "ctl border-outline-variant"
+                  mode && depth === d ? "ctl-active border-primary" : "ctl border-outline-variant"
                 }`}
               >
                 <span className="block font-body-ui text-[14px] font-semibold text-on-surface">

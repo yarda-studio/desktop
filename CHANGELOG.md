@@ -14,6 +14,7 @@ All notable changes to Scriptura are listed here, newest first.
 - **The top bar is now the window's title bar on Mac.** The separate "Yarda" title strip is gone, so the app's top bar sits in that row beside the red, yellow and green window buttons. The bar is slimmer to match (44 points instead of 56, with tighter tab and button groups and smaller labels and icons) and everything in it, the window buttons included, sits on one centre line, so your content gets the room back. The empty parts of the top bar (and the first-run screen) still drag the window, and double-clicking them still enlarges it. Windows and Linux keep their usual title bar.
 
 ### Fixed
+- **The welcome screen no longer looks as if "Personal study" is already chosen.** The window put its keyboard focus on the first card as it opened, which drew a heavy outline around it, and the tour-length option below looked picked too. Now nothing looks chosen until you click a card, and the tour options stay plain until you do. Tabbing still shows where focus is.
 - **Restoring a backup no longer loses track of installed Bible modules.** A restore used to replace the list of installed modules with the one from the backup's computer, so modules only on this computer dropped off the list and modules that were not here stayed listed. The list now matches the files on this computer after any restore, cloud or file.
 
 ## [0.3.0] - 2026-11-08
