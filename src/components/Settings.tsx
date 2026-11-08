@@ -9,6 +9,7 @@ import type { Update } from "@tauri-apps/plugin-updater";
 import { ACCENTS, isAccentId } from "../lib/accents";
 import { useDialogA11y } from "../hooks/useDialogA11y";
 import AccountPanel from "./account/AccountPanel";
+import TransferPanel from "../features/transfer/TransferPanel";
 import { useAccountStore } from "../store/accountStore";
 import { TourReplayButtons } from "../features/onboarding";
 
@@ -477,6 +478,7 @@ export default function Settings() {
                 </p>
               </div>
             </div>
+            <TransferPanel />
           </Pane>
 
           {/* ── Help ─────────────────────────────────────────────────── */}

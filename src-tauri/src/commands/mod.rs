@@ -27,6 +27,7 @@ mod service_order;
 mod slides;
 mod songs;
 mod sync;
+mod transfer;
 
 // Glob re-exports, not named ones: #[tauri::command] generates hidden sibling
 // items alongside each function (__cmd__foo, __tauri_command_name_foo) that
@@ -52,6 +53,7 @@ pub use service_order::*;
 pub use slides::*;
 pub use songs::*;
 pub use sync::*;
+pub use transfer::*;
 
 // Used by lib.rs's startup thread to rebuild any module whose FTS index is stale.
 pub(crate) use search::build_fts_index;

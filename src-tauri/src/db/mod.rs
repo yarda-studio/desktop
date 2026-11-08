@@ -1877,6 +1877,24 @@ impl Database {
         slide_store: &crate::slides::SlideStore,
         plan_store: &crate::plan::PlanStore,
     ) -> Result<Vec<u8>> {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        self.write_backup(&mut buf, song_store, slide_store, plan_store, None)?;
+        Ok(buf.into_inner())
+    }
+
+    /// Write a backup to `out`. `extras` adds the optional large parts (Bible
+    /// modules, theme videos) the caller asked for, and where to find them.
+    pub fn write_backup<W: std::io::Write + std::io::Seek>(
+        &self,
+        out: W,
+        song_store: &crate::songs::SongStore,
+        slide_store: &crate::slides::SlideStore,
+        plan_store: &crate::plan::PlanStore,
+        extras: Option<(
+            &crate::backup_extras::Folders,
+            crate::backup_extras::Options,
+        )>,
+    ) -> Result<()> {
         let temp_dir =
             std::env::temp_dir().join(format!("scriptura-backup-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir)?;
@@ -1906,16 +1924,19 @@ impl Database {
             let _ = conn.execute("VACUUM INTO ?1", params![plan_path.to_str().unwrap()]);
         }
 
-        let mut buf = std::io::Cursor::new(Vec::new());
         {
-            let mut writer = ZipWriter::new(&mut buf);
+            let mut writer = ZipWriter::new(out);
             let options =
                 SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
             let manifest = serde_json::json!({
                 "version": 1,
                 "created_at": chrono::Utc::now().to_rfc3339(),
-                "app_version": "0.1.41",
+                "app_version": env!("CARGO_PKG_VERSION"),
+                "includes": {
+                    "modules": extras.is_some_and(|(_, o)| o.include_modules),
+                    "videos": extras.is_some_and(|(_, o)| o.include_videos),
+                },
             });
             writer.start_file("manifest.json", options)?;
             std::io::Write::write_all(&mut writer, manifest.to_string().as_bytes())?;
@@ -1948,13 +1969,19 @@ impl Database {
                     std::io::Write::write_all(&mut writer, &data)?;
                 }
             }
+            if let Some((folders, options)) = extras {
+                crate::backup_extras::write_into(&mut writer, folders, options)?;
+            }
             writer.finish()?;
         }
 
         let _ = std::fs::remove_dir_all(&temp_dir);
-        Ok(buf.into_inner())
+        Ok(())
     }
 
+    /// Restore from bytes in memory, without the optional parts. The app restores through
+    /// `restore_backup_from`; this stays for the tests that build small backups.
+    #[cfg(test)]
     pub fn restore_backup_zip(
         &self,
         song_store: &crate::songs::SongStore,
@@ -1962,12 +1989,37 @@ impl Database {
         plan_store: &crate::plan::PlanStore,
         bytes: &[u8],
     ) -> Result<()> {
+        self.restore_backup_from(
+            std::io::Cursor::new(bytes),
+            song_store,
+            slide_store,
+            plan_store,
+            None,
+        )
+        .map(|_| ())
+    }
+
+    /// Restore a backup read from `reader` (a file, or bytes in memory).
+    /// With `folders`, Bible modules and theme videos in the backup are put
+    /// back too, and the list of installed modules is made to match this
+    /// computer; without them those parts of a backup are ignored.
+    pub fn restore_backup_from<R: std::io::Read + std::io::Seek>(
+        &self,
+        reader: R,
+        song_store: &crate::songs::SongStore,
+        slide_store: &crate::slides::SlideStore,
+        plan_store: &crate::plan::PlanStore,
+        folders: Option<&crate::backup_extras::Folders>,
+    ) -> Result<crate::backup_extras::Restored> {
         let temp_dir =
             std::env::temp_dir().join(format!("scriptura-restore-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir)?;
 
-        let mut archive = ZipArchive::new(std::io::Cursor::new(bytes))
+        let mut archive = ZipArchive::new(reader)
             .map_err(|e| AppError::Other(format!("Invalid zip archive: {e}")))?;
+        // Modules and videos are staged as they are read and only moved into
+        // place once the databases are back; if anything fails first, they go.
+        let mut extras = folders.map(|f| crate::backup_extras::Extractor::new(f.clone()));
 
         // Slide pictures found in the backup, put back after slides.db below.
         let mut pictures: Vec<(String, Vec<u8>)> = Vec::new();
@@ -1980,6 +2032,11 @@ impl Database {
             let Ok(name) = file.name().map(|n| n.into_owned()) else {
                 continue;
             };
+            if let Some(extras) = extras.as_mut() {
+                if extras.take(&name, &mut file)? {
+                    continue;
+                }
+            }
             // Backups hold flat files. An entry with a path in it ("../x.db", an
             // absolute path) could land outside the temp folder, so it is ignored.
             let is_plain_name =
@@ -2012,6 +2069,13 @@ impl Database {
             Some(scriptura_path)
         } else {
             None
+        };
+
+        // The installed Bible modules belong to this computer, not to the backup.
+        let machine_modules = if folders.is_some() {
+            self.list_installed_module_records().unwrap_or_default()
+        } else {
+            Vec::new()
         };
 
         if let Some(db_file) = main_db_path {
@@ -2064,6 +2128,60 @@ impl Database {
 
         let _ = std::fs::remove_dir_all(&temp_dir);
         self.migrate()?;
+        let restored = match extras {
+            Some(extras) => extras.finish()?,
+            None => Default::default(),
+        };
+        if let Some(folders) = folders {
+            self.reconcile_installed_modules(&machine_modules, &folders.modules)?;
+        }
+        Ok(restored)
+    }
+
+    /// After a restore, make the list of installed modules describe this
+    /// computer. Modules that were here before come back on the list (the backup
+    /// came from a machine that may not have had them); a listed module that has
+    /// no files here is marked not indexed, with its search entries dropped, so
+    /// it indexes afresh if it is installed later; and each install path is
+    /// this computer's.
+    fn reconcile_installed_modules(
+        &self,
+        machine_modules: &[InstalledModuleRecord],
+        modules_dir: &Path,
+    ) -> Result<()> {
+        let listed: std::collections::HashSet<String> = self
+            .list_installed_module_records()?
+            .into_iter()
+            .map(|r| r.0)
+            .collect();
+        for (id, name, path, version, category, _) in machine_modules {
+            if !listed.contains(id) {
+                self.record_installed_module(id, name, path, version, category)?;
+            }
+        }
+        // Read the list before taking the lock for the updates: the lock is not re-entrant.
+        let ids: Vec<String> = self
+            .list_installed_module_records()?
+            .into_iter()
+            .map(|r| r.0)
+            .collect();
+        let conn = self.conn();
+        for id in ids {
+            let dir = modules_dir.join(&id);
+            if dir.is_dir() {
+                conn.execute(
+                    "UPDATE installed_modules SET install_path = ?2 WHERE id = ?1",
+                    params![id, dir.to_string_lossy()],
+                )?;
+            } else {
+                conn.execute(
+                    "UPDATE installed_modules SET index_built = 0 WHERE id = ?1",
+                    params![id],
+                )?;
+                // The search table may not exist yet on a very old database.
+                let _ = conn.execute("DELETE FROM verse_fts WHERE module_id = ?1", params![id]);
+            }
+        }
         Ok(())
     }
 }
@@ -3787,6 +3905,188 @@ mod tests {
             kind: "note".into(),
             title: title.into(),
             ..Default::default()
+        }
+    }
+
+    /// Folders for one pretend computer, with a Bible module and a video on disk.
+    fn computer(tag: &str, module: &str) -> crate::backup_extras::Folders {
+        let root = std::env::temp_dir().join(format!(
+            "scriptura-computer-{tag}-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let f = crate::backup_extras::Folders {
+            modules: root.join("modules"),
+            stepbible: root.join("stepbible"),
+            media: root.join("media"),
+        };
+        std::fs::create_dir_all(f.modules.join(module).join("mods.d")).unwrap();
+        std::fs::write(
+            f.modules.join(module).join("mods.d").join("m.conf"),
+            module.as_bytes(),
+        )
+        .unwrap();
+        std::fs::create_dir_all(&f.stepbible).unwrap();
+        std::fs::write(f.stepbible.join("TBESG.txt"), format!("greek of {tag}")).unwrap();
+        std::fs::create_dir_all(&f.media).unwrap();
+        std::fs::write(f.media.join("bg-1.mp4"), format!("video of {tag}")).unwrap();
+        f
+    }
+
+    #[test]
+    fn a_backup_file_copies_everything_to_another_computer() {
+        use crate::backup_extras::Options;
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let tag = std::process::id();
+        let paths = |name: &str| std::env::temp_dir().join(format!("xfer-{name}-{tag}.db"));
+
+        // The computer the backup comes from: KJV installed, a slide with a picture, a bookmark.
+        let (from_db, from_path) = temp_db("xfer-from");
+        let from_songs = crate::songs::SongStore::open(&paths("from-songs"));
+        let from_slides = test_slide_store(&paths("from-slides"));
+        let from_plan = crate::plan::PlanStore::open(&paths("from-plan"));
+        let from = computer("from", "KJV");
+        from_db
+            .record_installed_module(
+                "KJV",
+                "King James",
+                &from.modules.join("KJV").to_string_lossy(),
+                "2.0",
+                "Bible",
+            )
+            .unwrap();
+        from_db.mark_index_built("KJV").unwrap();
+        let url = format!(
+            "data:image/jpeg;base64,{}",
+            STANDARD.encode([0xFF, 0xD8, 0xFF, 0xE0, 9])
+        );
+        from_slides
+            .db()
+            .unwrap()
+            .save(&slide_with_picture("Welcome", &url))
+            .unwrap();
+        let mut file = std::io::Cursor::new(Vec::new());
+        from_db
+            .write_backup(
+                &mut file,
+                &from_songs,
+                &from_slides,
+                &from_plan,
+                Some((
+                    &from,
+                    Options {
+                        include_modules: true,
+                        include_videos: true,
+                    },
+                )),
+            )
+            .unwrap();
+        let bytes = file.into_inner();
+
+        // The other computer: ESV installed there, nothing else.
+        let (to_db, to_path) = temp_db("xfer-to");
+        let to_songs = crate::songs::SongStore::open(&paths("to-songs"));
+        let to_slides = test_slide_store(&paths("to-slides"));
+        let to_plan = crate::plan::PlanStore::open(&paths("to-plan"));
+        let to = computer("to", "ESV");
+        to_db
+            .record_installed_module(
+                "ESV",
+                "English Standard",
+                &to.modules.join("ESV").to_string_lossy(),
+                "1.0",
+                "Bible",
+            )
+            .unwrap();
+        let restored = to_db
+            .restore_backup_from(
+                std::io::Cursor::new(&bytes),
+                &to_songs,
+                &to_slides,
+                &to_plan,
+                Some(&to),
+            )
+            .unwrap();
+        assert_eq!(
+            (restored.modules, restored.videos),
+            (1, 0),
+            "bg-1.mp4 was already there"
+        );
+
+        // Files: the backup's module arrived, the one already here stayed.
+        assert!(to.modules.join("KJV/mods.d/m.conf").exists());
+        assert!(to.modules.join("ESV/mods.d/m.conf").exists());
+        assert_eq!(
+            std::fs::read_to_string(to.stepbible.join("TBESG.txt")).unwrap(),
+            "greek of from"
+        );
+        // The slide came with its picture.
+        let slides = to_slides.db().unwrap().list(None).unwrap();
+        assert_eq!(slides.len(), 1);
+        let image = to_slides.db().unwrap().get(slides[0].id).unwrap().pages[0].elements[0]
+            .image
+            .clone()
+            .unwrap();
+        assert!(to_slides.pictures().read(&image).is_some());
+        // The module list describes this computer: both modules, each at its own path here.
+        let mut listed = to_db.list_installed_module_records().unwrap();
+        listed.sort();
+        let ids: Vec<_> = listed.iter().map(|r| r.0.as_str()).collect();
+        assert_eq!(ids, ["ESV", "KJV"]);
+        assert!(
+            listed[0].2.starts_with(&*to.modules.to_string_lossy()),
+            "ESV path: {}",
+            listed[0].2
+        );
+        assert!(
+            listed[1].2.starts_with(&*to.modules.to_string_lossy()),
+            "KJV path: {}",
+            listed[1].2
+        );
+
+        // A backup without the optional parts: a module listed in it but with no files here is not
+        // left looking indexed.
+        let mut bare = std::io::Cursor::new(Vec::new());
+        from_db
+            .write_backup(&mut bare, &from_songs, &from_slides, &from_plan, None)
+            .unwrap();
+        let (third_db, third_path) = temp_db("xfer-third");
+        let third_songs = crate::songs::SongStore::open(&paths("third-songs"));
+        let third_slides = test_slide_store(&paths("third-slides"));
+        let third_plan = crate::plan::PlanStore::open(&paths("third-plan"));
+        let third = computer("third", "ESV");
+        std::fs::remove_dir_all(third.modules.join("ESV")).unwrap();
+        let restored = third_db
+            .restore_backup_from(
+                std::io::Cursor::new(bare.into_inner()),
+                &third_songs,
+                &third_slides,
+                &third_plan,
+                Some(&third),
+            )
+            .unwrap();
+        assert_eq!((restored.modules, restored.videos), (0, 0));
+        let kjv = third_db
+            .list_installed_module_records()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.0 == "KJV")
+            .unwrap();
+        assert!(!kjv.5, "no files here, so not marked indexed");
+
+        for p in [&from_path, &to_path, &third_path] {
+            cleanup(p);
+        }
+        for f in [&from, &to, &third] {
+            let _ = std::fs::remove_dir_all(f.modules.parent().unwrap());
+        }
+        for name in ["from", "to", "third"] {
+            for kind in ["songs", "slides", "plan"] {
+                let _ = std::fs::remove_file(paths(&format!("{name}-{kind}")));
+            }
+            let _ = std::fs::remove_dir_all(
+                paths(&format!("{name}-slides")).with_extension("pictures"),
+            );
         }
     }
 

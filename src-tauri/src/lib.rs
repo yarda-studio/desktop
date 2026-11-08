@@ -1,3 +1,4 @@
+mod backup_extras;
 mod commands;
 mod db;
 mod markup;
@@ -212,6 +213,8 @@ pub fn run() {
             commands::plan_sync_pending,
             commands::plan_sync_mark_pushed,
             commands::plan_sync_apply,
+            commands::export_backup_to_file,
+            commands::import_backup_from_file,
             commands::list_slides,
             commands::get_slide,
             commands::save_slide,

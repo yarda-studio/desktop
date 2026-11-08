@@ -4,6 +4,12 @@ All notable changes to Scriptura are listed here, newest first.
 
 ## [Unreleased]
 
+### Added
+- **Move everything to another computer with a file.** Settings → Sync & Backup has "Save to file…" and "Open a file…". Saving writes one file with your bookmarks, notes, history, songs, slides and their pictures, themes and the service plan; opening it on another computer replaces what is there and restarts the app. It needs no account and no subscription. Bible modules (with Strong's data) and theme background videos are left out unless you tick the boxes, because they make the file large. Opening a file replaces, it does not merge: whatever is on that computer is overwritten, so save a backup there first if you need it.
+
+### Fixed
+- **Restoring a backup no longer loses track of installed Bible modules.** A restore used to replace the list of installed modules with the one from the backup's computer, so modules only on this computer dropped off the list and modules that were not here stayed listed. The list now matches the files on this computer after any restore, cloud or file.
+
 ## [0.3.0] - 2026-11-08
 
 ### Added

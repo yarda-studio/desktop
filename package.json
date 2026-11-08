@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node --test --experimental-strip-types src/features/entitlements/entitlements.test.ts src/features/orgs/orgs.test.ts src/features/sync/sync.test.ts src/features/sharedLibrary/sharedLibrary.test.ts src/features/slides/pages.test.ts src/features/slides/pictureSource.test.ts src/features/slides/docCache.test.ts src/features/slides/history.test.ts src/features/slides/fitSize.test.ts src/lib/platform.test.ts src/features/plan/planLogic.test.ts src/features/plan/verseParts.test.ts src/features/plan/planSyncCore.test.ts",
+    "test": "node --test --experimental-strip-types src/features/entitlements/entitlements.test.ts src/features/orgs/orgs.test.ts src/features/sync/sync.test.ts src/features/sharedLibrary/sharedLibrary.test.ts src/features/slides/pages.test.ts src/features/slides/pictureSource.test.ts src/features/slides/docCache.test.ts src/features/slides/history.test.ts src/features/slides/fitSize.test.ts src/lib/platform.test.ts src/features/plan/planLogic.test.ts src/features/plan/verseParts.test.ts src/features/plan/planSyncCore.test.ts src/features/transfer/transferLogic.test.ts",
     "check:secrets": "node scripts/check_secrets.js"
   },
   "dependencies": {
