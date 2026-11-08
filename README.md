@@ -59,3 +59,7 @@ src-tauri/src/
 ├── versification.rs       KJV verse ordinal tables
 └── types.rs               All shared Rust structs + AppError
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
