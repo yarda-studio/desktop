@@ -285,7 +285,7 @@ impl ModuleRegistry {
                 .ok()
                 .map(|p| {
                     p.extension()
-                        .map_or(false, |e| e.eq_ignore_ascii_case("conf"))
+                        .is_some_and(|e| e.eq_ignore_ascii_case("conf"))
                 })
                 .unwrap_or(false);
             if !is_conf {
@@ -614,7 +614,7 @@ impl ModuleRegistry {
             let path = entry.path();
             if path
                 .extension()
-                .map_or(false, |e| e.eq_ignore_ascii_case("conf"))
+                .is_some_and(|e| e.eq_ignore_ascii_case("conf"))
             {
                 return Ok(path.to_path_buf());
             }
@@ -643,11 +643,15 @@ fn extract_zip_entries(data: Vec<u8>, dest_dir: &Path) -> Result<()> {
             .by_index(i)
             .map_err(|e| AppError::Sword(format!("zip entry {i}: {e}")))?;
 
+        // name() fails on a name that is not valid text; the raw bytes still
+        // give something readable for the log.
+        let display_name = String::from_utf8_lossy(file.name_raw()).into_owned();
+
         // enclosed_name() returns None for paths with ".." or absolute components
         let enclosed = match file.enclosed_name() {
             Some(p) => p,
             None => {
-                log::warn!("[modules] skipping unsafe zip entry: {}", file.name());
+                log::warn!("[modules] skipping unsafe zip entry: {display_name}");
                 continue;
             }
         };
@@ -655,7 +659,7 @@ fn extract_zip_entries(data: Vec<u8>, dest_dir: &Path) -> Result<()> {
 
         // Double-check the resolved path is still inside dest_dir
         if !out_path.starts_with(dest_dir) {
-            log::warn!("[modules] skipping zip entry outside dest: {}", file.name());
+            log::warn!("[modules] skipping zip entry outside dest: {display_name}");
             continue;
         }
 
@@ -667,8 +671,7 @@ fn extract_zip_entries(data: Vec<u8>, dest_dir: &Path) -> Result<()> {
             }
             if file.size() > MAX_ENTRY_BYTES {
                 return Err(AppError::Sword(format!(
-                    "zip entry {} exceeds size limit",
-                    file.name()
+                    "zip entry {display_name} exceeds size limit"
                 )));
             }
             // std::io::copy surfaces a zip CRC32 mismatch as an error here,

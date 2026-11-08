@@ -1,3 +1,4 @@
+import { forPlatform } from "../lib/platform";
 import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAppStore, type DisplayPrefs } from "../store/app";
@@ -436,7 +437,7 @@ export default function Settings() {
 
           {/* ── Presentation ─────────────────────────────────────────── */}
           <Pane id="presentation">
-            <SubRow label="Verse context" description="Ctrl+1–4 to switch live. Controls how many verses appear on screen.">
+            <SubRow label="Verse context" description={forPlatform("Ctrl+1–4 to switch live. Controls how many verses appear on screen.")}>
               <div className="flex gap-1.5 flex-wrap">
                 {([
                   { value: 1, label: "1 — Active" },
@@ -506,7 +507,7 @@ export default function Settings() {
                   { q: "How do I start a presentation?", a: "Click the slideshow icon in the top bar to open the Presentation window, then navigate verses from the reading view. Press Ctrl+Q to add the current verse or selected verse range to the schedule, and Ctrl+Shift+Q to open the queue panel." },
                   { q: "What are Strong's numbers?", a: "Strong's numbers link each word to its original Hebrew or Greek dictionary entry. Enable them in Study Tools settings." },
                   { q: "How do I change the font or size?", a: "Open Settings → Appearance → Text Settings to change the text you read in the app. The live output is styled by its theme instead — open Themes and edit the font, size and spacing there." },
-                  { q: "How do I use the presentation verse context shortcuts?", a: "Press Ctrl+1–4 while presentation is active: 1 = active verse only, 2 = active + next, 3 = prev + active + next, 4 = full chapter scroll." },
+                  { q: "How do I use the presentation verse context shortcuts?", a: forPlatform("Press Ctrl+1–4 while presentation is active: 1 = active verse only, 2 = active + next, 3 = prev + active + next, 4 = full chapter scroll.") },
                   { q: "Can I use two Bible translations side by side?", a: "Yes — click the splitscreen icon in the top bar to enable Parallel Mode, then pick the second translation from the Study Library sidebar. Enable the sync icon to scroll both panes together." },
                 ] as const).map(({ q, a }) => (
                   <details key={q} className="group">
@@ -762,7 +763,7 @@ function ChipButton({ active, onClick, children, mono }: { active: boolean; onCl
 const SHORTCUT_GROUPS: Array<{
   label: string;
   icon: string;
-  shortcuts: Array<{ keys: string[]; description: string; note?: string }>;
+  shortcuts: Array<{ keys: string[]; description: string; note?: string; /** Show the keys exactly as written (Cmd+Q is the Mac Quit command). */ literal?: boolean }>;
 }> = [
   {
     label: "Navigation",
@@ -813,8 +814,8 @@ const SHORTCUT_GROUPS: Array<{
     label: "Service queue / Schedule",
     icon: "queue_play_next",
     shortcuts: [
-      { keys: ["Ctrl", "Q"], description: "Add selected verse(s) to schedule" },
-      { keys: ["Ctrl", "Shift", "Q"], description: "Toggle service queue drawer" },
+      { keys: ["Ctrl", "Q"], description: "Add selected verse(s) to schedule", literal: true },
+      { keys: ["Ctrl", "Shift", "Q"], description: "Toggle service queue drawer", literal: true },
       { keys: ["Shift", "Click"], description: "Select range of scriptures", note: "Live Show" },
     ],
   },
@@ -885,7 +886,7 @@ export function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
                         <span key={i} className="inline-flex items-center justify-center text-on-surface px-1.5 py-0.5 field rounded-md">
                           {/^[a-z_]+$/.test(k)
                             ? <span className="material-symbols-outlined text-[14px] leading-none">{k}</span>
-                            : <span className="font-metadata-mono text-[12px]">{k}</span>
+                            : <span className="font-metadata-mono text-[12px]">{s.literal ? k : forPlatform(k)}</span>
                           }
                         </span>
                       ))}

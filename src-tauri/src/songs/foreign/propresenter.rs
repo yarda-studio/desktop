@@ -9,19 +9,20 @@
 //! not the group names, so those songs come in as numbered verses.
 
 use super::{song_with, SongBuilder};
+use crate::markup::xml_text;
 use crate::songs::model::Song;
 use crate::songs::rtf::{extract_embedded_rtf, rtf_to_text};
 use crate::types::{AppError, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use quick_xml::events::{BytesStart, Event};
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 
 fn attr(e: &BytesStart, name: &str) -> String {
     e.attributes()
         .flatten()
         .find(|a| a.key.local_name().as_ref() == name.as_bytes())
         .map(|a| {
-            a.unescape_value()
+            a.normalized_value(XmlVersion::Implicit1_0)
                 .map(|v| v.to_string())
                 .unwrap_or_default()
         })
@@ -116,7 +117,9 @@ pub fn parse_xml(xml: &str, stem: &str) -> Result<Vec<Song>> {
                     _ => {}
                 }
             }
-            Event::Text(t) if capture_rtf => rtf_buf.push_str(&t.unescape().map_err(err)?),
+            // The payload can be split by entity references, so append both.
+            Event::Text(t) if capture_rtf => rtf_buf.push_str(&xml_text::text(t)),
+            Event::GeneralRef(r) if capture_rtf => rtf_buf.push_str(&xml_text::reference(r)),
             Event::CData(c) if capture_rtf => rtf_buf.push_str(&String::from_utf8_lossy(c)),
             Event::End(e) => match e.local_name().as_ref() {
                 b"NSString" if capture_rtf => {
@@ -266,6 +269,37 @@ mod tests {
         assert_eq!(song.ccli_number, "123");
         assert_eq!(song.copyright, "(c) Someone");
         assert_eq!(song.sections[0].lyrics, "Line one\nLine two");
+    }
+
+    #[test]
+    fn entities_in_attributes_are_decoded() {
+        let xml = format!(
+            r#"<RVPresentationDocument versionNumber="500" CCLISongTitle="Peace &amp; Joy &#8217;s &quot;Song&quot;" CCLIArtistCredits="Tom &amp; Jerry">
+ <groups><RVSlideGrouping name="Verse 1"><slides><RVDisplaySlide><displayElements><RVTextElement RTFData="{a}"/></displayElements></RVDisplaySlide></slides></RVSlideGrouping></groups>
+</RVPresentationDocument>"#,
+            a = b64(&rtf("Line one")),
+        );
+        let song = parse_xml(&xml, "x").unwrap().remove(0);
+        assert_eq!(song.title, "Peace & Joy \u{2019}s \"Song\"");
+        assert_eq!(song.author, "Tom & Jerry");
+    }
+
+    #[test]
+    fn rtf_element_text_keeps_entities() {
+        // A line break written as a numeric reference splits the payload into two
+        // text runs. They must join back into one string (decode_rtf ignores
+        // whitespace), not stop at the first run.
+        let encoded = b64(&rtf("Grace"));
+        let (head, tail) = encoded.split_at(8);
+        let xml = format!(
+            r#"<RVPresentationDocument versionNumber="600" CCLISongTitle="T">
+ <array rvXMLIvarName="groups"><RVSlideGrouping name="Verse 1"><array rvXMLIvarName="slides">
+  <RVDisplaySlide><array rvXMLIvarName="displayElements"><RVTextElement><NSString rvXMLIvarName="RTFData">{head}&#10;{tail}</NSString></RVTextElement></array></RVDisplaySlide>
+ </array></RVSlideGrouping></array>
+</RVPresentationDocument>"#
+        );
+        let song = parse_xml(&xml, "x").unwrap().remove(0);
+        assert_eq!(song.sections[0].lyrics, "Grace");
     }
 
     #[test]

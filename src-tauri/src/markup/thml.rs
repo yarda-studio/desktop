@@ -1,23 +1,59 @@
-use crate::types::{Result, TextSpan};
 /// ThML (Theological Markup Language) parser — plain-text extraction.
 ///
 /// ThML is HTML-like XML. We extract text content and Strong's numbers from
 /// <sync type="Strongs" value="G25"/> elements. Formatting tags are ignored.
 /// Footnotes (<note>) are skipped from the main text flow.
+use super::xml_text::TextRun;
+use crate::types::{Result, TextSpan};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
 pub fn parse(raw: &str) -> Result<Vec<TextSpan>> {
     let mut reader = Reader::from_str(raw);
-    reader.config_mut().trim_text(true);
+    // No trim_text: an entity splits one run of text into several events, and
+    // trimming each would drop the spaces beside it. The whole run is trimmed
+    // below instead.
 
     let mut spans = Vec::new();
     let mut buf = Vec::new();
     let mut pending_strongs: Option<String> = None;
     let mut in_note = false;
+    let mut run = TextRun::default();
 
     loop {
-        match reader.read_event_into(&mut buf) {
+        let event = reader.read_event_into(&mut buf);
+        let in_run = match &event {
+            Ok(Event::Text(t)) => {
+                run.push_text(t);
+                true
+            }
+            Ok(Event::GeneralRef(r)) => {
+                run.push_ref(r);
+                true
+            }
+            _ => false,
+        };
+        if in_run {
+            drop(event);
+            buf.clear();
+            continue;
+        }
+        if let Some(raw_text) = run.take() {
+            let text = raw_text.trim();
+            if !in_note && !text.is_empty() {
+                spans.push(TextSpan {
+                    text: text.to_string(),
+                    strongs: pending_strongs.take().map(|strongs| vec![strongs]),
+                    morph: None,
+                    is_added: None,
+                    is_footnote: None,
+                    is_red_letter: None,
+                    is_title: None,
+                });
+            }
+        }
+
+        match event {
             Ok(Event::Empty(ref e)) => {
                 let name = std::str::from_utf8(e.name().as_ref())
                     .unwrap_or("")
@@ -60,24 +96,6 @@ pub fn parse(raw: &str) -> Result<Vec<TextSpan>> {
                     in_note = false;
                 }
             }
-            Ok(Event::Text(ref e)) => {
-                if in_note {
-                    continue;
-                }
-                let text = e.unescape().unwrap_or_default().into_owned();
-                if text.trim().is_empty() {
-                    continue;
-                }
-                spans.push(TextSpan {
-                    text,
-                    strongs: pending_strongs.take().map(|strongs| vec![strongs]),
-                    morph: None,
-                    is_added: None,
-                    is_footnote: None,
-                    is_red_letter: None,
-                    is_title: None,
-                });
-            }
             Ok(Event::Eof) => break,
             Err(_) => {
                 // On parse failure, return the raw text stripped of tags as a fallback
@@ -109,4 +127,29 @@ pub fn parse(raw: &str) -> Result<Vec<TextSpan>> {
     }
 
     Ok(spans)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+
+    #[test]
+    fn keeps_entities_and_character_references_in_text() {
+        let spans =
+            parse("<p>He said &quot;Go&quot; &amp; left it&#8217;s &lt;ok&gt; &apos;x&apos;</p>")
+                .unwrap();
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].text, "He said \"Go\" & left it\u{2019}s <ok> 'x'");
+    }
+
+    #[test]
+    fn strongs_numbers_still_attach_and_notes_are_skipped() {
+        let spans = parse(
+            r#"<p><sync type="Strongs" value="G25"/>love &amp; grace<note>skip &amp; me</note></p>"#,
+        )
+        .unwrap();
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].text, "love & grace");
+        assert_eq!(spans[0].strongs.as_ref().unwrap(), &vec!["G25".to_string()]);
+    }
 }

@@ -2,6 +2,8 @@ import type { CSSProperties } from "react";
 import ThemeBackdrop from "../../components/ThemeBackdrop";
 import type { SlideDocPayload } from "../../lib/presentation";
 import type { PresentationTheme } from "../../lib/tauri";
+import FitText from "./FitText";
+import SlidePicture from "./SlidePicture";
 
 const FONT_FAMILY_CSS: Record<string, string> = {
   system: `-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif`,
@@ -49,7 +51,7 @@ export default function SlideStage({ slide, theme, stage }: {
           position: "absolute", left: `${e.x}%`, top: `${e.y}%`, width: `${e.w}%`, height: `${e.h}%`,
         };
         if (e.kind === "image") {
-          return e.image ? <img key={e.id} src={e.image} alt="" style={{ ...box, objectFit: "contain" }} draggable={false} /> : null;
+          return e.image ? <SlidePicture key={e.id} image={e.image} style={{ ...box, objectFit: "contain" }} /> : null;
         }
         return (
           <div
@@ -62,11 +64,13 @@ export default function SlideStage({ slide, theme, stage }: {
               overflow: "hidden",
             }}
           >
-            <p
-              className="m-0 whitespace-pre-wrap"
+            <FitText
+              text={e.text}
+              maxPx={e.font_size * scale}
+              autoFit={e.auto_fit === true}
+              fitKey={`${font}|${e.bold}`}
               style={{
                 width: "100%",
-                fontSize: e.font_size * scale,
                 lineHeight: 1.25,
                 textAlign: e.align,
                 color: e.color,
@@ -75,9 +79,7 @@ export default function SlideStage({ slide, theme, stage }: {
                 fontVariantNumeric: "tabular-nums",
                 textShadow: themed && theme?.text_shadow ? "0 2px 12px rgba(0,0,0,.75)" : undefined,
               }}
-            >
-              {e.text}
-            </p>
+            />
           </div>
         );
       })}

@@ -8,7 +8,6 @@
 /// versification can be swapped in later without changing the SWORD reader logic.
 ///
 /// Source: SWORD project kjv.h
-
 pub const BOOK_NAMES: &[&str] = &[
     // OT (39 books)
     "Genesis",

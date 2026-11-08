@@ -1,6 +1,7 @@
 pub mod gbf;
 pub mod osis;
 pub mod thml;
+pub mod xml_text;
 
 use crate::sword::conf::MarkupType;
 use crate::types::{Result, TextSpan};

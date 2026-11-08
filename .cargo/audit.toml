@@ -1,0 +1,17 @@
+# Known advisories we have looked at and are not fixing yet. Each one needs a
+# major-version upgrade of a direct dependency; see "Dependency advisories" in
+# docs/TODO.md. Anything NOT listed here still fails the Dependency audit job.
+# Remove an entry as soon as its upgrade lands.
+
+[advisories]
+ignore = [
+  # zip 4.6.1, pulled in only by tauri-plugin-updater (our own zip is 9): all
+  # four are in ZipArchive::extract / ZipStreamReader::extract. The updater
+  # unpacks a signed update with its own code and the app never calls extract.
+  # tauri-plugin-updater 2.12.0 still uses zip 4. Remove these when a release
+  # moves to zip 9.
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
+  "RUSTSEC-2026-0429",
+]

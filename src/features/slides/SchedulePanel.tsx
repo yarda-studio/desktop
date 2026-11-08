@@ -1,4 +1,5 @@
 import { useSlidesLive } from "./liveStore";
+import SlideThumb from "./SlideThumb";
 
 const KIND_ICON = { announcement: "campaign", freeform: "dashboard_customize" } as const;
 
@@ -36,12 +37,13 @@ export default function SchedulePanel({ width }: { width: number }) {
                     onClick={() => void preview(s.id)}
                     onDoubleClick={() => void goLive(s.id)}
                     title="Click to preview • Double-click to send live"
-                    className={`w-full flex items-start gap-2.5 px-3 py-2 rounded-lg border text-left transition-colors ${
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-colors ${
                       selected ? "row-selected border-primary/40" : "border-outline-variant/50 hover:bg-surface-container-low"
                     }`}
                   >
                     <span className={`font-metadata-mono text-[12px] shrink-0 mt-0.5 ${selected ? "text-primary font-bold" : "text-on-surface-variant"}`}>{i + 1}</span>
-                    <span className="min-w-0 flex-1 flex items-center gap-1.5">
+                    <SlideThumb id={s.id} updatedAt={s.updated_at} width={72} />
+                    <span className="min-w-0 flex-1 flex items-center gap-1.5 self-center">
                       <span className="material-symbols-outlined text-[16px] text-on-surface-variant shrink-0" aria-hidden="true">{KIND_ICON[s.kind]}</span>
                       <span className={`font-body-ui text-[13px] font-semibold truncate ${selected ? "text-primary" : "text-on-surface"}`}>{s.title}</span>
                       {isLive && <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse shrink-0" title="Live" />}

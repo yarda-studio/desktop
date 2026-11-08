@@ -1,15 +1,20 @@
 import OutputPreview from "../../components/OutputPreview";
 import { useAppStore } from "../../store/app";
 import { useSlidesLive } from "./liveStore";
+import PageChips from "./PageChips";
 import { useSlidePresentState } from "./useSlideOutput";
 
 export default function LivePanel({ width, stage }: { width: number; stage: { w: number; h: number } }) {
-  const { live, schedule, stepLive, clearLive } = useSlidesLive();
+  const { live, livePage, schedule, stepLive, setLivePage, clearLive } = useSlidesLive();
   const presentationActive = useAppStore((s) => s.presentationActive);
   const liveBlack = useAppStore((s) => s.liveBlack);
   const liveEmergency = useAppStore((s) => s.liveEmergency);
-  const outputState = useSlidePresentState(live);
+  const outputState = useSlidePresentState(live, livePage);
   const at = live?.id != null ? schedule.findIndex((s) => s.id === live.id) : -1;
+  const pageCount = live?.pages.length ?? 0;
+  // Arrows step through the live slide's pages first, then on to the neighbouring scheduled slide.
+  const canPrev = !!live && (livePage > 0 || at > 0);
+  const canNext = !!live && (livePage < pageCount - 1 || (at >= 0 && at < schedule.length - 1));
 
   return (
     <section style={{ width }} className="shrink-0 flex flex-col overflow-hidden panel rounded-3xl">
@@ -44,13 +49,19 @@ export default function LivePanel({ width, stage }: { width: number; stage: { w:
         </div>
       </div>
 
+      {live && pageCount > 1 && (
+        <div className="shrink-0 border-t border-outline-variant px-4 py-2">
+          <PageChips count={pageCount} index={livePage} onSelect={setLivePage} />
+        </div>
+      )}
+
       <div className="shrink-0 border-t border-outline-variant px-4 py-3 flex items-center gap-3">
         <p className="min-w-0 flex-1 font-body-ui text-[12px] text-on-surface truncate" title={live?.title}>{live ? live.title : "Nothing live"}</p>
         <div className="flex ctl rounded-md overflow-hidden shrink-0">
-          <button onClick={() => void stepLive(-1)} disabled={!live || at <= 0} className="px-2 py-1 disabled:opacity-35 hover:bg-on-surface/10" aria-label="Previous scheduled slide" title="Previous scheduled slide (Page Up)">
+          <button onClick={() => void stepLive(-1)} disabled={!canPrev} className="px-2 py-1 disabled:opacity-35 hover:bg-on-surface/10" aria-label="Previous page or slide" title="Previous page, or the previous scheduled slide (Page Up)">
             <span className="material-symbols-outlined text-[18px]">chevron_left</span>
           </button>
-          <button onClick={() => void stepLive(1)} disabled={!live || at < 0 || at >= schedule.length - 1} className="px-2 py-1 border-l border-outline-variant disabled:opacity-35 hover:bg-on-surface/10" aria-label="Next scheduled slide" title="Next scheduled slide (Page Down)">
+          <button onClick={() => void stepLive(1)} disabled={!canNext} className="px-2 py-1 border-l border-outline-variant disabled:opacity-35 hover:bg-on-surface/10" aria-label="Next page or slide" title="Next page, or the next scheduled slide (Page Down)">
             <span className="material-symbols-outlined text-[18px]">chevron_right</span>
           </button>
         </div>

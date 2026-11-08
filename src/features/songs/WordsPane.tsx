@@ -1,3 +1,4 @@
+import { forPlatform } from "../../lib/platform";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Song, SongSection } from "./api";
 import { IconBtn } from "./fields";
@@ -115,7 +116,7 @@ export default function WordsPane({ song, onChange, onFocusSection }: {
               onKeyDown={(e) => onKeyDown(e, i)}
               onFocus={() => onFocusSection(s.key)}
               rows={Math.max(3, s.lyrics.split("\n").length + 1)}
-              placeholder="One line per line. A blank line starts a new slide. Cmd/Ctrl+Enter splits into a new section."
+              placeholder={`One line per line. A blank line starts a new slide. ${forPlatform("Ctrl+Enter")} splits into a new section.`}
               className="w-full resize-none bg-transparent outline-none px-3 py-2 font-body-ui text-[14px] leading-snug text-on-surface"
             />
           </div>

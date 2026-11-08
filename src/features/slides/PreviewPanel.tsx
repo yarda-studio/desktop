@@ -1,11 +1,12 @@
 import OutputPreview from "../../components/OutputPreview";
 import { useSlidesLive } from "./liveStore";
+import PageChips from "./PageChips";
 import { useSlidePresentState } from "./useSlideOutput";
 
 export default function PreviewPanel({ stage }: { stage: { w: number; h: number } }) {
-  const { previewSlide, live, goLive } = useSlidesLive();
-  const outputState = useSlidePresentState(previewSlide);
-  const alreadyLive = !!previewSlide && live?.id === previewSlide.id && live.updated_at === previewSlide.updated_at;
+  const { previewSlide, previewPage, setPreviewPage, live, livePage, goLive } = useSlidesLive();
+  const outputState = useSlidePresentState(previewSlide, previewPage);
+  const alreadyLive = !!previewSlide && live?.id === previewSlide.id && live.updated_at === previewSlide.updated_at && livePage === previewPage;
 
   return (
     <section className="flex-1 min-w-0 flex flex-col overflow-hidden panel rounded-3xl">
@@ -29,6 +30,11 @@ export default function PreviewPanel({ stage }: { stage: { w: number; h: number 
           ? <OutputPreview state={outputState} chapter={null} parallelChapter={null} stage={stage} outputOpen />
           : <p className="text-center font-body-ui text-[12px] text-on-surface-variant">Select a scheduled slide to preview it.</p>}
       </div>
+      {previewSlide && previewSlide.pages.length > 1 && (
+        <div className="shrink-0 border-t border-outline-variant px-4 py-2">
+          <PageChips count={previewSlide.pages.length} index={previewPage} onSelect={setPreviewPage} />
+        </div>
+      )}
     </section>
   );
 }

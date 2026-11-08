@@ -22,7 +22,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: https://asset.localhost; media-src 'self' asset: https://asset.localhost; font-src 'self' data: asset: https://asset.localhost; connect-src ipc: http://ipc.localhost https://*.supabase.co",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: https://asset.localhost; media-src 'self' asset: https://asset.localhost; font-src 'self' data: asset: https://asset.localhost; connect-src ipc: http://ipc.localhost https://*.supabase.co; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: https://asset.localhost; media-src 'self' asset: https://asset.localhost; font-src 'self' data: asset: https://asset.localhost; connect-src ipc: http://ipc.localhost https://*.supabase.co ws://localhost:1420 http://localhost:1420",
       "assetProtocol": {
         "enable": true,
         "scope": ["$APPDATA/media/**"]
@@ -41,7 +42,7 @@
     ],
     "macOS": {
       "signingIdentity": "-",
-      "hardenedRuntime": false
+      "hardenedRuntime": true
     },
     "createUpdaterArtifacts": true
   },

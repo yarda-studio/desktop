@@ -195,7 +195,7 @@ fn format_sense_outline(s: &str) -> String {
             let trimmed = l.trim();
             format!(
                 "{}{}",
-                &" ".repeat(indent),
+                " ".repeat(indent),
                 trimmed.split_whitespace().collect::<Vec<_>>().join(" ")
             )
         })

@@ -300,7 +300,7 @@ pub fn parse_path(path: &Path) -> Result<Vec<Song>> {
         .trim_start()
         .starts_with('<');
 
-    if !xml && (ext == "pro" || super::rtf::extract_embedded_rtf(&bytes).len() > 0) {
+    if !xml && (ext == "pro" || !super::rtf::extract_embedded_rtf(&bytes).is_empty()) {
         return propresenter::parse_pro7(&bytes, &stem);
     }
     let text = String::from_utf8_lossy(&bytes);

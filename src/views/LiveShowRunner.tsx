@@ -1,3 +1,4 @@
+import { forPlatform } from "../lib/platform";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore, itemEndVerse, serviceItemLabel, type VerseRef, type ServiceItem } from "../store/app";
 import { api, type TextSpan } from "../lib/tauri";
@@ -11,6 +12,8 @@ import StrongsSheet from "../components/StrongsSheet";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { liveDisplayPrefs, liveFontSize, liveSafeMargin } from "../lib/liveText";
 import OutputPreview from "../components/OutputPreview";
+import { addVerseToPlan } from "../features/plan/addToPlan";
+import { reportVerseParts, verseKey } from "../features/plan/verseParts";
 import { registerScriptureStepper } from "../features/remote/registry";
 import { usePresentationStage } from "../hooks/usePresentationStage";
 import type { PresentState } from "../lib/presentation";
@@ -666,6 +669,13 @@ export default function LiveShowRunner() {
   const liveText = verseText(liveChapter?.verses, currentRef.verse);
   const liveParts = displayPrefs.splitLongVerses ? splitParts(liveText) : [liveText];
   const liveSplit = liveParts.length > 1;
+  // Tell the service plan how many parts this verse has so it can step through them.
+  // Only once the chapter on screen is the live one: until then the text (and so the count) is the previous chapter's.
+  const livePartCount = liveParts.length;
+  const chapterLoaded = liveChapter?.book === currentRef.book && liveChapter?.chapter === currentRef.chapter;
+  useEffect(() => {
+    if (chapterLoaded) reportVerseParts(verseKey(currentRef), livePartCount);
+  }, [currentRef, livePartCount, chapterLoaded]);
 
   // The phone remote steps the *live* verse: through its split parts first, then
   // to the neighbouring verse (crossing into the adjacent chapter at either end).
@@ -802,6 +812,19 @@ export default function LiveShowRunner() {
                 <span className="min-[1400px]:hidden">
                   {isMultiSelect ? `(${selectedCount})` : ""}
                 </span>
+              </button>
+              <button
+                onClick={() => {
+                  const first = Math.min(selectedRange.start, selectedRange.end);
+                  const last = Math.max(selectedRange.start, selectedRange.end);
+                  void addVerseToPlan({ book: previewRef.book, chapter: previewRef.chapter, verse: first }, primaryModule, last);
+                }}
+                disabled={!primaryModule}
+                className="p-1.5 ctl rounded-md text-on-surface-variant hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Add this passage to the service plan"
+                aria-label="Add this passage to the service plan"
+              >
+                <span className="material-symbols-outlined text-[14px]">playlist_add_check</span>
               </button>
               <button
                 onClick={goBack}
@@ -982,10 +1005,10 @@ export default function LiveShowRunner() {
             <TranslationBar />
             <span className="font-body-ui text-[13px] font-semibold text-on-surface shrink-0">{rangeCitation}</span>
             <div className="flex items-center gap-2 shrink-0">
-              <button onClick={() => stepChapter(-1)} className="p-1 rounded-md ctl text-on-surface-variant" title="Previous chapter (Ctrl+P)">
+              <button onClick={() => stepChapter(-1)} className="p-1 rounded-md ctl text-on-surface-variant" title={forPlatform("Previous chapter (Ctrl+P)")}>
                 <span className="material-symbols-outlined text-[16px]">chevron_left</span>
               </button>
-              <button onClick={() => stepChapter(1)} className="p-1 rounded-md ctl text-on-surface-variant" title="Next chapter (Ctrl+N)">
+              <button onClick={() => stepChapter(1)} className="p-1 rounded-md ctl text-on-surface-variant" title={forPlatform("Next chapter (Ctrl+N)")}>
                 <span className="material-symbols-outlined text-[16px]">chevron_right</span>
               </button>
             </div>

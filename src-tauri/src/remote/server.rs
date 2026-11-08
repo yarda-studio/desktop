@@ -137,6 +137,13 @@ fn reply(status: u16, content_type: &'static str, body: impl Into<String>) -> Re
     }
 }
 
+/// True when `url` carries the right secret. An empty `token` (feature off) never matches.
+pub(super) fn authorised(url: &str, token: &str) -> bool {
+    let query = url.split_once('?').map_or("", |(_, q)| q);
+    let supplied = query_param(query, "k").unwrap_or("");
+    !token.is_empty() && constant_time_eq(supplied, token)
+}
+
 /// Decide what to answer. Pure, so the access rules can be tested without a socket.
 pub fn handle(
     method: &str,
@@ -146,9 +153,8 @@ pub fn handle(
     snapshot: &str,
     now_ms: u128,
 ) -> Reply {
-    let (path, query) = url.split_once('?').unwrap_or((url, ""));
-    let supplied = query_param(query, "k").unwrap_or("");
-    if token.is_empty() || !constant_time_eq(supplied, token) {
+    let path = url.split_once('?').map_or(url, |(p, _)| p);
+    if !authorised(url, token) {
         return reply(403, "text/plain; charset=utf-8", "Forbidden");
     }
     match (method, path) {
@@ -287,13 +293,18 @@ fn serve(server: tiny_http::Server, stop: Arc<AtomicBool>, shared: Arc<Shared>, 
             continue;
         }
 
-        let mut body = String::new();
-        let _ = request.as_reader().take(MAX_BODY).read_to_string(&mut body);
         let token = if shared.remote_on.load(Ordering::Relaxed) {
             lock(&shared.remote_token).clone()
         } else {
             String::new()
         };
+        // Only a request that already proved it has the secret gets its body read. This
+        // loop serves every client, so reading a stranger's body could let one stalled
+        // connection on the network freeze the remote and the web outputs.
+        let mut body = String::new();
+        if method == "POST" && authorised(&url, &token) {
+            let _ = request.as_reader().take(MAX_BODY).read_to_string(&mut body);
+        }
         let snap = lock(&shared.snapshot).clone();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -364,7 +375,9 @@ impl output::OutputBackend for AppBackend {
     }
 
     fn media(&self, name: &str) -> Option<PathBuf> {
-        if !crate::commands::is_valid_media_name(name) {
+        if !crate::commands::is_valid_media_name(name)
+            && !crate::slides::pictures::is_picture_name(name)
+        {
             return None;
         }
         let file = self
@@ -566,6 +579,14 @@ mod tests {
 
     fn get(url: &str) -> Reply {
         handle("GET", url, "", TOKEN, "", 1000)
+    }
+
+    #[test]
+    fn authorised_needs_the_exact_secret_and_a_server_that_is_on() {
+        assert!(authorised(&format!("/api/command?k={TOKEN}"), TOKEN));
+        assert!(!authorised("/api/command", TOKEN), "no secret");
+        assert!(!authorised("/api/command?k=nope", TOKEN), "wrong secret");
+        assert!(!authorised(&format!("/?k={TOKEN}"), ""), "feature off");
     }
 
     #[test]

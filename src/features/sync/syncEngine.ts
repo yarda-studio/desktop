@@ -4,6 +4,25 @@ import { useEntitlementStore } from "../entitlements/entitlementStore.ts";
 import { fetchRemoteSyncRecords, fetchSyncUsage, pushSyncBatch } from "./api.ts";
 import { useSyncStore } from "./syncStore.ts";
 
+/**
+ * A feature that keeps its own data in sync, in step with the main sync (the
+ * service plan does: features/plan/planSync.ts). It runs after the main sync's
+ * own push and pull, and a failure in it is logged and contained, so one
+ * feature's trouble never fails the main sync or another feature's.
+ */
+export interface SyncParticipant {
+  name: string;
+  sync(): Promise<void>;
+}
+
+const participants = new Set<SyncParticipant>();
+
+/** Join the sync. Returns a function that leaves it again. */
+export function registerSyncParticipant(participant: SyncParticipant): () => void {
+  participants.add(participant);
+  return () => { participants.delete(participant); };
+}
+
 let isSyncRunning = false;
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 let periodicInterval: ReturnType<typeof setInterval> | null = null;
@@ -76,6 +95,15 @@ export async function syncNow(): Promise<void> {
 
       if (remoteRecords.length < 500) {
         hasMoreRemote = false;
+      }
+    }
+
+    // 2b. Features that sync their own data
+    for (const participant of participants) {
+      try {
+        await participant.sync();
+      } catch (err) {
+        console.warn(`[sync] ${participant.name} could not sync:`, err);
       }
     }
 

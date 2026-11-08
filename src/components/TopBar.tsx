@@ -1,3 +1,4 @@
+import { forPlatform } from "../lib/platform";
 import { useEffect, useRef } from "react";
 import { useAppStore, type Theme } from "../store/app";
 import { api } from "../lib/tauri";
@@ -64,7 +65,7 @@ export default function TopBar() {
   }
 
   const themeIcon = theme === "dark" ? "light_mode" : theme === "system" ? "contrast" : "dark_mode";
-  const modeLabel = searchMode === "word" ? "Scripture navigation (Ctrl+L)" : "Word search (Ctrl+K)";
+  const modeLabel = forPlatform(searchMode === "word" ? "Scripture navigation (Ctrl+L)" : "Word search (Ctrl+K)");
   // Icon shows what you'll switch TO (not current mode)
   const modeIcon = searchMode === "word" ? "auto_stories" : "search";
 
@@ -102,7 +103,7 @@ export default function TopBar() {
               <input
                 ref={wordInputRef}
                 className="w-full pl-9 pr-3 py-1.5 field rounded-lg focus:outline-none text-body-ui font-body-ui transition-colors placeholder:text-on-surface-variant"
-                placeholder="Search (Ctrl+K)"
+                placeholder={forPlatform("Search (Ctrl+K)")}
                 onFocus={() => setView("search")}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { addSongToPlan } from "../plan/addToPlan";
 import type { SongSummary } from "./api";
 import { openHymnarySearch } from "./hymnary";
 import { useSongsLive } from "./liveStore";
@@ -142,6 +143,7 @@ export default function SongList({ onImport }: { onImport: () => void }) {
         onHymnary={() => void openHymnarySearch(query)}
         onImport={onImport}
         onEdit={() => selected && void openEditor(selected.id)}
+        onPlan={() => selected && void addSongToPlan(selected)}
         onFavourite={() => selected && void toggleFavourite(selected.id)}
         onDelete={() => selected && void remove(selected.id)}
       />
@@ -172,9 +174,9 @@ function Row({ song, selected, onSelect, onOpen }: { song: SongSummary; selected
   );
 }
 
-function Footer({ count, selected, onNew, onHymnary, onImport, onEdit, onFavourite, onDelete }: {
+function Footer({ count, selected, onNew, onHymnary, onImport, onEdit, onPlan, onFavourite, onDelete }: {
   count: number; selected: SongSummary | null;
-  onNew: () => void; onHymnary: () => void; onImport: () => void; onEdit: () => void; onFavourite: () => void; onDelete: () => void;
+  onNew: () => void; onHymnary: () => void; onImport: () => void; onEdit: () => void; onPlan: () => void; onFavourite: () => void; onDelete: () => void;
 }) {
   const [menu, setMenu] = useState(false);
   const [confirm, setConfirm] = useState(false);
@@ -194,6 +196,9 @@ function Footer({ count, selected, onNew, onHymnary, onImport, onEdit, onFavouri
       </button>
       <button onClick={onEdit} disabled={!selected} title="Edit song" aria-label="Edit song" className="ghost p-1.5 rounded-md text-on-surface disabled:opacity-30 disabled:pointer-events-none">
         <span className="material-symbols-outlined text-[20px]">edit</span>
+      </button>
+      <button onClick={onPlan} disabled={!selected} title="Add to the service plan" aria-label="Add to the service plan" className="ghost p-1.5 rounded-md text-on-surface disabled:opacity-30 disabled:pointer-events-none">
+        <span className="material-symbols-outlined text-[20px]">playlist_add_check</span>
       </button>
       <div ref={wrap} className="relative">
         <button onClick={() => { setMenu((m) => !m); setConfirm(false); }} title="More" aria-label="More actions" aria-expanded={menu} className="ghost p-1.5 rounded-md text-secondary flex items-center">

@@ -6,6 +6,7 @@
 //! `|` a line break inside a line and `||` a slide break inside a line.
 
 use super::{song_with, SongBuilder};
+use crate::markup::xml_text;
 use crate::songs::model::Song;
 use crate::types::{AppError, Result};
 use quick_xml::events::Event;
@@ -47,13 +48,24 @@ fn read_fields(xml: &str) -> Result<Fields> {
                 }
                 depth = depth.saturating_sub(1);
             }
+            // Entities such as `&amp;` arrive as their own events, so the
+            // field is built by appending every text and reference in order.
             Event::Text(t) => {
                 if let (Some(k), true) = (&current, depth >= 2) {
                     fields
                         .map
                         .entry(k.clone())
                         .or_default()
-                        .push_str(&t.unescape().map_err(err)?);
+                        .push_str(&xml_text::text(&t));
+                }
+            }
+            Event::GeneralRef(r) => {
+                if let (Some(k), true) = (&current, depth >= 2) {
+                    fields
+                        .map
+                        .entry(k.clone())
+                        .or_default()
+                        .push_str(&xml_text::reference(&r));
                 }
             }
             Event::CData(c) => {
@@ -281,6 +293,19 @@ mod tests {
             "The Lord has promised good to me\n\nHis word my hope secures"
         );
         assert_eq!(s.arrangement, ["v1", "c", "v2", "c"]);
+    }
+
+    #[test]
+    fn keeps_entities_and_character_references() {
+        let xml = "<song><title>Peace &amp; Joy</title><author>Tom &amp; Jerry</author>\
+<lyrics>[V1]\n It&#8217;s &quot;fine&quot; &amp; good\n &lt;now&gt; &apos;x&apos;</lyrics></song>";
+        let song = parse(xml, "").unwrap().remove(0);
+        assert_eq!(song.title, "Peace & Joy");
+        assert_eq!(song.author, "Tom & Jerry");
+        assert_eq!(
+            song.sections[0].lyrics,
+            "It\u{2019}s \"fine\" & good\n<now> 'x'"
+        );
     }
 
     #[test]

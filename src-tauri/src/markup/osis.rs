@@ -1,4 +1,3 @@
-use crate::types::{Result, TextSpan};
 /// OSIS XML parser.
 ///
 /// Converts OSIS markup to a flat list of TextSpan structs.
@@ -11,6 +10,8 @@ use crate::types::{Result, TextSpan};
 ///   <note>...</note>                               → TextSpan with is_footnote (text suppressed in main flow)
 ///   <verse>, <chapter>, <div>, <p>, <lg>, <l>    → structural, generate whitespace if needed
 ///   All other tags → text content extracted, tag ignored
+use super::xml_text::TextRun;
+use crate::types::{Result, TextSpan};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
@@ -35,9 +36,42 @@ pub fn parse(raw: &str) -> Result<Vec<TextSpan>> {
     // the verse content that follows — track it so we can flag it and inject
     // the missing whitespace on close.
     let mut in_title = false;
+    // Text and entity references arrive as separate events; gather each run
+    // between two tags so it still becomes one span.
+    let mut run = TextRun::default();
 
     loop {
-        match reader.read_event_into(&mut buf) {
+        let event = reader.read_event_into(&mut buf);
+        let in_run = match &event {
+            Ok(Event::Text(t)) => {
+                run.push_text(t);
+                true
+            }
+            Ok(Event::GeneralRef(r)) => {
+                run.push_ref(r);
+                true
+            }
+            _ => false,
+        };
+        if in_run {
+            drop(event);
+            buf.clear();
+            continue;
+        }
+        if let Some(raw_text) = run.take() {
+            if !in_note {
+                push_text_span(
+                    &mut spans,
+                    &raw_text,
+                    word_stack.last(),
+                    is_added,
+                    is_red_letter,
+                    in_title,
+                );
+            }
+        }
+
+        match event {
             Ok(Event::Start(ref e)) => {
                 let name = std::str::from_utf8(e.name().as_ref())
                     .unwrap_or("")
@@ -111,9 +145,7 @@ pub fn parse(raw: &str) -> Result<Vec<TextSpan>> {
                     .to_lowercase();
                 match name.as_str() {
                     "note" => {
-                        if note_depth > 0 {
-                            note_depth -= 1;
-                        }
+                        note_depth = note_depth.saturating_sub(1);
                         if note_depth == 0 {
                             in_note = false;
                         }
@@ -138,66 +170,6 @@ pub fn parse(raw: &str) -> Result<Vec<TextSpan>> {
                     _ => {}
                 }
             }
-            Ok(Event::Text(ref e)) => {
-                if in_note {
-                    continue;
-                }
-                let raw_text = e.unescape().unwrap_or_default().into_owned();
-                if raw_text.is_empty() {
-                    continue;
-                }
-
-                // Pure-whitespace nodes (single space between <w> tags) become " ".
-                // Mixed nodes preserve leading/trailing space and collapse internal runs.
-                let text: String = if raw_text.chars().all(|c: char| c.is_whitespace()) {
-                    " ".to_string()
-                } else {
-                    let has_leading = raw_text.starts_with(|c: char| c.is_whitespace());
-                    let has_trailing = raw_text.ends_with(|c: char| c.is_whitespace());
-                    let trimmed = raw_text.trim();
-                    let mut out = String::with_capacity(trimmed.len() + 2);
-                    if has_leading {
-                        out.push(' ');
-                    }
-                    let mut prev_ws = false;
-                    for c in trimmed.chars() {
-                        if c.is_whitespace() {
-                            if !prev_ws {
-                                out.push(' ');
-                            }
-                            prev_ws = true;
-                        } else {
-                            out.push(c);
-                            prev_ws = false;
-                        }
-                    }
-                    if has_trailing && !out.ends_with(' ') {
-                        out.push(' ');
-                    }
-                    out
-                };
-
-                // Skip a lone space at the very start of the verse (nothing to separate yet)
-                if text == " " && spans.is_empty() {
-                    continue;
-                }
-                if text.is_empty() {
-                    continue;
-                }
-
-                let span = TextSpan {
-                    text,
-                    strongs: word_stack
-                        .last()
-                        .and_then(|(strongs, _)| (!strongs.is_empty()).then(|| strongs.clone())),
-                    morph: word_stack.last().and_then(|(_, morph)| morph.clone()),
-                    is_added: if is_added { Some(true) } else { None },
-                    is_footnote: None,
-                    is_red_letter: if is_red_letter { Some(true) } else { None },
-                    is_title: if in_title { Some(true) } else { None },
-                };
-                spans.push(span);
-            }
             Ok(Event::Eof) => break,
             Err(_e) => {
                 // Log the error but don't fail — return what we have plus a fallback span
@@ -213,6 +185,69 @@ pub fn parse(raw: &str) -> Result<Vec<TextSpan>> {
     }
 
     Ok(normalize_spans(spans))
+}
+
+/// Turn one run of text into a span carrying the current word and style state.
+///
+/// Pure-whitespace runs (a single space between `<w>` tags) become " ". Mixed
+/// runs keep leading and trailing space and collapse internal runs.
+fn push_text_span(
+    spans: &mut Vec<TextSpan>,
+    raw_text: &str,
+    word: Option<&(Vec<String>, Option<String>)>,
+    is_added: bool,
+    is_red_letter: bool,
+    in_title: bool,
+) {
+    if raw_text.is_empty() {
+        return;
+    }
+
+    let text: String = if raw_text.chars().all(|c: char| c.is_whitespace()) {
+        " ".to_string()
+    } else {
+        let has_leading = raw_text.starts_with(|c: char| c.is_whitespace());
+        let has_trailing = raw_text.ends_with(|c: char| c.is_whitespace());
+        let trimmed = raw_text.trim();
+        let mut out = String::with_capacity(trimmed.len() + 2);
+        if has_leading {
+            out.push(' ');
+        }
+        let mut prev_ws = false;
+        for c in trimmed.chars() {
+            if c.is_whitespace() {
+                if !prev_ws {
+                    out.push(' ');
+                }
+                prev_ws = true;
+            } else {
+                out.push(c);
+                prev_ws = false;
+            }
+        }
+        if has_trailing && !out.ends_with(' ') {
+            out.push(' ');
+        }
+        out
+    };
+
+    // Skip a lone space at the very start of the verse (nothing to separate yet)
+    if text == " " && spans.is_empty() {
+        return;
+    }
+    if text.is_empty() {
+        return;
+    }
+
+    spans.push(TextSpan {
+        text,
+        strongs: word.and_then(|(strongs, _)| (!strongs.is_empty()).then(|| strongs.clone())),
+        morph: word.and_then(|(_, morph)| morph.clone()),
+        is_added: if is_added { Some(true) } else { None },
+        is_footnote: None,
+        is_red_letter: if is_red_letter { Some(true) } else { None },
+        is_title: if in_title { Some(true) } else { None },
+    });
 }
 
 /// Extract every valid Strong's number from an OSIS `lemma` attribute.
@@ -298,6 +333,34 @@ fn strip_xml_tags(s: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::parse;
+
+    #[test]
+    fn keeps_entities_and_character_references_in_text() {
+        let spans = parse(
+            "He said &quot;Go&quot; &amp; left it&#8217;s &#x2014; done &lt;ok&gt; &apos;x&apos;",
+        )
+        .unwrap();
+        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(
+            text,
+            "He said \"Go\" & left it\u{2019}s \u{2014} done <ok> 'x'"
+        );
+    }
+
+    #[test]
+    fn an_unknown_entity_does_not_drop_the_text_around_it() {
+        let spans = parse("In the beginning&nbsp;God created").unwrap();
+        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(text, "In the beginningGod created");
+    }
+
+    #[test]
+    fn an_entity_inside_a_tagged_word_stays_in_one_span() {
+        let spans = parse(r#"<w lemma="strong:G1">Tom &amp; Jerry</w>"#).unwrap();
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].text, "Tom & Jerry");
+        assert_eq!(spans[0].strongs.as_ref().unwrap(), &vec!["G1".to_string()]);
+    }
 
     #[test]
     fn preserves_every_strongs_number_on_a_word() {

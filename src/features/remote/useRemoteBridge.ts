@@ -4,6 +4,7 @@ import { api } from "../../lib/tauri";
 import { useAppStore } from "../../store/app";
 import { useCountdown } from "../countdown/countdownStore";
 import { useSlidesLive } from "../slides/liveStore";
+import { pageText } from "../slides/pages";
 import { useSongsLive } from "../songs/liveStore";
 import { remoteApi, type RemoteAction } from "./api";
 import { runRemoteCommand } from "./commands";
@@ -44,6 +45,7 @@ export function useRemoteBridge() {
   const ref = useAppStore((s) => s.currentRef);
   const songLive = useSongsLive((s) => s.live);
   const slideLive = useSlidesLive((s) => s.live);
+  const slideLivePage = useSlidesLive((s) => s.livePage);
   const timerStatus = useCountdown((s) => s.status);
   const timerTitle = useCountdown((s) => s.title);
   const timerEndsAt = useCountdown((s) => s.endsAt);
@@ -69,8 +71,9 @@ export function useRemoteBridge() {
     } else if (view === "slides") {
       tab = "slides";
       if (slideLive) {
-        label = slideLive.title;
-        text = slideLive.elements.filter((e) => e.kind === "text").map((e) => e.text.trim()).filter(Boolean).join("\n");
+        const pageCount = slideLive.pages.length;
+        label = pageCount > 1 ? `${slideLive.title} — Page ${slideLivePage + 1} of ${pageCount}` : slideLive.title;
+        text = pageText(slideLive.pages[slideLivePage]);
       }
     } else if (view === "live") {
       tab = "scriptures";
@@ -83,5 +86,5 @@ export function useRemoteBridge() {
     };
     const id = setTimeout(() => { remoteApi.publishState(JSON.stringify(snapshot)).catch(() => {}); }, 80);
     return () => clearTimeout(id);
-  }, [enabled, view, black, emergency, ref, songLive, slideLive, timerStatus, timerTitle, timerEndsAt, timerRemaining, verseText]);
+  }, [enabled, view, black, emergency, ref, songLive, slideLive, slideLivePage, timerStatus, timerTitle, timerEndsAt, timerRemaining, verseText]);
 }

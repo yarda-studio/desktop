@@ -1,3 +1,4 @@
+import { forPlatform } from "../lib/platform";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useAppStore, type VerseRef } from "../store/app";
 import { api, type SearchResult } from "../lib/tauri";
@@ -171,7 +172,7 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
         onClick={() => useAiSearchStore.getState().toggle()}
         aria-pressed={aiOpen}
         className={`rounded-lg px-2 py-1 flex items-center gap-1.5 shrink-0 ${aiOpen ? "ctl-active" : "ctl text-on-surface-variant"}`}
-        title="Ask Scripture — find verses by describing them (Ctrl+Shift+K, or start the search bar with ?)"
+        title={forPlatform("Ask Scripture — find verses by describing them (Ctrl+Shift+K, or start the search bar with ?)")}
         aria-label={`Ask Scripture ${aiOpen ? "open" : "closed"}`}
       >
         <span className="material-symbols-outlined text-[18px]">auto_awesome</span>
@@ -199,7 +200,7 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
         <input
           ref={inputRef}
           className="w-full pl-8 pr-24 py-1 focus:outline-none text-body-ui font-body-ui transition-colors placeholder:text-on-surface-variant field rounded-lg"
-          placeholder={`Verse (jn 3:16), a word, or ${ASK_PREFIX} to ask  (Ctrl+K)`}
+          placeholder={forPlatform(`Verse (jn 3:16), a word, or ${ASK_PREFIX} to ask  (Ctrl+K)`)}
           value={value}
           onChange={(e) => {
             // "ot/" or "john,romans/" typed: lift the scope out of the text into the chip.

@@ -210,7 +210,7 @@ pub fn parse_ewsx(path: &Path) -> Result<Vec<Song>> {
     let index = (0..zip.len())
         .find(|&i| {
             zip.by_index_raw(i)
-                .map(|f| f.name().to_lowercase().ends_with("main.db"))
+                .and_then(|f| f.name().map(|n| n.to_lowercase().ends_with("main.db")))
                 .unwrap_or(false)
         })
         .ok_or_else(|| AppError::Other("Not an EasyWorship export (no main.db inside)".into()))?;

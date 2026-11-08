@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod markup;
 mod modules;
+mod plan;
 mod remote;
 mod slides;
 mod songs;
@@ -30,14 +31,11 @@ pub fn run() {
 
             let old_db = data_dir.join("scriptura.db");
             let yarda_db = data_dir.join("yarda.db");
-            let db_path = if !yarda_db.exists() && old_db.exists() {
+            // The database used to be called scriptura.db; carry it over once.
+            if !yarda_db.exists() && old_db.exists() {
                 let _ = std::fs::rename(&old_db, &yarda_db);
-                yarda_db
-            } else if yarda_db.exists() {
-                yarda_db
-            } else {
-                yarda_db
-            };
+            }
+            let db_path = yarda_db;
             let db = db::Database::open(&db_path).expect("failed to open database");
             // Managed as Arc so command handlers can clone an owned, 'static handle
             // to move into tokio::task::spawn_blocking — see commands/mod.rs — instead
@@ -48,7 +46,14 @@ pub fn run() {
             app.manage(songs::SongStore::open(&data_dir.join("songs.db")));
 
             // Same isolation for slides: a broken slides.db only disables the Slides view.
-            app.manage(slides::SlideStore::open(&data_dir.join("slides.db")));
+            // Slide pictures are files in the media folder (theme videos live there too).
+            app.manage(slides::SlideStore::open(
+                &data_dir.join("slides.db"),
+                slides::PictureFolder::new(data_dir.join("media")),
+            ));
+
+            // And for the service plan, which only refers to songs and slides by id.
+            app.manage(plan::PlanStore::open(&data_dir.join("plan.db")));
 
             // Phone remote: off unless the operator turned it on last time.
             let remote = remote::RemoteServer::load(&data_dir);
@@ -202,6 +207,11 @@ pub fn run() {
             commands::output_status,
             commands::output_set_enabled,
             commands::output_reset_access,
+            commands::list_plan,
+            commands::set_plan,
+            commands::plan_sync_pending,
+            commands::plan_sync_mark_pushed,
+            commands::plan_sync_apply,
             commands::list_slides,
             commands::get_slide,
             commands::save_slide,

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { addSlideToPlan } from "../plan/addToPlan";
 import type { SlideKind, SlideSummary } from "./api";
 import { useSlidesLive } from "./liveStore";
+import SlideThumb from "./SlideThumb";
 import { useSlidesStore } from "./slidesStore";
 
 const KINDS: Record<SlideKind, { label: string; icon: string }> = {
@@ -72,6 +74,9 @@ export default function SlideLibrary() {
         <button onClick={() => selected && void useSlidesLive.getState().addToSchedule(selected.id)} disabled={!selected} className="flex items-center gap-1 px-2 py-1 rounded-md ghost font-body-ui text-[13px] text-on-surface disabled:opacity-30 disabled:pointer-events-none">
           <span className="material-symbols-outlined text-[18px]" aria-hidden="true">playlist_add</span>Add to schedule
         </button>
+        <button onClick={() => selected && void addSlideToPlan(selected)} disabled={!selected} className="flex items-center gap-1 px-2 py-1 rounded-md ghost font-body-ui text-[13px] text-on-surface disabled:opacity-30 disabled:pointer-events-none" title="Add to the service plan">
+          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">playlist_add_check</span>Add to plan
+        </button>
         {confirmDelete ? (
           <>
             <button onClick={() => { if (selected) void remove(selected.id); setConfirmDelete(false); }} className="px-2 py-1 rounded-md font-body-ui text-[13px] bg-error text-on-error">Delete slide</button>
@@ -104,7 +109,10 @@ function Row({ slide, selected, onSelect, onOpen }: { slide: SlideSummary; selec
       title="Double-click to add to the schedule"
       className={`${GRID} cursor-default select-none ${selected ? "row-selected" : "hover:bg-surface-container-low"}`}
     >
-      <span className="px-3 py-2 font-body-ui text-[13px] text-on-surface truncate">{slide.title}</span>
+      <span className="px-3 py-1.5 flex items-center gap-2.5 min-w-0">
+        <SlideThumb id={slide.id} updatedAt={slide.updated_at} width={64} />
+        <span className="font-body-ui text-[13px] text-on-surface truncate">{slide.title}</span>
+      </span>
       <span className="px-3 py-2 font-body-ui text-[13px] text-on-surface-variant truncate flex items-center gap-1.5">
         <span className="material-symbols-outlined text-[16px]" aria-hidden="true">{kind.icon}</span>{kind.label}
       </span>

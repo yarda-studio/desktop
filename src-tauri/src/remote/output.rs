@@ -165,6 +165,10 @@ pub fn handle(
                 let content_type = match name.rsplit('.').next() {
                     Some("webm") => "video/webm",
                     Some("mov") => "video/quicktime",
+                    Some("jpg") => "image/jpeg",
+                    Some("png") => "image/png",
+                    Some("webp") => "image/webp",
+                    Some("gif") => "image/gif",
                     _ => "video/mp4",
                 };
                 let mut headers = vec![("Accept-Ranges", "bytes".to_string()), ("Cache-Control", "private, max-age=3600".to_string())];
@@ -247,7 +251,9 @@ mod tests {
             }
         }
         fn media(&self, name: &str) -> Option<PathBuf> {
-            (name == "bg-1.mp4").then(|| self.media.clone()).flatten()
+            (name == "bg-1.mp4" || name == "pic-1-1.png")
+                .then(|| self.media.clone())
+                .flatten()
         }
     }
 
@@ -415,6 +421,20 @@ mod tests {
             handle("GET", "/o/media/..%2Fsecret", &k, None, TOKEN, &backend).status,
             404
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn slide_pictures_are_served_as_images() {
+        let dir = std::env::temp_dir().join(format!("scriptura-pic-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("pic-1-1.png");
+        std::fs::write(&file, vec![1u8; 10]).unwrap();
+        let backend = Fake { media: Some(file) };
+        let k = format!("k={TOKEN}");
+        let out = handle("GET", "/o/media/pic-1-1.png", &k, None, TOKEN, &backend);
+        assert_eq!(out.status, 200);
+        assert_eq!(out.content_type, "image/png");
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -1,3 +1,4 @@
+import { forPlatform } from "../lib/platform";
 import { useState, KeyboardEvent } from "react";
 import { useAppStore, type VerseRef } from "../store/app";
 import { useScriptureInput } from "../hooks/useScriptureInput";
@@ -52,7 +53,7 @@ export default function ScriptureNav({ inputRef, baseRef, onNavigate, placeholde
       <input
         ref={inputRef}
         className="w-full pl-8 pr-3 py-1 focus:outline-none text-body-ui font-body-ui transition-colors placeholder:text-on-surface-variant field rounded-lg"
-        placeholder={placeholder ?? "Go to… jn 3:16 or v5  (Ctrl+L)"}
+        placeholder={placeholder ?? forPlatform("Go to… jn 3:16 or v5  (Ctrl+L)")}
         value={value}
         onChange={(e) => { setValue(e.target.value); setOpen(true); }}
         onKeyDown={handleKey}

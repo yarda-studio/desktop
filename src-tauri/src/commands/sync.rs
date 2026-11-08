@@ -1,4 +1,5 @@
 use crate::db::Database;
+use crate::plan::PlanStore;
 use crate::slides::SlideStore;
 use crate::songs::SongStore;
 use crate::types::*;
@@ -52,8 +53,9 @@ pub fn create_backup_zip(
     db: State<Arc<Database>>,
     song_store: State<SongStore>,
     slide_store: State<SlideStore>,
+    plan_store: State<PlanStore>,
 ) -> std::result::Result<Vec<u8>, AppError> {
-    db.create_backup_zip(&song_store, &slide_store)
+    db.create_backup_zip(&song_store, &slide_store, &plan_store)
 }
 
 #[tauri::command]
@@ -62,6 +64,7 @@ pub fn restore_backup_zip(
     db: State<Arc<Database>>,
     song_store: State<SongStore>,
     slide_store: State<SlideStore>,
+    plan_store: State<PlanStore>,
 ) -> std::result::Result<(), AppError> {
-    db.restore_backup_zip(&song_store, &slide_store, &bytes)
+    db.restore_backup_zip(&song_store, &slide_store, &plan_store, &bytes)
 }

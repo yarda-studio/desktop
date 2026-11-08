@@ -70,6 +70,9 @@ export interface SlideElementData {
   color: string;
   align: "left" | "center" | "right";
   bold: boolean;
+  /** Text only: shrink the text until it fits the box; `font_size` is then its largest size. Absent on slides from before this existed. */
+  auto_fit?: boolean;
+  /** A saved picture's file name in the media folder, or an image data URL (just added, or saved by an older version). */
   image: string | null;
 }
 

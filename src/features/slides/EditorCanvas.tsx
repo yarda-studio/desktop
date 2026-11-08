@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { PresentationTheme } from "../../lib/tauri";
-import type { SlideDoc, SlideElement } from "./api";
+import type { SlideDocPayload } from "../../lib/presentation";
+import type { SlideElement } from "./api";
 import SlideStage from "./SlideStage";
 
 const FRAME = { w: 1920, h: 1080 };
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 interface Props {
-  slide: SlideDoc;
+  /** The page being edited, as the output would draw it. */
+  slide: SlideDocPayload;
   theme: PresentationTheme | null;
   /** Free-form slides can be arranged by dragging; announcements are a fixed layout. */
   editable: boolean;

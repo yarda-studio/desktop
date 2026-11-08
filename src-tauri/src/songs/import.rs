@@ -4,6 +4,7 @@
 //! SongSelect exports (title, labelled blocks, then a "CCLI Song #" footer).
 
 use super::model::{Song, SongSection};
+use crate::markup::xml_text::TextRun;
 use crate::types::{AppError, Result};
 use once_cell::sync::Lazy;
 use quick_xml::events::Event;
@@ -337,8 +338,8 @@ pub fn parse_plain_text(content: &str, fallback_title: &str) -> Song {
     let numbered_mode = blocks.iter().flatten().any(|l| {
         NUMBERED_RE
             .captures(l)
-            .map_or(false, |c| &c[1] == "1" && !c[2].trim().is_empty())
-            || BARE_NUMBER_RE.captures(l).map_or(false, |c| &c[1] == "1")
+            .is_some_and(|c| &c[1] == "1" && !c[2].trim().is_empty())
+            || BARE_NUMBER_RE.captures(l).is_some_and(|c| &c[1] == "1")
     });
 
     // A leading single-line block that isn't a heading, followed by a heading, is the title.
@@ -481,9 +482,32 @@ pub fn parse_openlyrics(xml: &str) -> Result<Song> {
     let mut seen_verse_names: Vec<String> = Vec::new();
 
     let xml_err = |e: quick_xml::Error| AppError::Other(format!("Invalid OpenLyrics file: {e}"));
+    // Text and entity references arrive as separate events; gather each run
+    // between two tags so the spaces beside an `&amp;` survive the trim below.
+    let mut run = TextRun::default();
 
     loop {
-        match reader.read_event().map_err(xml_err)? {
+        let event = reader.read_event().map_err(xml_err)?;
+        match &event {
+            Event::Text(t) => {
+                run.push_text(t);
+                continue;
+            }
+            Event::GeneralRef(r) => {
+                run.push_ref(r);
+                continue;
+            }
+            _ => {}
+        }
+        if let Some(s) = run.take() {
+            if in_path(&path, "lines") {
+                text.push_str(&s.replace('\n', " ").replace('\r', ""));
+            } else {
+                text.push_str(s.trim());
+            }
+        }
+
+        match event {
             Event::Start(e) => {
                 let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
                 if name == "verse" {
@@ -507,14 +531,6 @@ pub fn parse_openlyrics(xml: &str) -> Result<Song> {
                 let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
                 if name == "br" && path.last().map(|s| s.as_str()) == Some("lines") {
                     text.push('\n');
-                }
-            }
-            Event::Text(t) => {
-                let s = t.unescape().map_err(xml_err)?;
-                if in_path(&path, "lines") {
-                    text.push_str(&s.replace('\n', " ").replace('\r', ""));
-                } else {
-                    text.push_str(s.trim());
                 }
             }
             Event::CData(c) => text.push_str(&String::from_utf8_lossy(&c)),
@@ -711,6 +727,26 @@ CCLI License # 12345
         );
         assert_eq!(s.sections[1].label, "Chorus");
         assert_eq!(s.arrangement, ["v1", "c", "v1"]);
+    }
+
+    #[test]
+    fn openlyrics_keeps_entities_and_the_spaces_around_them() {
+        let xml = r#"<song xmlns="http://openlyrics.info/namespace/2009/song">
+ <properties>
+  <titles><title>Peace &amp; Joy &#8217;s &quot;Song&quot;</title></titles>
+  <authors><author>Tom &amp; Jerry</author></authors>
+ </properties>
+ <lyrics>
+  <verse name="v1"><lines>Rock &amp; roll<br/>It&#8217;s &quot;fine&quot; <chord name="G"/>&lt;now&gt;</lines></verse>
+ </lyrics>
+</song>"#;
+        let s = parse_openlyrics(xml).unwrap();
+        assert_eq!(s.title, "Peace & Joy \u{2019}s \"Song\"");
+        assert_eq!(s.author, "Tom & Jerry");
+        assert_eq!(
+            s.sections[0].lyrics,
+            "Rock & roll\nIt\u{2019}s \"fine\" <now>"
+        );
     }
 
     #[test]

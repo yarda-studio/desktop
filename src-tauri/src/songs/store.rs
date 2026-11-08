@@ -1,6 +1,6 @@
 use super::model::{ImportSummary, Song, SongSection, SongSummary};
 use crate::types::{AppError, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
@@ -96,6 +96,19 @@ impl SongDb {
     /// of the session; the SQLite connection itself is unaffected by a Rust panic.
     pub(crate) fn conn(&self) -> MutexGuard<'_, Connection> {
         self.0.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// The id of the song with exactly this title (ignoring case); the oldest if
+    /// several share it. Used to re-link a plan that came from another device.
+    pub fn find_id_by_title(&self, title: &str) -> Result<Option<i64>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT id FROM songs WHERE title = ?1 COLLATE NOCASE ORDER BY id LIMIT 1",
+                [title.trim()],
+                |r| r.get(0),
+            )
+            .optional()?)
     }
 
     pub fn list(&self, query: Option<&str>) -> Result<Vec<SongSummary>> {
@@ -392,6 +405,24 @@ mod tests {
         SongDb::open(&p).unwrap()
     }
 
+    #[test]
+    fn a_song_is_found_by_exact_title_ignoring_case() {
+        let db = temp_db();
+        let a = db.save(&song("Amazing Grace", "a")).unwrap().id.unwrap();
+        db.save(&song("Amazing Grace", "b")).unwrap();
+        assert_eq!(
+            db.find_id_by_title("amazing grace").unwrap(),
+            Some(a),
+            "the oldest wins"
+        );
+        assert_eq!(db.find_id_by_title("  Amazing Grace ").unwrap(), Some(a));
+        assert_eq!(
+            db.find_id_by_title("Amazing").unwrap(),
+            None,
+            "whole title only"
+        );
+    }
+
     fn song(title: &str, lyrics: &str) -> Song {
         Song {
             title: title.into(),
@@ -446,7 +477,7 @@ mod tests {
     fn import_skips_duplicates_and_search_is_injection_safe() {
         let db = temp_db();
         let a = song("Holy", "Holy holy holy");
-        let first = db.import(&[a.clone()]).unwrap();
+        let first = db.import(std::slice::from_ref(&a)).unwrap();
         assert_eq!(first.imported.len(), 1);
         let second = db.import(&[a]).unwrap();
         assert_eq!(second.skipped, vec!["Holy".to_string()]);

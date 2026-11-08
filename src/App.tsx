@@ -16,11 +16,13 @@ import ServiceOrderPanel from "./components/ServiceOrderPanel";
 import ErrorBoundary from "./components/ErrorBoundary";
 import CustomizationStudio from "./views/CustomizationStudio";
 import LiveShowRunner from "./views/LiveShowRunner";
+import PlanDock from "./features/plan/PlanDock";
 import SlidesView from "./features/slides/SlidesView";
 import { ResizeHandle, useResizable } from "./hooks/useResizable";
 import { OnboardingHost } from "./features/onboarding";
 import { initEntitlementSync } from "./features/entitlements";
-import { startSyncEngine, FirstDevicePrompt } from "./features/sync";
+import { startSyncEngine, registerSyncParticipant, FirstDevicePrompt } from "./features/sync";
+import { planSyncParticipant } from "./features/plan/planSync";
 import { FirstRunSetup } from "./features/firstRun";
 
 export default function App() {
@@ -55,6 +57,9 @@ export default function App() {
 
   // Synchronize entitlements across auth and window focus
   useEffect(() => { initEntitlementSync(); }, []);
+
+  // The service plan syncs itself alongside the engine (before it starts, so its first round includes the plan)
+  useEffect(() => registerSyncParticipant(planSyncParticipant), []);
 
   // Background Cloud Sync engine
   useEffect(() => { return startSyncEngine(); }, []);
@@ -206,6 +211,13 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col overflow-hidden ambient text-on-background font-body-ui text-body-ui selection:bg-secondary-container selection:text-on-secondary-container">
       {!isFullscreen && (presenting ? <PresentationTopBar /> : <TopBar />)}
+
+      {/* The service plan drives all three output tabs, so it sits above them. */}
+      {!isFullscreen && presenting && (view === "live" || view === "songs" || view === "slides") && (
+        <ErrorBoundary compact label="Service plan">
+          <PlanDock />
+        </ErrorBoundary>
+      )}
 
       <div className="relative flex flex-1 overflow-hidden">
         <div className="flex flex-1 overflow-hidden">

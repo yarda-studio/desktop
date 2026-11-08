@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../../lib/tauri.ts";
 import { getSupabase } from "../../lib/supabase.ts";
 import { useEntitlementStore } from "../entitlements/entitlementStore.ts";
+import { usePlan } from "../plan/planStore.ts";
 import {
   BackupItem,
   deleteBackupZip,
@@ -89,6 +90,9 @@ export const BackupsPanel: React.FC = () => {
       const bytes = await downloadBackupZip(user.id, filename);
       setActionMessage("Restoring database from backup…");
       await api.restoreBackupZip(Array.from(bytes));
+      // The restored plan replaces the one in memory; its old position and clock mean nothing now.
+      usePlan.getState().resetClock();
+      void usePlan.getState().load();
 
       setActionMessage("Restore complete. Data has been reloaded.");
       setConfirmRestore(null);

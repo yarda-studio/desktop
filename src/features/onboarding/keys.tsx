@@ -1,6 +1,8 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
-export const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+import { IS_MAC } from "../../lib/platform";
+
+export { IS_MAC };
 
 const LABELS: Record<string, string> = {
   mod: IS_MAC ? "⌘" : "Ctrl",

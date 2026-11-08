@@ -1,3 +1,4 @@
+import { forPlatform } from "../lib/platform";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "../store/app";
 import { api, type InstalledModule, type MonitorInfo, type PresentationTheme } from "../lib/tauri";
@@ -297,7 +298,7 @@ export default function ReadingView() {
             <div className="flex items-center gap-1 shrink-0">
               <button
                 className="p-1 rounded text-secondary hover:bg-surface-container-low transition-colors"
-                title="Previous chapter (Ctrl+P)"
+                title={forPlatform("Previous chapter (Ctrl+P)")}
                 onClick={() => currentRef.chapter > 1 && setCurrentRef({ ...currentRef, chapter: currentRef.chapter - 1, verse: 1 })}
               >
                 <span className="material-symbols-outlined text-[18px]">chevron_left</span>
@@ -305,7 +306,7 @@ export default function ReadingView() {
               <ScriptureNav inputRef={fsScriptureRef} />
               <button
                 className="p-1 rounded text-secondary hover:bg-surface-container-low transition-colors"
-                title="Next chapter (Ctrl+N)"
+                title={forPlatform("Next chapter (Ctrl+N)")}
                 onClick={() => setCurrentRef({ ...currentRef, chapter: currentRef.chapter + 1, verse: 1 })}
               >
                 <span className="material-symbols-outlined text-[18px]">chevron_right</span>
@@ -384,12 +385,12 @@ export default function ReadingView() {
             {/* Word search */}
             <button
               onClick={() => setFsSearchOpen(true)}
-              title="Word search (Ctrl+K)"
+              title={forPlatform("Word search (Ctrl+K)")}
               className="flex items-center gap-1.5 px-3 py-1.5 transition-colors text-on-surface-variant ctl rounded-xl"
             >
               <span className="material-symbols-outlined text-[16px]">search</span>
               <span className="font-body-ui text-[13px]">Search</span>
-              <kbd className="font-metadata-mono text-[12px] px-1 py-0.5 ml-1 field rounded-md">⌘K</kbd>
+              <kbd className="font-metadata-mono text-[12px] px-1 py-0.5 ml-1 field rounded-md">{forPlatform("Ctrl+K")}</kbd>
             </button>
 
             {/* All presenting UI is Presentation-workspace only — see
@@ -471,7 +472,7 @@ export default function ReadingView() {
             {/* Exit fullscreen */}
             <button
               className="p-1.5 rounded text-secondary hover:bg-surface-container-low transition-colors"
-              title="Exit fullscreen (Esc or Ctrl+F)"
+              title={forPlatform("Exit fullscreen (Esc or Ctrl+F)")}
               onClick={() => setIsFullscreen(false)}
             >
               <span className="material-symbols-outlined text-[18px]">fullscreen_exit</span>
@@ -567,14 +568,14 @@ export default function ReadingView() {
             </h1>
             <div data-tour="chapter-nav" className="flex items-center gap-2.5">
               <button
-                title="Previous chapter (Ctrl+P)"
+                title={forPlatform("Previous chapter (Ctrl+P)")}
                 onClick={() => currentRef.chapter > 1 && setCurrentRef({ ...currentRef, chapter: currentRef.chapter - 1, verse: 1 })}
                 className="p-1.5 rounded-md ghost text-secondary"
               >
                 <span className="material-symbols-outlined text-[18px]">chevron_left</span>
               </button>
               <button
-                title="Next chapter (Ctrl+N)"
+                title={forPlatform("Next chapter (Ctrl+N)")}
                 onClick={() => setCurrentRef({ ...currentRef, chapter: currentRef.chapter + 1, verse: 1 })}
                 className="p-1.5 rounded-md ghost text-secondary"
               >
@@ -590,7 +591,7 @@ export default function ReadingView() {
                 </button>
               )}
               <button
-                title="Focus mode (Ctrl+F)"
+                title={forPlatform("Focus mode (Ctrl+F)")}
                 onClick={() => setIsFullscreen(true)}
                 className="p-1.5 rounded-md ghost text-secondary"
               >

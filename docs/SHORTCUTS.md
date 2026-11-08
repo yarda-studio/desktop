@@ -156,7 +156,8 @@ Defined in `src/features/slides/SlidesView.tsx` and `src/features/songs/SongsVie
 
 | Keys | Action |
 |---|---|
-| `Page Down` / `Page Up` | Songs: next / previous live slide. Slides: send the next / previous scheduled slide live |
+| `Page Down` / `Page Up` | Songs: next / previous live slide. Slides: next / previous page of the live slide, then on to the next / previous scheduled slide (going back lands on its last page) |
+| `Shift+Page Down` / `Shift+Page Up` | Service plan (the strip above Live, Songs and Slides): put the next / previous step of the plan on the screen. Inside a song or a multi-page slide it moves through that step's slides or pages first. Ignored while a text field has focus |
 | `↑` / `↓` | In the library: move the selection |
 | `Enter` | In the library: add the selected song or slide to the schedule |
 | Arrow keys (box focused) | Slide editor: nudge the selected box by 1% (`Shift` for 5%) |

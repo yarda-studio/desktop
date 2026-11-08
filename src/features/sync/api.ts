@@ -44,6 +44,32 @@ export async function fetchRemoteSyncRecords(cursor: number): Promise<RemoteSync
   }));
 }
 
+/** One record by its key, read on its own and without moving the pull cursor. */
+export async function fetchRemoteSyncRecord(collection: string, recordId: string): Promise<RemoteSyncRecord | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from("sync_records")
+    .select("collection, record_id, data, deleted, client_updated_at, seq")
+    .eq("collection", collection)
+    .eq("record_id", recordId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data) return null;
+  return {
+    collection: data.collection,
+    record_id: data.record_id,
+    data: (data.data as Record<string, unknown>) || {},
+    deleted: Boolean(data.deleted),
+    client_updated_at: data.client_updated_at,
+    seq: data.seq,
+  };
+}
+
 export async function pushSyncBatch(changes: DirtySyncRecord[]): Promise<SyncPushResult> {
   if (changes.length === 0) {
     return { accepted: 0, rejected: 0, next_cursor: 0 };

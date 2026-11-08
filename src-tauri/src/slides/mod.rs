@@ -6,7 +6,9 @@
 //! preferences.
 
 pub mod model;
+pub mod pictures;
 pub mod store;
 
 pub use model::{SlideDoc, SlideSummary};
+pub use pictures::PictureFolder;
 pub use store::SlideStore;

@@ -1,5 +1,7 @@
 import { useAppStore } from "../../store/app";
 import { useCountdown } from "../countdown/countdownStore";
+import { planOwnsView } from "../plan/planLogic";
+import { usePlan } from "../plan/planStore";
 import { useSlidesLive } from "../slides/liveStore";
 import { useSongsLive } from "../songs/liveStore";
 import type { RemoteAction } from "./api";
@@ -8,6 +10,12 @@ import { stepScripture } from "./registry";
 /** Move the live content one step in whichever presentation tab is open. */
 function step(delta: 1 | -1) {
   const view = useAppStore.getState().view;
+  // A running service plan steps the whole running order, across tabs.
+  const plan = usePlan.getState();
+  if (planOwnsView(plan.items[plan.activeIndex], view)) {
+    void plan.step(delta);
+    return;
+  }
   if (view === "songs") {
     const songs = useSongsLive.getState();
     if (!songs.live) { if (delta > 0) songs.goLive(0); }

@@ -6,6 +6,9 @@ use std::sync::{Mutex, MutexGuard};
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
+/// An installed module as stored: (id, name, install path, version, category, index built).
+pub type InstalledModuleRecord = (String, String, String, String, String, bool);
+
 pub struct Database(Mutex<Connection>);
 
 fn now_millis() -> i64 {
@@ -554,9 +557,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn list_installed_module_records(
-        &self,
-    ) -> Result<Vec<(String, String, String, String, String, bool)>> {
+    pub fn list_installed_module_records(&self) -> Result<Vec<InstalledModuleRecord>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, name, install_path, version, category, index_built FROM installed_modules",
@@ -1365,6 +1366,14 @@ impl Database {
                 }
             }
 
+            // Some features sync themselves (the service plan) and share the cloud
+            // table. Their records are not ours to read: skip them, but the cursor
+            // above has already moved past them. Recording one here would leave a
+            // state row that a later reset marks dirty and pushes as a deletion.
+            if !SYNCED_COLLECTIONS.contains(&r.collection.as_str()) {
+                continue;
+            }
+
             let local_status: Option<(i32, String)> = tx
                 .query_row(
                     "SELECT dirty, updated_at FROM sync_state WHERE collection = ?1 AND record_id = ?2",
@@ -1866,6 +1875,7 @@ impl Database {
         &self,
         song_store: &crate::songs::SongStore,
         slide_store: &crate::slides::SlideStore,
+        plan_store: &crate::plan::PlanStore,
     ) -> Result<Vec<u8>> {
         let temp_dir =
             std::env::temp_dir().join(format!("scriptura-backup-{}", uuid::Uuid::new_v4()));
@@ -1874,6 +1884,7 @@ impl Database {
         let yarda_path = temp_dir.join("yarda.db");
         let songs_path = temp_dir.join("songs.db");
         let slides_path = temp_dir.join("slides.db");
+        let plan_path = temp_dir.join("plan.db");
 
         {
             let conn = self.conn();
@@ -1888,6 +1899,11 @@ impl Database {
         if let Ok(db) = slide_store.db() {
             let conn = db.conn();
             let _ = conn.execute("VACUUM INTO ?1", params![slides_path.to_str().unwrap()]);
+        }
+
+        if let Ok(db) = plan_store.db() {
+            let conn = db.conn();
+            let _ = conn.execute("VACUUM INTO ?1", params![plan_path.to_str().unwrap()]);
         }
 
         let mut buf = std::io::Cursor::new(Vec::new());
@@ -1919,6 +1935,19 @@ impl Database {
                 writer.start_file("slides.db", options)?;
                 std::io::Write::write_all(&mut writer, &data)?;
             }
+            if plan_path.exists() {
+                let data = std::fs::read(&plan_path)?;
+                writer.start_file("plan.db", options)?;
+                std::io::Write::write_all(&mut writer, &data)?;
+            }
+            // Slide pictures are files, not part of slides.db. Without them a
+            // restored slide would show empty boxes where its pictures were.
+            for name in slide_store.pictures().names() {
+                if let Some(data) = slide_store.pictures().read(&name) {
+                    writer.start_file(name.as_str(), options)?;
+                    std::io::Write::write_all(&mut writer, &data)?;
+                }
+            }
             writer.finish()?;
         }
 
@@ -1930,6 +1959,7 @@ impl Database {
         &self,
         song_store: &crate::songs::SongStore,
         slide_store: &crate::slides::SlideStore,
+        plan_store: &crate::plan::PlanStore,
         bytes: &[u8],
     ) -> Result<()> {
         let temp_dir =
@@ -1939,15 +1969,38 @@ impl Database {
         let mut archive = ZipArchive::new(std::io::Cursor::new(bytes))
             .map_err(|e| AppError::Other(format!("Invalid zip archive: {e}")))?;
 
+        // Slide pictures found in the backup, put back after slides.db below.
+        let mut pictures: Vec<(String, Vec<u8>)> = Vec::new();
+
         for i in 0..archive.len() {
             let mut file = archive
                 .by_index(i)
                 .map_err(|e| AppError::Other(format!("Failed to read zip entry: {e}")))?;
-            let name = file.name().to_string();
-            if name.ends_with(".db") || name == "manifest.json" {
+            // A name that is not valid text cannot be one of our flat files.
+            let Ok(name) = file.name().map(|n| n.into_owned()) else {
+                continue;
+            };
+            // Backups hold flat files. An entry with a path in it ("../x.db", an
+            // absolute path) could land outside the temp folder, so it is ignored.
+            let is_plain_name =
+                !name.is_empty() && !name.contains(['/', '\\']) && name != "." && name != "..";
+            if is_plain_name && (name.ends_with(".db") || name == "manifest.json") {
                 let outpath = temp_dir.join(&name);
                 let mut outfile = std::fs::File::create(&outpath)?;
                 std::io::copy(&mut file, &mut outfile)?;
+            } else if is_plain_name && crate::slides::pictures::is_picture_name(&name) {
+                // Read at most one byte over the limit: enough to see it is too big.
+                let mut data = Vec::new();
+                std::io::Read::read_to_end(
+                    &mut std::io::Read::take(
+                        &mut file,
+                        crate::slides::pictures::MAX_PICTURE_BYTES as u64 + 1,
+                    ),
+                    &mut data,
+                )?;
+                if pictures.len() < MAX_RESTORED_PICTURES {
+                    pictures.push((name, data));
+                }
             }
         }
 
@@ -1964,7 +2017,7 @@ impl Database {
         if let Some(db_file) = main_db_path {
             let backup_conn = Connection::open(&db_file)?;
             let mut dest_conn = self.conn();
-            let backup = rusqlite::backup::Backup::new(&backup_conn, &mut *dest_conn)?;
+            let backup = rusqlite::backup::Backup::new(&backup_conn, &mut dest_conn)?;
             backup.run_to_completion(100, std::time::Duration::from_millis(10), None)?;
         }
 
@@ -1973,7 +2026,7 @@ impl Database {
             if let Ok(db) = song_store.db() {
                 let backup_conn = Connection::open(&songs_path)?;
                 let mut dest_conn = db.conn();
-                let backup = rusqlite::backup::Backup::new(&backup_conn, &mut *dest_conn)?;
+                let backup = rusqlite::backup::Backup::new(&backup_conn, &mut dest_conn)?;
                 let _ = backup.run_to_completion(100, std::time::Duration::from_millis(10), None);
             }
         }
@@ -1982,8 +2035,29 @@ impl Database {
         if slides_path.exists() {
             if let Ok(db) = slide_store.db() {
                 let backup_conn = Connection::open(&slides_path)?;
+                {
+                    let mut dest_conn = db.conn();
+                    let backup = rusqlite::backup::Backup::new(&backup_conn, &mut dest_conn)?;
+                    let _ =
+                        backup.run_to_completion(100, std::time::Duration::from_millis(10), None);
+                }
+                // Pictures first, then tidy: a backup from before pictures were
+                // files holds them inline, and tidy moves those out to files.
+                for (name, data) in &pictures {
+                    slide_store.pictures().restore(name, data);
+                }
+                let _ = db.tidy_pictures();
+            }
+        }
+
+        // A backup made before the service plan existed has no plan.db; the
+        // current plan is then left as it is.
+        let plan_path = temp_dir.join("plan.db");
+        if plan_path.exists() {
+            if let Ok(db) = plan_store.db() {
+                let backup_conn = Connection::open(&plan_path)?;
                 let mut dest_conn = db.conn();
-                let backup = rusqlite::backup::Backup::new(&backup_conn, &mut *dest_conn)?;
+                let backup = rusqlite::backup::Backup::new(&backup_conn, &mut dest_conn)?;
                 let _ = backup.run_to_completion(100, std::time::Duration::from_millis(10), None);
             }
         }
@@ -2542,6 +2616,22 @@ INSERT OR IGNORE INTO sync_state (collection, record_id, dirty, deleted, updated
 /// normally a few hundred KB) so a bad client can't bloat the database.
 const MAX_BACKGROUND_IMAGE_BYTES: usize = 6 * 1024 * 1024;
 
+/// The cloud-sync collections this database owns (those with triggers and a
+/// handler in `apply_remote_sync_records`).
+const SYNCED_COLLECTIONS: &[&str] = &[
+    "bookmarks",
+    "notes",
+    "search_history",
+    "service_order_items",
+    "presentation_themes",
+    "reading_position",
+    "preferences",
+];
+
+/// Most slide pictures a restore will read from one backup (a slide holds up to
+/// 50 pages of 60 items), so a hostile zip cannot fill memory.
+const MAX_RESTORED_PICTURES: usize = 3000;
+
 fn validated_theme_media(
     input: &PresentationThemeInput,
 ) -> Result<(Option<String>, Option<String>, Option<String>)> {
@@ -2718,6 +2808,14 @@ mod tests {
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_file(path.with_extension("db-wal"));
         let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    /// A slide store whose picture folder sits beside its database file.
+    fn test_slide_store(db_path: &std::path::Path) -> crate::slides::SlideStore {
+        crate::slides::SlideStore::open(
+            db_path,
+            crate::slides::PictureFolder::new(db_path.with_extension("pictures")),
+        )
     }
 
     #[test]
@@ -3604,14 +3702,14 @@ mod tests {
         let bm_dirty = dirty.iter().find(|r| r.collection == "bookmarks");
         assert!(bm_dirty.is_some());
         let bm_rec = bm_dirty.unwrap();
-        assert_eq!(bm_rec.deleted, false);
+        assert!(!bm_rec.deleted);
         assert_eq!(bm_rec.data["book"], "Genesis");
 
         // 3. Delete bookmark -> trigger marks deleted
         db.remove_bookmark(bm.id).unwrap();
         let dirty = db.get_dirty_sync_records(100).unwrap();
         let bm_del = dirty.iter().find(|r| r.collection == "bookmarks").unwrap();
-        assert_eq!(bm_del.deleted, true);
+        assert!(bm_del.deleted);
 
         // 4. Remote sync record application
         let remote_note = RemoteSyncRecord {
@@ -3647,6 +3745,281 @@ mod tests {
     }
 
     #[test]
+    fn restore_ignores_zip_entries_that_try_to_leave_the_temp_folder() {
+        use std::io::Write;
+        let (db, path) = temp_db("restore-traversal");
+        let song_path = std::env::temp_dir().join(format!("song-trav-{}.db", std::process::id()));
+        let slide_path = std::env::temp_dir().join(format!("slide-trav-{}.db", std::process::id()));
+        let song_store = crate::songs::SongStore::open(&song_path);
+        let slide_store = test_slide_store(&slide_path);
+        let plan_path = std::env::temp_dir().join(format!("plan-trav-{}.db", std::process::id()));
+        let plan_store = crate::plan::PlanStore::open(&plan_path);
+
+        // The restore folder is `<temp>/scriptura-restore-<id>`, so `../name` is `<temp>/name`.
+        let escaped_name = format!("escape-{}.db", uuid::Uuid::new_v4());
+        let escaped = std::env::temp_dir().join(&escaped_name);
+        let mut zip_bytes = Vec::new();
+        {
+            let mut writer = ZipWriter::new(std::io::Cursor::new(&mut zip_bytes));
+            let options = zip::write::SimpleFileOptions::default();
+            writer
+                .start_file(format!("../{escaped_name}"), options)
+                .unwrap();
+            writer.write_all(b"not a database").unwrap();
+            writer.finish().unwrap();
+        }
+
+        db.restore_backup_zip(&song_store, &slide_store, &plan_store, &zip_bytes)
+            .unwrap();
+        let wrote_outside = escaped.exists();
+        let _ = std::fs::remove_file(&escaped);
+        assert!(!wrote_outside, "a zip entry escaped the restore folder");
+
+        cleanup(&path);
+        let _ = std::fs::remove_file(&song_path);
+        let _ = std::fs::remove_file(&slide_path);
+        let _ = std::fs::remove_file(&plan_path);
+    }
+
+    fn plan_note(id: &str, title: &str) -> crate::plan::PlanItem {
+        crate::plan::PlanItem {
+            id: id.into(),
+            kind: "note".into(),
+            title: title.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn records_of_collections_we_do_not_own_move_the_cursor_and_leave_no_state() {
+        let (db, path) = temp_db("foreign-collection");
+        let plan = RemoteSyncRecord {
+            collection: "service_plan".into(),
+            record_id: "current".into(),
+            data: serde_json::json!({ "items": [] }),
+            deleted: false,
+            client_updated_at: "2026-11-08T10:00:00Z".into(),
+            seq: Some(7),
+        };
+        db.apply_remote_sync_records(&[plan]).unwrap();
+        assert_eq!(db.get_sync_cursor().unwrap(), 7, "the cursor moves past it");
+
+        // Had it left a state row, resetting would mark it dirty and push a deletion of the cloud copy.
+        db.reset_local_sync_state(false).unwrap();
+        let dirty = db.get_dirty_sync_records(100).unwrap();
+        assert!(
+            !dirty.iter().any(|r| r.collection == "service_plan"),
+            "nothing is pushed for a collection this database does not own"
+        );
+        cleanup(&path);
+    }
+
+    fn slide_with_picture(title: &str, image: &str) -> crate::slides::SlideDoc {
+        use crate::slides::model::{SlideElement, SlidePage};
+        crate::slides::SlideDoc {
+            title: title.into(),
+            kind: "freeform".into(),
+            pages: vec![SlidePage {
+                id: "p0".into(),
+                background: "theme".into(),
+                elements: vec![SlideElement {
+                    id: "pic".into(),
+                    kind: "image".into(),
+                    image: Some(image.into()),
+                    ..Default::default()
+                }],
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn slide_pictures_survive_a_backup_and_restore() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let (db, path) = temp_db("backup-pictures");
+        let tag = std::process::id();
+        let song_path = std::env::temp_dir().join(format!("song-pic-{tag}.db"));
+        let slide_path = std::env::temp_dir().join(format!("slide-pic-{tag}.db"));
+        let plan_path = std::env::temp_dir().join(format!("plan-pic-{tag}.db"));
+        for p in [&song_path, &slide_path, &plan_path] {
+            let _ = std::fs::remove_file(p);
+        }
+        let song_store = crate::songs::SongStore::open(&song_path);
+        let slide_store = test_slide_store(&slide_path);
+        let plan_store = crate::plan::PlanStore::open(&plan_path);
+
+        let bytes = [0xFF, 0xD8, 0xFF, 0xE0, 42];
+        let url = format!("data:image/jpeg;base64,{}", STANDARD.encode(bytes));
+        let saved = slide_store
+            .db()
+            .unwrap()
+            .save(&slide_with_picture("Welcome", &url))
+            .unwrap();
+        let name = saved.pages[0].elements[0].image.clone().unwrap();
+        let zip_bytes = db
+            .create_backup_zip(&song_store, &slide_store, &plan_store)
+            .unwrap();
+
+        // The slide, and with it the picture file, is lost after the backup.
+        slide_store.db().unwrap().delete(saved.id.unwrap()).unwrap();
+        assert!(slide_store.pictures().names().is_empty());
+
+        db.restore_backup_zip(&song_store, &slide_store, &plan_store, &zip_bytes)
+            .unwrap();
+        let slides = slide_store.db().unwrap().list(None).unwrap();
+        assert_eq!(slides.len(), 1);
+        let restored = slide_store.db().unwrap().get(slides[0].id).unwrap();
+        assert_eq!(
+            restored.pages[0].elements[0].image.as_deref(),
+            Some(name.as_str())
+        );
+        assert_eq!(slide_store.pictures().read(&name).unwrap(), bytes.to_vec());
+
+        cleanup(&path);
+        for p in [&song_path, &slide_path, &plan_path] {
+            let _ = std::fs::remove_file(p);
+        }
+        let _ = std::fs::remove_dir_all(slide_path.with_extension("pictures"));
+    }
+
+    #[test]
+    fn a_backup_from_before_pictures_were_files_still_restores_them() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let (db, path) = temp_db("backup-old-pictures");
+        let tag = std::process::id();
+        let song_path = std::env::temp_dir().join(format!("song-oldpic-{tag}.db"));
+        let slide_path = std::env::temp_dir().join(format!("slide-oldpic-{tag}.db"));
+        let plan_path = std::env::temp_dir().join(format!("plan-oldpic-{tag}.db"));
+        let other_slide_path = std::env::temp_dir().join(format!("slide-oldpic2-{tag}.db"));
+        for p in [&song_path, &slide_path, &plan_path, &other_slide_path] {
+            let _ = std::fs::remove_file(p);
+        }
+        let song_store = crate::songs::SongStore::open(&song_path);
+        let slide_store = test_slide_store(&slide_path);
+        let plan_store = crate::plan::PlanStore::open(&plan_path);
+
+        // Make the "old" backup: a slides.db whose picture is inline, no picture files.
+        let old_store = test_slide_store(&other_slide_path);
+        let url = format!(
+            "data:image/jpeg;base64,{}",
+            STANDARD.encode([0xFF, 0xD8, 0xFF, 0xE0, 5])
+        );
+        let saved = old_store
+            .db()
+            .unwrap()
+            .save(&slide_with_picture("Old deck", &url))
+            .unwrap();
+        let old_json = serde_json::json!({
+            "pages": [{
+                "id": "p0",
+                "background": "theme",
+                "elements": [{ "id": "pic", "kind": "image", "image": url }]
+            }]
+        })
+        .to_string();
+        old_store
+            .db()
+            .unwrap()
+            .conn()
+            .execute(
+                "UPDATE slides SET elements=?2 WHERE id=?1",
+                params![saved.id.unwrap(), old_json],
+            )
+            .unwrap();
+        for name in old_store.pictures().names() {
+            let _ = std::fs::remove_file(old_store.pictures().dir().join(name));
+        }
+        let old_backup = db
+            .create_backup_zip(&song_store, &old_store, &plan_store)
+            .unwrap();
+
+        db.restore_backup_zip(&song_store, &slide_store, &plan_store, &old_backup)
+            .unwrap();
+        let slides = slide_store.db().unwrap().list(None).unwrap();
+        assert_eq!(slides.len(), 1);
+        let image = slide_store.db().unwrap().get(slides[0].id).unwrap().pages[0].elements[0]
+            .image
+            .clone()
+            .unwrap();
+        assert!(
+            crate::slides::pictures::is_picture_name(&image),
+            "got {image}"
+        );
+        assert!(slide_store.pictures().read(&image).is_some());
+
+        cleanup(&path);
+        for p in [&song_path, &slide_path, &plan_path, &other_slide_path] {
+            let _ = std::fs::remove_file(p);
+        }
+        for p in [&slide_path, &other_slide_path] {
+            let _ = std::fs::remove_dir_all(p.with_extension("pictures"));
+        }
+    }
+
+    #[test]
+    fn the_service_plan_survives_a_backup_and_restore() {
+        let (db, path) = temp_db("backup-plan");
+        let tag = std::process::id();
+        let song_path = std::env::temp_dir().join(format!("song-plan-{tag}.db"));
+        let slide_path = std::env::temp_dir().join(format!("slide-plan-{tag}.db"));
+        let plan_path = std::env::temp_dir().join(format!("plan-plan-{tag}.db"));
+        for p in [&song_path, &slide_path, &plan_path] {
+            let _ = std::fs::remove_file(p);
+        }
+        let song_store = crate::songs::SongStore::open(&song_path);
+        let slide_store = test_slide_store(&slide_path);
+        let plan_store = crate::plan::PlanStore::open(&plan_path);
+
+        plan_store
+            .db()
+            .unwrap()
+            .replace(&[plan_note("a", "Welcome"), plan_note("b", "Offering")])
+            .unwrap();
+        let zip_bytes = db
+            .create_backup_zip(&song_store, &slide_store, &plan_store)
+            .unwrap();
+
+        // The plan changes after the backup was made.
+        plan_store
+            .db()
+            .unwrap()
+            .replace(&[plan_note("z", "Something else")])
+            .unwrap();
+
+        db.restore_backup_zip(&song_store, &slide_store, &plan_store, &zip_bytes)
+            .unwrap();
+        let titles: Vec<_> = plan_store
+            .db()
+            .unwrap()
+            .list()
+            .unwrap()
+            .into_iter()
+            .map(|i| i.title)
+            .collect();
+        assert_eq!(titles, ["Welcome", "Offering"]);
+
+        // A backup made before the plan existed has no plan.db and leaves the plan alone.
+        let mut old_backup = Vec::new();
+        {
+            use std::io::Write;
+            let mut writer = ZipWriter::new(std::io::Cursor::new(&mut old_backup));
+            writer
+                .start_file("manifest.json", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"{}").unwrap();
+            writer.finish().unwrap();
+        }
+        db.restore_backup_zip(&song_store, &slide_store, &plan_store, &old_backup)
+            .unwrap();
+        assert_eq!(plan_store.db().unwrap().list().unwrap().len(), 2);
+
+        cleanup(&path);
+        for p in [&song_path, &slide_path, &plan_path] {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    #[test]
     fn test_backup_and_restore_zip() {
         let (db, path) = temp_db("backup-test");
         let song_path = std::env::temp_dir().join(format!("song-test-{}.db", std::process::id()));
@@ -3655,13 +4028,17 @@ mod tests {
         let _ = std::fs::remove_file(&slide_path);
 
         let song_store = crate::songs::SongStore::open(&song_path);
-        let slide_store = crate::slides::SlideStore::open(&slide_path);
+        let slide_store = test_slide_store(&slide_path);
 
         // Add some data
         db.add_note("John", 3, Some(16), "kjv", "For God so loved")
             .unwrap();
 
-        let zip_bytes = db.create_backup_zip(&song_store, &slide_store).unwrap();
+        let plan_path = std::env::temp_dir().join(format!("plan-test-{}.db", std::process::id()));
+        let plan_store = crate::plan::PlanStore::open(&plan_path);
+        let zip_bytes = db
+            .create_backup_zip(&song_store, &slide_store, &plan_store)
+            .unwrap();
         assert!(!zip_bytes.is_empty());
 
         // Reset local DB
@@ -3669,7 +4046,7 @@ mod tests {
         assert!(db.list_notes().unwrap().is_empty());
 
         // Restore
-        db.restore_backup_zip(&song_store, &slide_store, &zip_bytes)
+        db.restore_backup_zip(&song_store, &slide_store, &plan_store, &zip_bytes)
             .unwrap();
         let restored_notes = db.list_notes().unwrap();
         assert_eq!(restored_notes.len(), 1);
@@ -3678,5 +4055,6 @@ mod tests {
         cleanup(&path);
         let _ = std::fs::remove_file(&song_path);
         let _ = std::fs::remove_file(&slide_path);
+        let _ = std::fs::remove_file(&plan_path);
     }
 }

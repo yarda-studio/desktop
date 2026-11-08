@@ -1,25 +1,42 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDialogA11y } from "../../hooks/useDialogA11y";
 import { fileToBackgroundDataUrl } from "../../lib/imageToDataUrl";
 import { useAppStore } from "../../store/app";
-import { ANNOUNCEMENT_BODY_ID, ANNOUNCEMENT_TITLE_ID, textElement, type SlideDoc, type SlideElement } from "./api";
+import { ANNOUNCEMENT_BODY_ID, ANNOUNCEMENT_TITLE_ID, textElement, toPayload, type SlideElement, type SlidePage } from "./api";
 import EditorCanvas from "./EditorCanvas";
-import { selectDirty, useSlidesStore } from "./slidesStore";
+import PageStrip from "./PageStrip";
+import { forPlatform } from "../../lib/platform";
+import { selectCanRedo, selectCanUndo, selectDirty, useSlidesStore } from "./slidesStore";
 
 export default function SlideEditorDialog() {
   const draft = useSlidesStore((s) => s.draft);
+  const pageIndex = useSlidesStore((s) => s.pageIndex);
   const dirty = useSlidesStore(selectDirty);
   const saving = useSlidesStore((s) => s.saving);
   const saveError = useSlidesStore((s) => s.saveError);
   const theme = useAppStore((s) => s.activePresentationTheme);
-  const { update, updateElement, apply, ok, cancel } = useSlidesStore.getState();
+  const canUndo = useSlidesStore(selectCanUndo);
+  const canRedo = useSlidesStore(selectCanRedo);
+  const { update, updateElement, apply, ok, cancel, setPage, addPage, duplicatePage, removePage, movePage, undo, redo } = useSlidesStore.getState();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
 
+  // A selection belongs to one page; switching pages starts with nothing selected.
+  useEffect(() => { setSelectedId(null); }, [pageIndex]);
+
   function requestCancel() {
     if (dirty) setConfirmDiscard(true);
     else cancel();
+  }
+
+  // Ctrl/Cmd+Z undoes and Ctrl/Cmd+Shift+Z or Ctrl+Y redoes, also while a text field has
+  // focus: the fields are driven by the draft, so the draft's history is the one that counts.
+  function onUndoKeys(e: React.KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const key = e.key.toLowerCase();
+    if (key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if ((key === "z" && e.shiftKey) || key === "y") { e.preventDefault(); redo(); }
   }
 
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -27,10 +44,11 @@ export default function SlideEditorDialog() {
 
   if (!draft) return null;
   const freeform = draft.kind === "freeform";
+  const page = draft.pages[Math.min(pageIndex, draft.pages.length - 1)];
 
   return (
     <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onMouseDown={(e) => e.target === e.currentTarget && requestCancel()}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Slide Editor" className="w-[min(1180px,96vw)] h-[min(780px,94vh)] flex flex-col glass glass-strong rounded-3xl overflow-hidden">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Slide Editor" onKeyDown={onUndoKeys} className="w-[min(1180px,96vw)] h-[min(780px,94vh)] flex flex-col glass glass-strong rounded-3xl overflow-hidden">
         <header className="flex items-center gap-3 px-4 py-3 border-b border-outline-variant shrink-0">
           <input
             value={draft.title}
@@ -41,16 +59,37 @@ export default function SlideEditorDialog() {
             className="field w-80 max-w-[50%] rounded-md h-9 px-3 font-body-ui text-[14px] text-on-surface outline-none"
           />
           <span className="flex-1" />
+          <div role="group" aria-label="Undo and redo" className="flex ctl rounded-md overflow-hidden">
+            <button onClick={undo} disabled={!canUndo} title={forPlatform("Undo (Ctrl+Z)")} aria-label="Undo" className="px-2 py-1 hover:bg-on-surface/10 disabled:pointer-events-none disabled:opacity-30">
+              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">undo</span>
+            </button>
+            <button onClick={redo} disabled={!canRedo} title={forPlatform("Redo (Ctrl+Shift+Z)")} aria-label="Redo" className="px-2 py-1 hover:bg-on-surface/10 disabled:pointer-events-none disabled:opacity-30">
+              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">redo</span>
+            </button>
+          </div>
           <h2 className="font-body-ui text-[13px] text-on-surface-variant">
-            {freeform ? "Free-form slide" : "Announcement"}{dirty ? " — unsaved" : ""}
+            {freeform ? `Free-form slide — page ${pageIndex + 1} of ${draft.pages.length}` : "Announcement"}{dirty ? " — unsaved" : ""}
           </h2>
         </header>
 
         <div className="flex flex-1 min-h-0">
+          {freeform && (
+            <PageStrip
+              pages={draft.pages}
+              title={draft.title}
+              index={pageIndex}
+              theme={theme}
+              onSelect={setPage}
+              onAdd={addPage}
+              onDuplicate={duplicatePage}
+              onRemove={removePage}
+              onMove={movePage}
+            />
+          )}
           <section className="flex-1 min-w-0 flex flex-col items-center justify-center gap-3 p-6 bg-surface-container-lowest/30">
             <div className="w-full max-w-[860px]">
               <EditorCanvas
-                slide={draft}
+                slide={toPayload(draft, pageIndex)}
                 theme={theme}
                 editable={freeform}
                 selectedId={selectedId}
@@ -65,9 +104,9 @@ export default function SlideEditorDialog() {
 
           <aside className="w-[340px] shrink-0 border-l border-outline-variant overflow-y-auto p-4 space-y-5">
             {freeform
-              ? <FreeformInspector draft={draft} selectedId={selectedId} onSelect={setSelectedId} />
-              : <AnnouncementInspector draft={draft} />}
-            <BackgroundField draft={draft} />
+              ? <FreeformInspector page={page} selectedId={selectedId} onSelect={setSelectedId} />
+              : <AnnouncementInspector page={page} />}
+            <BackgroundField page={page} pageCount={draft.pages.length} />
           </aside>
         </div>
 
@@ -119,12 +158,12 @@ function NumberInput({ label, value, onChange, min, max, step = 1 }: { label: st
   );
 }
 
-function AnnouncementInspector({ draft }: { draft: SlideDoc }) {
-  const { updateElement } = useSlidesStore.getState();
-  const title = draft.elements.find((e) => e.id === ANNOUNCEMENT_TITLE_ID);
-  const body = draft.elements.find((e) => e.id === ANNOUNCEMENT_BODY_ID);
+function AnnouncementInspector({ page }: { page: SlidePage }) {
+  const { updateElement, updateElements } = useSlidesStore.getState();
+  const title = page.elements.find((e) => e.id === ANNOUNCEMENT_TITLE_ID);
+  const body = page.elements.find((e) => e.id === ANNOUNCEMENT_BODY_ID);
   if (!title || !body) return <p className="font-body-ui text-[12px] text-error">This announcement is missing its text boxes.</p>;
-  const both = (patch: Partial<SlideElement>) => { updateElement(title.id, patch); updateElement(body.id, patch); };
+  const both = (patch: Partial<SlideElement>) => updateElements([title.id, body.id], patch);
   return (
     <div className="space-y-4">
       <label className="block">
@@ -138,6 +177,9 @@ function AnnouncementInspector({ draft }: { draft: SlideDoc }) {
       <label className="block">
         <span className="field-label">Message size — {body.font_size}px</span>
         <input type="range" min={24} max={120} step={2} value={body.font_size} onChange={(e) => updateElement(body.id, { font_size: Number(e.target.value) })} className="w-full accent-primary" />
+      </label>
+      <label className="flex items-center gap-2 font-body-ui text-[13px] text-on-surface" title="Makes the heading and message smaller when they would not fit. They never get larger than their set size.">
+        <input type="checkbox" checked={title.auto_fit === true && body.auto_fit === true} onChange={(e) => both({ auto_fit: e.target.checked })} className="accent-primary" />Shrink text to fit
       </label>
       <div className="flex items-end gap-4">
         <div>
@@ -153,11 +195,11 @@ function AnnouncementInspector({ draft }: { draft: SlideDoc }) {
   );
 }
 
-function FreeformInspector({ draft, selectedId, onSelect }: { draft: SlideDoc; selectedId: string | null; onSelect: (id: string | null) => void }) {
+function FreeformInspector({ page, selectedId, onSelect }: { page: SlidePage; selectedId: string | null; onSelect: (id: string | null) => void }) {
   const { addElement, removeElement, moveElement, updateElement } = useSlidesStore.getState();
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const selected = draft.elements.find((e) => e.id === selectedId) ?? null;
+  const selected = page.elements.find((e) => e.id === selectedId) ?? null;
 
   function addText() {
     onSelect(addElement(textElement({ y: 30, h: 24, text: "New text" })));
@@ -176,7 +218,7 @@ function FreeformInspector({ draft, selectedId, onSelect }: { draft: SlideDoc; s
     }
   }
 
-  const index = selected ? draft.elements.findIndex((e) => e.id === selected.id) : -1;
+  const index = selected ? page.elements.findIndex((e) => e.id === selected.id) : -1;
 
   return (
     <div className="space-y-4">
@@ -193,11 +235,11 @@ function FreeformInspector({ draft, selectedId, onSelect }: { draft: SlideDoc; s
 
       <div>
         <span className="field-label">Items (front is last)</span>
-        {draft.elements.length === 0
-          ? <p className="font-body-ui text-[12px] text-on-surface-variant">Empty slide. Add text or a picture.</p>
+        {page.elements.length === 0
+          ? <p className="font-body-ui text-[12px] text-on-surface-variant">Empty page. Add text or a picture.</p>
           : (
             <ul className="space-y-1">
-              {draft.elements.map((e) => (
+              {page.elements.map((e) => (
                 <li key={e.id}>
                   <button
                     onClick={() => onSelect(e.id)}
@@ -222,7 +264,7 @@ function FreeformInspector({ draft, selectedId, onSelect }: { draft: SlideDoc; s
                 <textarea value={selected.text} onChange={(e) => updateElement(selected.id, { text: e.target.value })} rows={4} className="field w-full rounded-md px-3 py-2 text-[13px] font-body-ui text-on-surface outline-none resize-y" />
               </label>
               <div className="grid grid-cols-2 gap-3">
-                <NumberInput label="Size (px)" value={selected.font_size} min={10} max={400} onChange={(font_size) => updateElement(selected.id, { font_size })} />
+                <NumberInput label={selected.auto_fit ? "Largest size (px)" : "Size (px)"} value={selected.font_size} min={10} max={400} onChange={(font_size) => updateElement(selected.id, { font_size })} />
                 <label className="block">
                   <span className="field-label">Colour</span>
                   <input type="color" value={selected.color} onChange={(e) => updateElement(selected.id, { color: e.target.value })} aria-label="Text colour" className="h-9 w-full rounded-md cursor-pointer bg-transparent" />
@@ -234,6 +276,9 @@ function FreeformInspector({ draft, selectedId, onSelect }: { draft: SlideDoc; s
                   <input type="checkbox" checked={selected.bold} onChange={(e) => updateElement(selected.id, { bold: e.target.checked })} className="accent-primary" />Bold
                 </label>
               </div>
+              <label className="flex items-center gap-2 font-body-ui text-[13px] text-on-surface" title="Makes the text smaller when it would not fit in the box. It never gets larger than the size above.">
+                <input type="checkbox" checked={selected.auto_fit === true} onChange={(e) => updateElement(selected.id, { auto_fit: e.target.checked })} className="accent-primary" />Shrink text to fit the box
+              </label>
             </>
           )}
           <div className={`grid grid-cols-2 gap-3 ${selected.kind === "image" ? "pt-3" : ""}`}>
@@ -243,7 +288,7 @@ function FreeformInspector({ draft, selectedId, onSelect }: { draft: SlideDoc; s
             <NumberInput label="Height (%)" value={selected.h} min={2} max={100} onChange={(h) => updateElement(selected.id, { h })} />
           </div>
           <div className="flex gap-2">
-            <button onClick={() => moveElement(selected.id, 1)} disabled={index >= draft.elements.length - 1} className="flex-1 h-8 rounded-md ctl font-body-ui text-[12px] text-on-surface disabled:opacity-40">Bring forward</button>
+            <button onClick={() => moveElement(selected.id, 1)} disabled={index >= page.elements.length - 1} className="flex-1 h-8 rounded-md ctl font-body-ui text-[12px] text-on-surface disabled:opacity-40">Bring forward</button>
             <button onClick={() => moveElement(selected.id, -1)} disabled={index <= 0} className="flex-1 h-8 rounded-md ctl font-body-ui text-[12px] text-on-surface disabled:opacity-40">Send back</button>
             <button onClick={() => { removeElement(selected.id); onSelect(null); }} className="h-8 px-3 rounded-md ctl font-body-ui text-[12px] text-error">Delete</button>
           </div>
@@ -253,16 +298,16 @@ function FreeformInspector({ draft, selectedId, onSelect }: { draft: SlideDoc; s
   );
 }
 
-function BackgroundField({ draft }: { draft: SlideDoc }) {
-  const { update } = useSlidesStore.getState();
-  const mode = draft.background === "theme" ? "theme" : draft.background === "black" ? "black" : "colour";
+function BackgroundField({ page, pageCount }: { page: SlidePage; pageCount: number }) {
+  const { setBackground, applyBackgroundToAll } = useSlidesStore.getState();
+  const mode = page.background === "theme" ? "theme" : page.background === "black" ? "black" : "colour";
   return (
     <div className="pt-4 border-t border-outline-variant">
       <label className="block">
-        <span className="field-label">Background</span>
+        <span className="field-label">{pageCount > 1 ? "Background (this page)" : "Background"}</span>
         <select
           value={mode}
-          onChange={(e) => update({ background: e.target.value === "colour" ? "#1e293b" : e.target.value })}
+          onChange={(e) => setBackground(e.target.value === "colour" ? "#1e293b" : e.target.value)}
           className="field-input"
         >
           <option value="theme">Presentation theme</option>
@@ -271,10 +316,13 @@ function BackgroundField({ draft }: { draft: SlideDoc }) {
         </select>
       </label>
       {mode === "colour" && (
-        <input type="color" value={draft.background} onChange={(e) => update({ background: e.target.value })} aria-label="Background colour" className="mt-2 h-9 w-full rounded-md cursor-pointer bg-transparent" />
+        <input type="color" value={page.background} onChange={(e) => setBackground(e.target.value)} aria-label="Background colour" className="mt-2 h-9 w-full rounded-md cursor-pointer bg-transparent" />
       )}
       {mode === "theme" && (
         <p className="mt-1.5 font-body-ui text-[12px] text-on-surface-variant leading-relaxed">Uses the active theme's colour, picture or video behind your text.</p>
+      )}
+      {pageCount > 1 && (
+        <button onClick={applyBackgroundToAll} className="mt-2 h-8 w-full rounded-md ctl font-body-ui text-[12px] text-on-surface">Use for all pages</button>
       )}
     </div>
   );
