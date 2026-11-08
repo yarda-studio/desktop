@@ -28,13 +28,13 @@ export default function PlanList() {
   }
 
   return (
-    <div className="flex flex-col min-h-0">
+    <div className="flex flex-col">
       {items.length === 0 ? (
         <p className="px-4 py-5 text-center font-body-ui text-[12px] text-on-surface-variant leading-relaxed">
           The plan is empty. Use “Add to plan” on a song, a slide or a verse, or add a cue below.
         </p>
       ) : (
-        <ol className="min-h-0 overflow-y-auto p-1.5 space-y-1">
+        <ol className="p-1.5 space-y-1">
           {items.map((item, i) => (
             <Row
               key={item.id}
@@ -120,7 +120,7 @@ function Row({ item, index, active, first, last, onActivate, onMove, onRemove, o
   }
 
   return (
-    <li className={`group rounded-lg border ${active ? "row-selected border-primary/40" : "border-outline-variant/50"}`}>
+    <li className={`group relative rounded-lg border ${active ? "row-selected border-primary/40" : "border-outline-variant/50"}`}>
       <div className="flex items-center gap-2 px-2 py-1.5">
         <span className={`w-5 shrink-0 text-right font-metadata-mono text-[12px] ${active ? "font-bold text-primary" : "text-on-surface-variant"}`}>{index + 1}</span>
         <button
@@ -143,9 +143,10 @@ function Row({ item, index, active, first, last, onActivate, onMove, onRemove, o
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setLengthText(null); }}
           aria-label={`Planned length of ${item.title}`}
           placeholder="length"
-          className="field w-16 shrink-0 rounded-md px-1.5 py-0.5 text-center font-metadata-mono text-[12px] text-on-surface outline-none"
+          className="field w-14 shrink-0 rounded-md px-1.5 py-0.5 text-center font-metadata-mono text-[12px] text-on-surface outline-none"
         />
-        <span className="flex shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        {/* The step's tools float over the row on hover instead of holding space in it, so a narrow column keeps its titles. */}
+        <span className="absolute right-[4.25rem] top-1/2 flex -translate-y-1/2 rounded-md bg-surface-container shadow-sm opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           <Icon icon="edit_note" title={noteOpen ? "Hide note" : "Note for the operator"} onClick={() => setNoteOpen((o) => !o)} />
           <Icon icon="arrow_upward" title="Move up" disabled={first} onClick={() => onMove(-1)} />
           <Icon icon="arrow_downward" title="Move down" disabled={last} onClick={() => onMove(1)} />

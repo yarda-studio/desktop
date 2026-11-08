@@ -10,6 +10,7 @@ import { contentStrongs } from "../lib/strongsMarkers";
 import { FONT_FAMILY_CSS } from "../components/VersePanes";
 import StrongsSheet from "../components/StrongsSheet";
 import ErrorBoundary from "../components/ErrorBoundary";
+import PlanSection from "../features/plan/PlanSection";
 import { liveDisplayPrefs, liveFontSize, liveSafeMargin } from "../lib/liveText";
 import OutputPreview from "../components/OutputPreview";
 import { addVerseToPlan } from "../features/plan/addToPlan";
@@ -713,6 +714,9 @@ export default function LiveShowRunner() {
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* ── Schedule (queue) ── */}
         <section data-tour="live-schedule" style={{ width: queueW.size }} className="shrink-0 flex flex-col overflow-hidden panel rounded-3xl">
+          <ErrorBoundary compact label="Service plan">
+            <PlanSection />
+          </ErrorBoundary>
           <div className="shrink-0 flex items-center justify-between gap-3 px-3.5 py-2.5 border-b border-outline-variant">
             <h2 className="font-body-ui text-[13px] font-bold text-on-surface shrink-0">Schedule</h2>
             <div className="flex items-center gap-2 whitespace-nowrap">

@@ -1,3 +1,5 @@
+import ErrorBoundary from "../../components/ErrorBoundary";
+import PlanSection from "../plan/PlanSection";
 import { useSongsLive } from "./liveStore";
 
 export default function SchedulePanel({ width }: { width: number }) {
@@ -5,6 +7,9 @@ export default function SchedulePanel({ width }: { width: number }) {
 
   return (
     <section style={{ width }} className="shrink-0 flex flex-col overflow-hidden panel rounded-3xl">
+      <ErrorBoundary compact label="Service plan">
+        <PlanSection />
+      </ErrorBoundary>
       <div className="shrink-0 flex items-center justify-between gap-3 px-3.5 py-2.5 border-b border-outline-variant">
         <h2 className="font-body-ui text-[13px] font-bold text-on-surface ">Schedule</h2>
         {schedule.length > 0 && (

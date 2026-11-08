@@ -16,7 +16,7 @@ import ServiceOrderPanel from "./components/ServiceOrderPanel";
 import ErrorBoundary from "./components/ErrorBoundary";
 import CustomizationStudio from "./views/CustomizationStudio";
 import LiveShowRunner from "./views/LiveShowRunner";
-import PlanDock from "./features/plan/PlanDock";
+import PlanController from "./features/plan/PlanController";
 import SlidesView from "./features/slides/SlidesView";
 import { ResizeHandle, useResizable } from "./hooks/useResizable";
 import { OnboardingHost } from "./features/onboarding";
@@ -212,10 +212,11 @@ export default function App() {
     <div className="h-screen flex flex-col overflow-hidden ambient text-on-background font-body-ui text-body-ui selection:bg-secondary-container selection:text-on-secondary-container">
       {!isFullscreen && (presenting ? <PresentationTopBar /> : <TopBar />)}
 
-      {/* The service plan drives all three output tabs, so it sits above them. */}
+      {/* The service plan drives all three output tabs; each tab shows it at the top of its Schedule column.
+          This does its loading and Shift+Page keys once for all of them. */}
       {!isFullscreen && presenting && (view === "live" || view === "songs" || view === "slides") && (
         <ErrorBoundary compact label="Service plan">
-          <PlanDock />
+          <PlanController />
         </ErrorBoundary>
       )}
 
