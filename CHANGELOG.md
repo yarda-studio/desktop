@@ -4,6 +4,11 @@ All notable changes to Scriptura are listed here, newest first.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-08
+
+### Changed
+- **Build tooling updated (Vite 8 and its React plugin 6).** This changes how the app is built, not what it does. The two must move together: Vite 8 with the old React plugin failed to install, which is what broke the automatic update PRs for them.
+
 ## [0.4.0] - 2026-11-08
 
 ### Added
