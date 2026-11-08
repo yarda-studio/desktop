@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useAppStore } from "../store/app";
 import { useSheetVisibility } from "../hooks/useSheetVisibility";
 import { defaultLexiconSourceFor, strongsNumbers } from "../hooks/useStrongsEntry";
@@ -14,6 +14,26 @@ import { findBooks } from "../data/books";
 // pixel height persists from then on and this sentinel never applies again.
 function resolveHeight(stored: number): number {
   return stored || Math.round(window.innerHeight * 0.5);
+}
+
+/** Below this panel height (px) the docked lookup stops pinning its header: pinned, the header (about
+ *  145px) would leave the definition under 100px, so it scrolls with the content instead. */
+const SHORT_COLUMN = 240;
+
+/** True while the element is shorter than `limit`, kept current as the window or panes are resized. */
+function useShorterThan(ref: React.RefObject<HTMLElement>, limit: number, active: boolean): boolean {
+  const [short, setShort] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!active || !el) return;
+    const update = () => setShort(el.getBoundingClientRect().height < limit);
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref, limit, active]);
+  return short;
 }
 
 function useDraggableHeight(initial: number, onCommit: (h: number) => void) {
@@ -458,6 +478,9 @@ export default function StrongsSheet({ docked = false, output }: {
   // Docked in the live console, readingFontSize is the *output's* projector-sized
   // text — far too large for an operator panel — so it gets a fixed UI size.
   const bodyFontSize = docked ? 16 : readingFontSize;
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // Re-measured whenever the lookup opens, since the sheet draws nothing while it is closed.
+  const shortColumn = useShorterThan(wrapRef, SHORT_COLUMN, docked && selectedStrongs !== null);
 
   const handleRefClick = useCallback(
     (target: string, label: string) => {
@@ -610,6 +633,71 @@ export default function StrongsSheet({ docked = false, output }: {
 
   if (!isOpen) return null;
 
+  // The source tabs and the output controls are the same in both layouts (the
+  // floating sheet puts them on two rows, the docked panel on one wrapping row).
+  const sourcePills = (
+    <>
+      {([{ id: "ours", label: "Strong's" }, ...LEXICON_PILLS[prefix]] as LexiconPill[]).map((pill) => (
+        <button
+          key={pill.id}
+          type="button"
+          className={`${docked ? "px-2.5 py-0.5" : "px-3 py-1"} rounded-md font-body-ui text-[12px] font-medium transition-colors ${
+            source === pill.id
+              ? "btn-primary"
+              : "ctl text-on-surface-variant"
+          }`}
+          onClick={() => setSource(pill.id)}
+        >
+          {pill.label}
+        </button>
+      ))}
+    </>
+  );
+
+  const outputControls = output ? (
+    <>
+      <button
+        type="button"
+        disabled={!presentationActive || loading || !entry || !doc}
+        onClick={() => setStrongsLive(!strongsLive)}
+        className={`flex items-center gap-1.5 ${docked ? "px-2.5 py-0.5" : "px-3 py-1"} rounded-md font-body-ui text-[12px] font-bold whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${
+          strongsLive ? "btn-primary" : "ctl text-on-surface"
+        }`}
+        title={presentationActive ? "Show this lookup full screen on the output (PageUp / PageDown step its pages)" : "Open the output window first"}
+      >
+        <span className="material-symbols-outlined !text-[16px]">{strongsLive ? "cancel_presentation" : "cast"}</span>
+        {strongsLive ? "On output — Clear" : "Show on output"}
+      </button>
+      {pages.length > 0 && (
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            className="p-1 rounded-md ctl text-on-surface-variant disabled:opacity-40"
+            disabled={activePage <= 0}
+            onClick={() => setStrongsPage(activePage - 1)}
+            aria-label="Previous page"
+            title="Previous page (PageUp)"
+          >
+            <span className="material-symbols-outlined !text-[16px]">chevron_left</span>
+          </button>
+          <span className="font-metadata-mono text-[12px] text-on-surface-variant tabular-nums px-1 whitespace-nowrap">
+            {activePage + 1} / {pages.length}
+          </span>
+          <button
+            type="button"
+            className="p-1 rounded-md ctl text-on-surface-variant disabled:opacity-40"
+            disabled={activePage >= pages.length - 1}
+            onClick={() => setStrongsPage(activePage + 1)}
+            aria-label="Next page"
+            title="Next page (PageDown)"
+          >
+            <span className="material-symbols-outlined !text-[16px]">chevron_right</span>
+          </button>
+        </div>
+      )}
+    </>
+  ) : null;
+
   return (
     <>
       {/* Backdrop */}
@@ -622,9 +710,10 @@ export default function StrongsSheet({ docked = false, output }: {
 
       {/* Sheet */}
       <div
+        ref={wrapRef}
         className={docked
-          ? "flex-1 min-h-0 flex flex-col"
-          : `fixed bottom-3 left-1/2 -translate-x-1/2 z-50 w-full flex flex-col transition-all duration-300 ease-out glass glass-strong rounded-3xl ${
+          ? "flex-1 min-h-0 flex flex-col overflow-y-auto"
+          : `fixed bottom-3 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-1.5rem)] flex flex-col transition-all duration-300 ease-out glass glass-strong rounded-3xl ${
               visible ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
             }`}
         style={docked ? undefined : { maxWidth: isFullscreen ? "90%" : "56rem", height: drag.height }}
@@ -643,16 +732,18 @@ export default function StrongsSheet({ docked = false, output }: {
           </div>
         )}
 
-        {/* Header */}
-        <div className="px-6 pt-2 pb-4 border-b border-outline-variant shrink-0">
+        {/* Header and controls. When docked in the console they stay pinned while the
+            lookup scrolls, so "Show on output" is always within reach. */}
+        <div className={docked ? (shortColumn ? "shrink-0" : "sticky top-0 z-10 bg-surface shrink-0") : "contents"}>
+        <div className={`border-b border-outline-variant shrink-0 ${docked ? "px-3 pt-2 pb-2" : "px-6 pt-2 pb-4"}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               {loading ? (
                 <div className="h-7 w-32 bg-surface-container-low rounded animate-pulse" />
               ) : entry ? (
                 <div>
-                  <div className="flex items-baseline gap-3 flex-wrap mb-1.5">
-                    <span className="font-body-reading text-[28px] font-semibold text-primary leading-tight">
+                  <div className={`flex items-baseline gap-x-3 flex-wrap ${docked ? "mb-1" : "mb-1.5"}`}>
+                    <span className={`font-body-reading font-semibold text-primary leading-tight ${docked ? "text-[22px]" : "text-[28px]"}`}>
                       {entry.lemma}
                     </span>
                     {entry.transliteration && (
@@ -709,72 +800,33 @@ export default function StrongsSheet({ docked = false, output }: {
           </div>
         </div>
 
-        {/* Lexicon source switcher — compare our bundled Strong's data
-            against richer companion lexicons for the same number. */}
-        <div className="flex items-center gap-1.5 px-6 py-2.5 border-b border-outline-variant shrink-0">
-          {([{ id: "ours", label: "Strong's" }, ...LEXICON_PILLS[prefix]] as LexiconPill[]).map((pill) => (
-            <button
-              key={pill.id}
-              type="button"
-              className={`px-3 py-1 rounded-md font-body-ui text-[12px] font-medium transition-colors ${
-                source === pill.id
-                  ? "btn-primary"
-                  : "ctl text-on-surface-variant"
-              }`}
-              onClick={() => setSource(pill.id)}
-            >
-              {pill.label}
-            </button>
-          ))}
+
+          {docked ? (
+            // One wrapping row: the source tabs, then the output controls, which drop to a
+            // second line when the column is too narrow for both.
+            <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 border-b border-outline-variant">
+              {sourcePills}
+              {outputControls && <div className="ml-auto flex items-center gap-1.5">{outputControls}</div>}
+            </div>
+          ) : (
+            <>
+              {/* Lexicon source switcher — compare our bundled Strong's data
+                  against richer companion lexicons for the same number. */}
+              <div className="flex items-center gap-1.5 px-6 py-2.5 border-b border-outline-variant shrink-0">
+                {sourcePills}
+              </div>
+              {/* Output control — a lookup stays private until it is shown here. */}
+              {outputControls && (
+                <div className="flex items-center gap-2 px-6 py-2.5 border-b border-outline-variant shrink-0">
+                  {outputControls}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
-        {/* Output control — a lookup stays private until it is shown here. */}
-        {output && (
-          <div className="flex items-center gap-2 px-6 py-2.5 border-b border-outline-variant shrink-0">
-            <button
-              type="button"
-              disabled={!presentationActive || loading || !entry || !doc}
-              onClick={() => setStrongsLive(!strongsLive)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md font-body-ui text-[12px] font-bold disabled:opacity-40 disabled:cursor-not-allowed ${
-                strongsLive ? "btn-primary" : "ctl text-on-surface"
-              }`}
-              title={presentationActive ? "Show this lookup full screen on the output (PageUp / PageDown step its pages)" : "Open the output window first"}
-            >
-              <span className="material-symbols-outlined text-[16px]">{strongsLive ? "cancel_presentation" : "cast"}</span>
-              {strongsLive ? "On output — Clear" : "Show on output"}
-            </button>
-            {pages.length > 0 && (
-              <div className="ml-auto flex items-center gap-1">
-                <button
-                  type="button"
-                  className="p-1 rounded-md ctl text-on-surface-variant disabled:opacity-40"
-                  disabled={activePage <= 0}
-                  onClick={() => setStrongsPage(activePage - 1)}
-                  aria-label="Previous page"
-                  title="Previous page (PageUp)"
-                >
-                  <span className="material-symbols-outlined text-[16px]">chevron_left</span>
-                </button>
-                <span className="font-metadata-mono text-[12px] text-on-surface-variant tabular-nums px-1">
-                  {activePage + 1} / {pages.length}
-                </span>
-                <button
-                  type="button"
-                  className="p-1 rounded-md ctl text-on-surface-variant disabled:opacity-40"
-                  disabled={activePage >= pages.length - 1}
-                  onClick={() => setStrongsPage(activePage + 1)}
-                  aria-label="Next page"
-                  title="Next page (PageDown)"
-                >
-                  <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Body */}
-        <div ref={bodyScrollRef} className="flex-1 overflow-y-auto">
+        <div ref={bodyScrollRef} className={`flex-1 overflow-y-auto ${docked ? "min-h-[8rem]" : ""}`}>
           {loading && (
             <div className="flex items-center justify-center h-32">
               <span className="font-body-ui text-body-ui text-on-surface-variant">
@@ -819,7 +871,7 @@ export default function StrongsSheet({ docked = false, output }: {
           )}
 
           {!loading && !error && entry && (
-            <div className="px-6 py-5 space-y-5">
+            <div className={docked ? "px-3 py-3 space-y-4" : "px-6 py-5 space-y-5"}>
               {output && pages.length > 0 && (
                 <section>
                   <style>{`.strongs-card .sref{color:var(--color-primary, #8ab4f8)}.strongs-card b{font-weight:700}`}</style>

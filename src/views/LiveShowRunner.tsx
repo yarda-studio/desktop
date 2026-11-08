@@ -11,6 +11,7 @@ import { FONT_FAMILY_CSS } from "../components/VersePanes";
 import StrongsSheet from "../components/StrongsSheet";
 import ErrorBoundary from "../components/ErrorBoundary";
 import PlanSection from "../features/plan/PlanSection";
+import OutputStrip from "../features/songs/OutputStrip";
 import { liveDisplayPrefs, liveFontSize, liveSafeMargin } from "../lib/liveText";
 import OutputPreview from "../components/OutputPreview";
 import { addVerseToPlan } from "../features/plan/addToPlan";
@@ -1169,51 +1170,6 @@ export default function LiveShowRunner() {
 function slideLabel(ref: VerseRef, part: number | null, module: string | null) {
   const letter = part === null ? "" : (PART_LABELS[part] ?? String.fromCharCode(97 + part));
   return `${ref.book} ${ref.chapter}:${ref.verse}${letter}${module ? ` (${module})` : ""}`;
-}
-
-/** The bottom strip of the Preview and Live columns: a thumbnail of the real
- *  output screen, what it shows, and slide arrows to step through a split verse. */
-function OutputStrip({ title, label, slide, slides, onSlide, stage, children }: {
-  title: string;
-  label: string;
-  slide: number;
-  slides: number;
-  onSlide: (n: number) => void;
-  stage: { w: number; h: number };
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="shrink-0 border-t border-outline-variant px-4 py-3">
-      <p className="font-body-ui text-[12px] font-bold text-on-surface-variant mb-3">{title}</p>
-      <div className="flex items-center gap-4">
-        <div className="shrink-0 rounded-md overflow-hidden" style={{ width: "clamp(110px, 40%, 144px)", aspectRatio: `${stage.w} / ${stage.h}` }}>
-          {children}
-        </div>
-        <div className="min-w-0 flex-1 flex flex-col gap-1.5">
-          <p className="font-body-ui text-[12px] text-on-surface truncate" title={label}>{label}</p>
-          <p className="font-body-ui text-[12px] text-on-surface-variant whitespace-nowrap">Slide {slides === 0 ? 0 : slide + 1} of {slides}</p>
-          <div className="flex ctl rounded-md overflow-hidden self-start">
-            <button
-              onClick={() => onSlide(Math.max(0, slide - 1))}
-              disabled={slide <= 0}
-              className="px-2 py-1 disabled:opacity-35 hover:bg-on-surface/10"
-              aria-label="Previous slide"
-            >
-              <span className="material-symbols-outlined text-[18px]">chevron_left</span>
-            </button>
-            <button
-              onClick={() => onSlide(Math.min(slides - 1, slide + 1))}
-              disabled={slide >= slides - 1}
-              className="px-2 py-1 border-l border-outline-variant disabled:opacity-35 hover:bg-on-surface/10"
-              aria-label="Next slide"
-            >
-              <span className="material-symbols-outlined text-[18px]">chevron_right</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 /** Renders verse spans with the same clickable Strong's-number treatment as
