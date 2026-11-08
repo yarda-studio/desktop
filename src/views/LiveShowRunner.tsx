@@ -708,6 +708,9 @@ export default function LiveShowRunner() {
   useEffect(() => registerScriptureStepper(stepLiveVerse), [stepLiveVerse]);
 
   const overridden = liveBlack || liveEmergency;
+  // A Strong's lookup is being shown on the output: the Live column mirrors it (instead of the live verse)
+  // so the operator can see what is on air and step its pages from here.
+  const strongsOnAir = strongsLive && !!selectedStrongs && !!strongsDoc && strongsDoc.pages.length > 0;
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-2.5 gap-2.5">
@@ -962,7 +965,49 @@ export default function LiveShowRunner() {
                 </p>
               </div>
             )}
-            {liveParts.map((part, i) => {
+            {strongsOnAir && strongsDoc ? (
+              <>
+                <style>{`.strongs-card .sref{color:var(--color-primary, #8ab4f8)}.strongs-card b{font-weight:700}`}</style>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/30 row-selected">
+                  <span className="material-symbols-outlined !text-[18px] text-primary shrink-0" aria-hidden="true">menu_book</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-body-ui text-[12px] font-bold text-primary truncate">Strong's {strongsDoc.number} is on the output</p>
+                    <p className="font-body-ui text-[11px] text-on-surface-variant truncate">{slideLabel(currentRef, liveSplit ? versePart : null, primaryModule)} returns when you clear it</p>
+                  </div>
+                  <button
+                    onClick={() => useAppStore.getState().setStrongsLive(false)}
+                    className="ctl rounded-md px-2 py-1 font-body-ui text-[12px] font-bold text-on-surface shrink-0"
+                    title="Take the lookup off the output and go back to the live verse"
+                  >
+                    Clear
+                  </button>
+                </div>
+                {strongsDoc.pages.map((html, i) => {
+                  const active = i === Math.min(strongsPage, strongsDoc.pages.length - 1);
+                  return (
+                    <div
+                      key={i}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => useAppStore.getState().setStrongsPage(i)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); useAppStore.getState().setStrongsPage(i); } }}
+                      className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border transition-colors cursor-pointer select-none ${
+                        active ? "row-selected border-primary/30" : "border-outline-variant/60 hover:bg-surface-container-low"
+                      } ${overridden ? "opacity-50" : ""}`}
+                    >
+                      <span className={`font-metadata-mono text-[12px] shrink-0 mt-0.5 ${active ? "text-primary font-bold" : "text-on-surface-variant"}`}>{i + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className={`font-body-ui text-[12px] font-bold ${active ? "text-primary" : "text-on-surface"}`}>
+                          Strong's {strongsDoc.number} · {i + 1}/{strongsDoc.pages.length}
+                        </p>
+                        <div className="strongs-card font-body-reading text-[13px] leading-snug text-on-surface mt-0.5" dangerouslySetInnerHTML={{ __html: html }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            ) : (
+              liveParts.map((part, i) => {
               const active = i === versePart || liveParts.length === 1;
               return (
                 <div
@@ -984,15 +1029,17 @@ export default function LiveShowRunner() {
                   </div>
                 </div>
               );
-            })}
+            
+              })
+            )}
           </div>
 
           <OutputStrip
             title="Live Output"
-            label={slideLabel(currentRef, liveSplit ? versePart : null, primaryModule)}
-            slide={Math.min(versePart, liveParts.length - 1)}
-            slides={liveParts.length}
-            onSlide={(n) => setVersePart(n)}
+            label={strongsOnAir && strongsDoc ? `Strong's ${strongsDoc.number} — ${strongsDoc.lemma}` : slideLabel(currentRef, liveSplit ? versePart : null, primaryModule)}
+            slide={strongsOnAir && strongsDoc ? Math.min(strongsPage, strongsDoc.pages.length - 1) : Math.min(versePart, liveParts.length - 1)}
+            slides={strongsOnAir && strongsDoc ? strongsDoc.pages.length : liveParts.length}
+            onSlide={(n) => (strongsOnAir ? useAppStore.getState().setStrongsPage(n) : setVersePart(n))}
             stage={stage}
           >
             <OutputPreview state={outputState} chapter={liveChapter} parallelChapter={liveParallelChapter} stage={stage} outputOpen={presentationActive} showCountdown />

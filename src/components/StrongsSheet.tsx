@@ -656,18 +656,25 @@ export default function StrongsSheet({ docked = false, output }: {
 
   const outputControls = output ? (
     <>
-      <button
-        type="button"
-        disabled={!presentationActive || loading || !entry || !doc}
-        onClick={() => setStrongsLive(!strongsLive)}
-        className={`flex items-center gap-1.5 ${docked ? "px-2.5 py-0.5" : "px-3 py-1"} rounded-md font-body-ui text-[12px] font-bold whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${
-          strongsLive ? "btn-primary" : "ctl text-on-surface"
-        }`}
-        title={presentationActive ? "Show this lookup full screen on the output (PageUp / PageDown step its pages)" : "Open the output window first"}
-      >
-        <span className="material-symbols-outlined !text-[16px]">{strongsLive ? "cancel_presentation" : "cast"}</span>
-        {strongsLive ? "On output — Clear" : "Show on output"}
-      </button>
+      <div className="flex flex-col items-start">
+        <button
+          type="button"
+          disabled={!presentationActive || loading || !entry || !doc}
+          onClick={() => setStrongsLive(!strongsLive)}
+          className={`flex items-center gap-1.5 ${docked ? "px-2.5 py-0.5" : "px-3 py-1"} rounded-md font-body-ui text-[12px] font-bold whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${
+            strongsLive ? "btn-primary" : "ctl text-on-surface"
+          }`}
+          title={presentationActive ? "Show this lookup full screen on the output (PageUp / PageDown step its pages)" : "Open the output window first"}
+        >
+          <span className="material-symbols-outlined !text-[16px]">{strongsLive ? "cancel_presentation" : "cast"}</span>
+          {strongsLive ? "On output — Clear" : "Show on output"}
+        </button>
+        {!presentationActive && (
+          <span className="font-body-ui text-[11px] text-on-surface-variant mt-0.5">
+            Open the output window to show this on screen
+          </span>
+        )}
+      </div>
       {pages.length > 0 && (
         <div className="ml-auto flex items-center gap-1">
           <button
@@ -806,7 +813,7 @@ export default function StrongsSheet({ docked = false, output }: {
             // second line when the column is too narrow for both.
             <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 border-b border-outline-variant">
               {sourcePills}
-              {outputControls && <div className="ml-auto flex items-center gap-1.5">{outputControls}</div>}
+              {outputControls && <div className="ml-auto flex items-start gap-1.5">{outputControls}</div>}
             </div>
           ) : (
             <>
@@ -817,7 +824,7 @@ export default function StrongsSheet({ docked = false, output }: {
               </div>
               {/* Output control — a lookup stays private until it is shown here. */}
               {outputControls && (
-                <div className="flex items-center gap-2 px-6 py-2.5 border-b border-outline-variant shrink-0">
+                <div className="flex items-start gap-2 px-6 py-2.5 border-b border-outline-variant shrink-0">
                   {outputControls}
                 </div>
               )}
