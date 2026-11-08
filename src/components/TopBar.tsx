@@ -1,4 +1,4 @@
-import { forPlatform } from "../lib/platform";
+import { forPlatform, IS_MAC, MAC_WINDOW_BUTTONS_WIDTH } from "../lib/platform";
 import { useEffect, useRef } from "react";
 import { useAppStore, type Theme } from "../store/app";
 import { api } from "../lib/tauri";
@@ -70,11 +70,16 @@ export default function TopBar() {
   const modeIcon = searchMode === "word" ? "auto_stories" : "search";
 
   return (
-    <header className="flex justify-between items-center h-14 px-content-margin w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0">
+    <header
+      className="relative flex justify-between items-center h-11 px-content-margin w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0"
+      style={IS_MAC ? { paddingLeft: MAC_WINDOW_BUTTONS_WIDTH } : undefined}
+    >
+      {/* The bar is also the window's title bar (there is no separate one), so its empty parts drag the window. */}
+      <div data-tauri-drag-region aria-hidden="true" className="absolute inset-0 -z-10" />
       {/* Left: logo + current reading position */}
       <div className="flex items-center gap-4">
         <button
-          className="ctl rounded-lg px-3 py-1.5 text-on-surface font-semibold font-body-ui text-body-ui"
+          className="ctl rounded-lg px-3 py-1 text-on-surface font-semibold font-body-ui text-[13px]"
           onClick={() => setView("reading")}
         >
           {refLabel}
@@ -89,20 +94,20 @@ export default function TopBar() {
           <button
             onClick={toggleMode}
             title={modeLabel} aria-label={modeLabel}
-            className="ctl rounded-lg p-1.5 text-secondary hover:text-primary shrink-0"
+            className="ctl rounded-lg w-8 h-8 flex items-center justify-center text-secondary hover:text-primary shrink-0"
           >
-            <span className="material-symbols-outlined text-[18px]">{modeIcon}</span>
+            <span className="material-symbols-outlined !text-[18px] leading-none">{modeIcon}</span>
           </button>
 
           {/* Word search input */}
           {searchMode === "word" && (
             <div className="relative flex-1">
-              <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">
+              <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant !text-[16px] pointer-events-none">
                 search
               </span>
               <input
                 ref={wordInputRef}
-                className="w-full pl-9 pr-3 py-1.5 field rounded-lg focus:outline-none text-body-ui font-body-ui transition-colors placeholder:text-on-surface-variant"
+                className="w-full pl-9 pr-3 py-1 field rounded-lg focus:outline-none text-[13px] font-body-ui transition-colors placeholder:text-on-surface-variant"
                 placeholder={forPlatform("Search (Ctrl+K)")}
                 onFocus={() => setView("search")}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -123,12 +128,12 @@ export default function TopBar() {
           <button
             aria-label="Service queue"
             onClick={() => setServiceOrderOpen(!serviceOrderOpen)}
-            className={`relative w-9 h-9 flex items-center justify-center rounded-lg shrink-0 ${
+            className={`relative w-8 h-8 flex items-center justify-center rounded-lg shrink-0 ${
               serviceOrderOpen ? "ctl-active" : "ghost text-secondary hover:text-on-surface"
             }`}
             title="Service queue (Ctrl+Q)"
           >
-            <span className="material-symbols-outlined text-[20px] leading-none select-none translate-y-[1px]">queue_play_next</span>
+            <span className="material-symbols-outlined !text-[18px] leading-none select-none">queue_play_next</span>
             {serviceOrder.length > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full btn-primary text-on-primary font-metadata-mono text-[11px] flex items-center justify-center px-0.5 leading-none">
                 {serviceOrder.length}
@@ -140,33 +145,33 @@ export default function TopBar() {
           aria-label="Toggle parallel view"
           data-tour="parallel"
           onClick={() => setParallelMode(!parallelMode)}
-          className={`w-9 h-9 flex items-center justify-center rounded-lg shrink-0 ${parallelMode ? "ctl-active" : "ghost text-secondary hover:text-on-surface"}`}
+          className={`w-8 h-8 flex items-center justify-center rounded-lg shrink-0 ${parallelMode ? "ctl-active" : "ghost text-secondary hover:text-on-surface"}`}
         >
-          <span className="material-symbols-outlined text-[20px] leading-none select-none translate-y-[1px]">splitscreen</span>
+          <span className="material-symbols-outlined !text-[18px] leading-none select-none">splitscreen</span>
         </button>
         <button
           aria-label="Font size"
           data-tour="font-size"
-          className="w-9 h-9 flex items-center justify-center rounded-lg shrink-0 ghost text-secondary hover:text-on-surface"
+          className="w-8 h-8 flex items-center justify-center rounded-lg shrink-0 ghost text-secondary hover:text-on-surface"
         >
-          <span className="material-symbols-outlined text-[20px] leading-none select-none translate-y-[1px]">format_size</span>
+          <span className="material-symbols-outlined !text-[18px] leading-none select-none">format_size</span>
         </button>
         <button
           aria-label="Toggle theme"
           data-tour="theme"
           onClick={cycleTheme}
-          className="w-9 h-9 flex items-center justify-center rounded-lg shrink-0 ghost text-secondary hover:text-on-surface"
+          className="w-8 h-8 flex items-center justify-center rounded-lg shrink-0 ghost text-secondary hover:text-on-surface"
         >
-          <span className="material-symbols-outlined text-[20px] leading-none select-none translate-y-[1px]">{themeIcon}</span>
+          <span className="material-symbols-outlined !text-[18px] leading-none select-none">{themeIcon}</span>
         </button>
         <AccountButton />
         <button
           aria-label="Settings"
           data-tour="settings"
           onClick={() => setSettingsOpen(true)}
-          className={`w-9 h-9 flex items-center justify-center rounded-lg shrink-0 ${settingsOpen ? "ctl-active" : "ghost text-secondary hover:text-on-surface"}`}
+          className={`w-8 h-8 flex items-center justify-center rounded-lg shrink-0 ${settingsOpen ? "ctl-active" : "ghost text-secondary hover:text-on-surface"}`}
         >
-          <span className="material-symbols-outlined text-[20px] leading-none select-none translate-y-[1px]">settings</span>
+          <span className="material-symbols-outlined !text-[18px] leading-none select-none">settings</span>
         </button>
       </div>
 

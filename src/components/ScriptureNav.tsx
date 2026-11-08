@@ -47,12 +47,12 @@ export default function ScriptureNav({ inputRef, baseRef, onNavigate, placeholde
 
   return (
     <div className="relative flex-1">
-      <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none select-none">
+      <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant !text-[16px] pointer-events-none select-none">
         auto_stories
       </span>
       <input
         ref={inputRef}
-        className="w-full pl-8 pr-3 py-1 focus:outline-none text-body-ui font-body-ui transition-colors placeholder:text-on-surface-variant field rounded-lg"
+        className="block w-full pl-7 pr-3 py-1 focus:outline-none text-[13px] font-body-ui transition-colors placeholder:text-on-surface-variant field rounded-lg"
         placeholder={placeholder ?? forPlatform("Go to… jn 3:16 or v5  (Ctrl+L)")}
         value={value}
         onChange={(e) => { setValue(e.target.value); setOpen(true); }}

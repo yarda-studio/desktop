@@ -23,15 +23,15 @@ export default function AccountButton() {
         aria-label={signedIn ? `Account: ${email}` : "Sign in"}
         title={signedIn ? `Signed in as ${email}` : "Sign in to use Ask Scripture"}
         className={signedIn
-          ? "w-9 h-9 shrink-0 rounded-full btn-primary font-body-ui text-[13px] font-bold flex items-center justify-center leading-none"
-          : "ctl rounded-lg px-2.5 h-9 flex items-center gap-1.5 shrink-0 text-on-surface"}
+          ? "w-8 h-8 shrink-0 rounded-full btn-primary font-body-ui text-[12px] font-bold flex items-center justify-center leading-none"
+          : "ctl rounded-lg px-2.5 h-8 flex items-center gap-1.5 shrink-0 text-on-surface"}
       >
         {signedIn ? (
           <span className="leading-none">{initial}</span>
         ) : (
           <>
-            <span className="material-symbols-outlined text-[20px] leading-none select-none translate-y-[1px]">account_circle</span>
-            <span className="font-body-ui text-[13px] font-semibold leading-none hidden min-[1100px]:inline">Sign in</span>
+            <span className="material-symbols-outlined !text-[18px] leading-none select-none">account_circle</span>
+            <span className="font-body-ui text-[12px] font-semibold leading-none hidden min-[1100px]:inline">Sign in</span>
           </>
         )}
       </button>

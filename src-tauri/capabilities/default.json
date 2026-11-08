@@ -5,6 +5,7 @@
   "windows": ["main", "presentation", "stage"],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
     "shell:allow-open",
     "updater:default",
     "process:default",

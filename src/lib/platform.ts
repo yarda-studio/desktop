@@ -14,3 +14,10 @@ export const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test
 export function forPlatform(text: string, mac: boolean = IS_MAC): string {
   return mac ? text.replace(/\bCtrl\b/g, "Cmd").replace(/\bAlt\b/g, "Option") : text;
 }
+
+/**
+ * On a Mac the window has no title bar of its own: the app's top bar sits in that
+ * row and the red/yellow/green buttons float over its left end (placed in
+ * tauri.conf.json). The bar's content starts this many pixels in, to clear them.
+ */
+export const MAC_WINDOW_BUTTONS_WIDTH = 86;

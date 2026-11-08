@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { IS_MAC, MAC_WINDOW_BUTTONS_WIDTH } from "../lib/platform";
 import { useAppStore } from "../store/app";
 import { api } from "../lib/tauri";
 import { usePresentationOutput } from "../hooks/usePresentationOutput";
@@ -143,9 +144,14 @@ export default function PresentationTopBar() {
   }, [liveBlack, setLiveBlack, liveEmergency, setLiveEmergency, serviceOrderOpen, setServiceOrderOpen, presentationActive, setDisplayPrefs, readingFontSize, setReadingFontSize, setView]);
 
   return (
-    <header className="relative flex items-center justify-between h-14 px-content-margin w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0">
+    <header
+      className="relative flex items-center justify-between h-11 px-content-margin w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0"
+      style={IS_MAC ? { paddingLeft: MAC_WINDOW_BUTTONS_WIDTH } : undefined}
+    >
+      {/* The bar is also the window's title bar (there is no separate one), so its empty parts drag the window. */}
+      <div data-tauri-drag-region aria-hidden="true" className="absolute inset-0 -z-10" />
       {/* Left: Tab switcher */}
-      <nav className="flex items-center p-1 bg-surface-variant/35 rounded-xl border border-outline-variant/40 shrink-0">
+      <nav className="flex items-center p-0.5 bg-surface-variant/35 rounded-lg border border-outline-variant/40 shrink-0">
         <TabButton label="Scriptures" active={activeTab === "scriptures"} onClick={() => setView("live")} />
         <TabButton label="Slides" active={activeTab === "slides"} onClick={() => setView("slides")} />
         <TabButton label="Songs" active={activeTab === "songs"} onClick={() => setView("songs")} tour="songs-tab" />
@@ -155,16 +161,16 @@ export default function PresentationTopBar() {
       {/* Center: Master broadcast transport deck (absolute dead center) */}
       <div
         data-tour="live-controls"
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center p-1 bg-surface-container-high/60 border border-outline-variant/60 rounded-xl shadow-xs"
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center p-0.5 bg-surface-container-high/60 border border-outline-variant/60 rounded-lg shadow-xs"
       >
         <button
           onClick={output.toggle}
-          className={`flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-lg font-body-ui text-[12px] font-bold tracking-wider transition-all ${
+          className={`flex items-center justify-center gap-2 px-3 py-1 rounded-md font-body-ui text-[11px] font-bold tracking-wide transition-all ${
             output.presentationActive ? "btn-live shadow-md" : "text-on-surface hover:bg-surface/60"
           }`}
           title={output.presentationActive ? "Stop the presentation output" : "Send output live"}
         >
-          <span className={`w-2 h-2 rounded-full shrink-0 ${output.presentationActive ? "bg-white animate-pulse" : "bg-on-surface-variant/60"}`} />
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${output.presentationActive ? "bg-white animate-pulse" : "bg-on-surface-variant/60"}`} />
           <span className="leading-none">LIVE</span>
         </button>
 
@@ -172,7 +178,7 @@ export default function PresentationTopBar() {
 
         <button
           onClick={() => setLiveBlack(!liveBlack)}
-          className={`px-3 py-1.5 rounded-lg font-body-ui text-[12px] font-bold tracking-wider transition-all flex items-center justify-center leading-none ${
+          className={`px-2.5 py-1 rounded-md font-body-ui text-[11px] font-bold tracking-wide transition-all flex items-center justify-center leading-none ${
             liveBlack ? "bg-on-surface text-surface shadow-xs" : "text-on-surface-variant hover:text-on-surface hover:bg-surface/60"
           }`}
           title="Cut the live output to black (C)"
@@ -183,7 +189,7 @@ export default function PresentationTopBar() {
         <button
           onClick={clearOverrides}
           disabled={cleared}
-          className={`px-3 py-1.5 rounded-lg font-body-ui text-[12px] font-bold tracking-wider transition-all flex items-center justify-center leading-none disabled:opacity-30 disabled:cursor-not-allowed ${
+          className={`px-2.5 py-1 rounded-md font-body-ui text-[11px] font-bold tracking-wide transition-all flex items-center justify-center leading-none disabled:opacity-30 disabled:cursor-not-allowed ${
             cleared ? "text-on-surface-variant/50" : "text-primary hover:bg-surface/60 font-black"
           }`}
           title="Clear black/emergency overrides and resume normal output"
@@ -257,7 +263,7 @@ function TabButton({ label, active, disabled, onClick, className = "", tour }: {
       onClick={onClick}
       disabled={disabled}
       title={disabled ? "Coming soon" : undefined}
-      className={`px-3.5 py-1 rounded-lg font-body-ui text-[13px] font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+      className={`px-2.5 py-0.5 rounded-md font-body-ui text-[12px] font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
         active ? "btn-primary shadow-xs" : "text-on-surface-variant hover:text-on-surface hover:bg-surface/50"
       } ${className}`}
     >
@@ -283,11 +289,11 @@ function IconButton({ icon, label, active, disabled, title, onClick, className =
       title={title ?? label}
       onClick={onClick}
       disabled={disabled}
-      className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors shrink-0 disabled:opacity-30 disabled:cursor-not-allowed ${
+      className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors shrink-0 disabled:opacity-30 disabled:cursor-not-allowed ${
         active ? "ctl-active" : "ghost text-secondary hover:text-on-surface"
       } ${className}`}
     >
-      <span className="material-symbols-outlined text-[20px] leading-none select-none translate-y-[1px]">{icon}</span>
+      <span className="material-symbols-outlined !text-[18px] leading-none select-none">{icon}</span>
     </button>
   );
 }

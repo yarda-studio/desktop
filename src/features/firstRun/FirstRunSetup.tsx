@@ -20,7 +20,8 @@ export default function FirstRunSetup({ required, installed, onComplete, onSkip 
   const failed = phase === "failed";
 
   return (
-    <div className="fixed inset-0 z-[100] ambient flex items-center justify-center p-6 overflow-y-auto">
+    // No top bar here, so the empty background is what drags the window (see tauri.conf.json: no native title bar).
+    <div data-tauri-drag-region className="fixed inset-0 z-[100] ambient flex items-center justify-center p-6 overflow-y-auto">
       <div className="w-full max-w-[520px] my-auto" role="status" aria-live="polite">
         <div className="text-center mb-8">
           <p className="font-headline-md text-headline-md font-bold text-primary select-none">Yarda</p>
