@@ -3,6 +3,7 @@ mod commands;
 mod db;
 mod markup;
 mod modules;
+mod ndi;
 mod plan;
 mod remote;
 mod slides;
@@ -55,6 +56,9 @@ pub fn run() {
 
             // And for the service plan, which only refers to songs and slides by id.
             app.manage(plan::PlanStore::open(&data_dir.join("plan.db")));
+
+            // NDI output is off until the operator switches it on.
+            app.manage(commands::NdiState::default());
 
             // Phone remote: off unless the operator turned it on last time.
             let remote = remote::RemoteServer::load(&data_dir);
@@ -213,6 +217,9 @@ pub fn run() {
             commands::plan_sync_pending,
             commands::plan_sync_mark_pushed,
             commands::plan_sync_apply,
+            commands::ndi_status,
+            commands::ndi_start,
+            commands::ndi_stop,
             commands::export_backup_to_file,
             commands::import_backup_from_file,
             commands::list_slides,

@@ -5,6 +5,7 @@ All notable changes to Scriptura are listed here, newest first.
 ## [Unreleased]
 
 ### Added
+- **NDI output (Mac, first version).** Outputs → NDI sends the presentation window over your network as an NDI source, so vMix, Wirecast, OBS (with the NDI plugin) and NDI Monitor can pick it up directly, with no browser source in between. It uses the NDI Tools you install yourself from ndi.video; without them the panel says how to get them and nothing else changes. The picture has no transparency (for keying over video, keep using the transparent web output), the presentation window has to be open and not minimised, and it is off each time the app starts. Windows is next.
 - **Move everything to another computer with a file.** Settings → Sync & Backup has "Save to file…" and "Open a file…". Saving writes one file with your bookmarks, notes, history, songs, slides and their pictures, themes and the service plan; opening it on another computer replaces what is there and restarts the app. It needs no account and no subscription. Bible modules (with Strong's data) and theme background videos are left out unless you tick the boxes, because they make the file large. Opening a file replaces, it does not merge: whatever is on that computer is overwritten, so save a backup there first if you need it.
 
 ### Fixed

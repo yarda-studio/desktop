@@ -48,6 +48,8 @@ quick-xml = { version = "0.41", features = ["serialize"] }
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 tokio = { version = "1", features = ["full"] }
 zip = "9"
+# Loads the NDI runtime from the user's computer when NDI output is switched on.
+libloading = "0.8"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 walkdir = "2"
@@ -63,3 +65,8 @@ tiny_http = "0.12"
 getrandom = "0.2"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 base64 = "0.22"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# NDI output images the presentation window by its window number (macOS only).
+core-graphics = "0.25"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSResponder"] }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useWebOutput } from "../features/remote/webOutput";
+import NdiSection from "../features/ndi/NdiSection";
 import type { usePresentationOutput } from "../hooks/usePresentationOutput";
 import type { useStageWindow } from "../features/stage/useStageWindow";
 
@@ -116,6 +117,7 @@ export default function OutputsPanel({ output, stage, onClose }: Props) {
         )}
         {web.error && <p className="font-body-ui text-[12px] text-error" role="alert">{web.error}</p>}
       </div>
+      <NdiSection />
     </div>
   );
 }
