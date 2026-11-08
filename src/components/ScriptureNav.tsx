@@ -10,7 +10,7 @@ interface Props {
    * The ref "vN" shorthand and the "book confirmed, chapter known" preview
    * jump from — defaults to the live currentRef (TopBar's usage). Callers
    * navigating something other than the live ref (e.g. LiveShowRunner's
-   * preview) pass their own so "v5" means "verse 5 of what I'm previewing,"
+   * preview) pass their own so "v5" or "c2v5" means "that verse of what I'm previewing,"
    * not of whatever happens to be live.
    */
   baseRef?: VerseRef;
@@ -53,7 +53,7 @@ export default function ScriptureNav({ inputRef, baseRef, onNavigate, placeholde
       <input
         ref={inputRef}
         className="block w-full pl-7 pr-3 py-1 focus:outline-none text-[13px] font-body-ui transition-colors placeholder:text-on-surface-variant field rounded-lg"
-        placeholder={placeholder ?? forPlatform("Go to… jn 3:16 or v5  (Ctrl+L)")}
+        placeholder={placeholder ?? forPlatform("Go to… jn 3:16, v5 or c2v5  (Ctrl+L)")}
         value={value}
         onChange={(e) => { setValue(e.target.value); setOpen(true); }}
         onKeyDown={handleKey}

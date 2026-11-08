@@ -53,9 +53,3 @@ export function parseScriptureInput(raw: string): ParsedScriptureInput {
   const { chapter, verse } = parseRef(refPart);
   return { bookPart, refPart, matchedBook: null, suggestions, chapter, verse };
 }
-
-/** "v5", "V10" — jump to that verse in the current book + chapter. */
-export function parseVerseJump(raw: string): number | null {
-  const m = /^v(\d+)$/i.exec(raw.trim());
-  return m ? parseInt(m[1]) : null;
-}

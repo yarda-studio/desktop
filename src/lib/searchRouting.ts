@@ -1,4 +1,5 @@
-import { parseScriptureInput, parseVerseJump } from "./scriptureRef";
+import { parseScriptureInput } from "./scriptureRef";
+import { parseLocalJump } from "./localJump";
 import { parseScopedQuery, type SearchScope } from "./searchScope";
 
 /**
@@ -10,7 +11,7 @@ import { parseScopedQuery, type SearchScope } from "./searchScope";
  * network call that costs money and answers more slowly, so the operator opts in by
  * starting with `?`.
  *
- *   jn 3:16, 1co 2, v5      → reference   (jump to a verse)
+ *   jn 3:16, 1co 2, v5, c2v5 → reference   (jump to a verse)
  *   love your enemies       → word        (search the text)
  *   /john                   → word        (a leading "/" forces text search)
  *   ot/love, 1jn/abide      → word        (scoped to a testament or one book)
@@ -43,7 +44,7 @@ export function routeQuery(raw: string): QueryRoute {
   const scoped = parseScopedQuery(s);
   if (scoped) return { kind: "word", text: scoped.text, scope: scoped.scope };
 
-  if (parseVerseJump(s) !== null) return { kind: "reference" };
+  if (parseLocalJump(s) !== null) return { kind: "reference" };
 
   const { matchedBook, suggestions } = parseScriptureInput(s);
   if (matchedBook) return { kind: "reference" };

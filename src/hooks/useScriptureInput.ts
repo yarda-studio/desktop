@@ -1,28 +1,29 @@
 import type { KeyboardEvent } from "react";
 import type { VerseRef } from "../store/app";
-import { parseScriptureInput, parseVerseJump } from "../lib/scriptureRef";
+import { parseScriptureInput } from "../lib/scriptureRef";
+import { parseLocalJump } from "../lib/localJump";
 
 interface Options {
   value: string;
   setValue: (v: string) => void;
   setOpen: (open: boolean) => void;
   inputRef: React.MutableRefObject<HTMLInputElement | null>;
-  /** What "v5" and "jn 3" resolve against (the live ref, or a console's preview ref). */
+  /** What "v5", "c2v5" and "jn 3" resolve against (the live ref, or a console's preview ref). */
   baseRef: VerseRef;
   goTo: (ref: VerseRef) => void;
 }
 
 /**
  * The reference-typing behaviour shared by every "jump to a verse" input
- * (Study's ScriptureNav and the Live Show bar): book completion, "v5" shorthand,
+ * (Study's ScriptureNav and the Live Show bar): book completion, the "v5" / "c2v5" shorthand,
  * the resolved-reference preview and the Space/Enter keys. State and rendering stay
  * with the caller; this only turns typed text into suggestions and actions.
  */
 export function useScriptureInput({ value, setValue, setOpen, inputRef, baseRef, goTo }: Options) {
-  const verseJumpNumber = parseVerseJump(value);
+  const jump = parseLocalJump(value);
   const { matchedBook, suggestions, chapter, verse, refPart } = parseScriptureInput(value);
-  const showDropdown = suggestions.length > 0 && !matchedBook && !verseJumpNumber;
-  const canNavigate = !!(verseJumpNumber || matchedBook || suggestions.length > 0);
+  const showDropdown = suggestions.length > 0 && !matchedBook && !jump;
+  const canNavigate = !!(jump || matchedBook || suggestions.length > 0);
 
   // After selecting / completing a book, put it in the input with a trailing space
   function applyBook(book: string) {
@@ -32,8 +33,8 @@ export function useScriptureInput({ value, setValue, setOpen, inputRef, baseRef,
   }
 
   function navigate() {
-    if (verseJumpNumber) {
-      goTo({ book: baseRef.book, chapter: baseRef.chapter, verse: verseJumpNumber });
+    if (jump) {
+      goTo({ book: baseRef.book, chapter: jump.chapter ?? baseRef.chapter, verse: jump.verse });
     } else {
       const book = matchedBook ?? suggestions[0];
       if (!book) return;
@@ -66,8 +67,8 @@ export function useScriptureInput({ value, setValue, setOpen, inputRef, baseRef,
 
   // The resolved reference, shown once the book is confirmed and the chapter known.
   const previewBook = matchedBook ?? (suggestions.length === 1 ? suggestions[0] : null);
-  const previewText = verseJumpNumber
-    ? `${baseRef.book} ${baseRef.chapter}:${verseJumpNumber}`
+  const previewText = jump
+    ? `${baseRef.book} ${jump.chapter ?? baseRef.chapter}:${jump.verse}`
     : previewBook && chapter
     ? `${previewBook} ${chapter}${verse ? `:${verse}` : ""}`
     : null;
