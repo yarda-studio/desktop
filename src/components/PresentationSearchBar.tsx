@@ -11,6 +11,7 @@ import {
   type SearchScope,
 } from "../lib/searchScope";
 import ScriptureSuggestions from "./ScriptureSuggestions";
+import SearchHistoryMenu from "./SearchHistoryMenu";
 import SearchScopeMenu from "./SearchScopeMenu";
 
 export interface PresentationSearchBarHandle {
@@ -42,7 +43,7 @@ const ROUTE_UI: Record<QueryRoute["kind"], { icon: string; label: string }> = {
 const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(function PresentationSearchBar(
   { baseRef, onNavigate }, ref,
 ) {
-  const { primaryModule, showStrongs, setShowStrongs } = useAppStore();
+  const { primaryModule, showStrongs, setShowStrongs, searchHistory, clearSearchHistory } = useAppStore();
   const aiOpen = useAiSearchStore((s) => s.open);
 
   // Same persistence path as Settings → "Show Strong's numbers".
@@ -106,6 +107,20 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
   function changeScope(next: SearchScope) {
     setMenuScope(next);
     setRecentScopes(rememberScope(next));
+    inputRef.current?.focus();
+  }
+
+  /** Run a saved search again, with its book or testament filter if it had one. */
+  function runHistory(query: string) {
+    const scoped = parseScopedQuery(query);
+    if (scoped) {
+      changeScope(scoped.scope);
+      setValue(scoped.text);
+    } else {
+      setValue(query);
+    }
+    setRect(inputRef.current?.getBoundingClientRect() ?? null);
+    setOpen(true);
     inputRef.current?.focus();
   }
 
@@ -178,6 +193,8 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
         <span className="material-symbols-outlined text-[18px]">auto_awesome</span>
         <span className="font-body-ui font-medium text-[12px] hidden xl:inline">Ask</span>
       </button>
+
+      <SearchHistoryMenu entries={searchHistory} onPick={runHistory} onClear={clearSearchHistory} />
 
       {menuScope.kind !== "all" && (
         <span className="shrink-0 flex items-center gap-1 rounded-lg pl-2 pr-1 py-1 bg-secondary-container text-on-secondary-container font-body-ui text-[12px] max-w-[160px]">
