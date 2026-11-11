@@ -24,6 +24,7 @@ import { initEntitlementSync } from "./features/entitlements";
 import { startSyncEngine, registerSyncParticipant, FirstDevicePrompt } from "./features/sync";
 import { planSyncParticipant } from "./features/plan/planSync";
 import { FirstRunSetup } from "./features/firstRun";
+import { TeamScriptureNotificationHost, TeamShareModal } from "./features/teamShare";
 
 export default function App() {
   const {
@@ -299,6 +300,8 @@ export default function App() {
       )}
       <OnboardingHost />
       <FirstDevicePrompt />
+      <TeamScriptureNotificationHost />
+      <TeamShareModal />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import type { ChapterText, TextSpan, PresentationTheme } from "../lib/tauri";
 import { useAppStore, type DisplayPrefs } from "../store/app";
 import { PART_LABELS, type ThemeForSplit } from "../lib/verseSplit";
 import { contentStrongs } from "../lib/strongsMarkers";
+import { useTeamShareStore } from "../features/teamShare";
 
 export const FONT_FAMILY_CSS: Record<string, string> = {
   system: `-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif`,
@@ -329,6 +330,26 @@ export const VerseRow = memo(function VerseRow({
             <span className="material-symbols-outlined text-[16px]">playlist_add</span>
           </button>
         )}
+        <button
+          className="p-1 text-secondary hover:text-primary hover:bg-secondary-container rounded"
+          title="Send verse to team"
+          onClick={(e) => {
+            e.stopPropagation();
+            const text = spans
+              .filter((s) => !s.is_footnote && !s.is_title)
+              .map((s) => s.text)
+              .join("")
+              .replace(/\s+/g, " ")
+              .trim();
+            const currentRef = useAppStore.getState().currentRef;
+            void useTeamShareStore.getState().sendVerse({
+              ref: { book: currentRef.book, chapter: currentRef.chapter, verse },
+              text,
+            });
+          }}
+        >
+          <span className="material-symbols-outlined text-[16px]">forward_to_inbox</span>
+        </button>
       </div>
     </div>
   );

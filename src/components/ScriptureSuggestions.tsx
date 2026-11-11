@@ -4,11 +4,13 @@ interface Props {
   /** The resolved "Book ch:v" line shown when there are no completions to pick. */
   previewText: string | null;
   showDropdown: boolean;
+  /** False while Space wouldn't accept the first suggestion (e.g. only a number typed). */
+  spaceAccepts?: boolean;
   onPick: (book: string) => void;
 }
 
 /** The dropdown under a verse-reference input: book completions, or the resolved reference. */
-export default function ScriptureSuggestions({ suggestions, previewText, showDropdown, onPick }: Props) {
+export default function ScriptureSuggestions({ suggestions, previewText, showDropdown, onPick, spaceAccepts = true }: Props) {
   if (showDropdown) {
     return (
       <div className="absolute top-full left-0 right-0 mt-1 glass rounded-xl z-[200] overflow-hidden">
@@ -23,7 +25,7 @@ export default function ScriptureSuggestions({ suggestions, previewText, showDro
             onMouseDown={(e) => { e.preventDefault(); onPick(book); }}
           >
             <span>{book}</span>
-            {i === 0 && (
+            {i === 0 && spaceAccepts && (
               <kbd className="font-metadata-mono text-[12px] opacity-60 bg-surface-container px-1.5 py-0.5 rounded ml-3">
                 Space
               </kbd>

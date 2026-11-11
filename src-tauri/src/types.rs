@@ -144,6 +144,9 @@ pub struct SearchOptions {
     pub modules: Vec<String>,
     pub testament: Option<String>,
     pub book_filter: Option<Vec<String>>,
+    /// Extra (book, chapter) pairs to include. Combined with `book_filter` as OR.
+    #[serde(default)]
+    pub chapter_filters: Option<Vec<(String, u32)>>,
     pub strongs_filter: Option<String>,
     #[serde(default)]
     pub whole_word: Option<bool>,

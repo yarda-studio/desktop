@@ -84,6 +84,7 @@ The bar is a single input with no modes. What you type decides what happens, and
 | `jn 3:16`, `1co 2`, `psalm 23`, `v5`, or a book name or abbreviation | Verse jump |
 | Anything else, e.g. `love your enemies` | Word search of the current Bible |
 | `/john` (a leading `/`) | Word search, even for a word that is also a book name (`john`, `mark`, `acts`) |
+| `ot/love`, `nt/grace`, `psalm/shepherd`, `rom/faith` | Scoped search: sets scope filter to OT, NT, or book(s) and searches for the text |
 | `? verses about hope` (a leading `?`) | Ask Scripture: opens the panel and runs the question. Enter sends it |
 
 Verse jump and word search are guessed from the text, because both are free and instant. Ask Scripture is never guessed: it makes a network call that costs money, so you opt in with `?`. Short words that are also book prefixes (`is`, `so`, `he`) are treated as the start of a phrase, so Space doesn't turn them into Isaiah, Song of Solomon or Hebrews. The separate `#` button turns Strong's numbers on or off, and the **Ask** button opens the panel.
@@ -268,7 +269,7 @@ Defined in `src/components/VersePanes.tsx` and `src/components/VerseSplitPanel.t
 - **Presentation mode vs Study.** The Live Show console and the presentation top bar are mounted only in the Presentation workspace. The reading view's shortcuts (section 2.2) are not mounted there. That is why the presentation workspace has its own copies of `Mod+P/N`, `Mod+↑/↓`, font-size keys and `Alt+H`.
 - **`Mod+P` blocks printing, `Mod+F` blocks find.** Both are intercepted deliberately.
 - **Double-click moved.** In the Live Show verse list, double-click used to look up a Strong's number. It now sends the verse live. Use Option/Alt-click or the hover tag for the lookup.
-- **The in-app shortcuts overlay is out of date.** It lives in `src/components/Settings.tsx` (`SHORTCUT_GROUPS`). It lists the reading-view shortcuts only, and marks `Mod+K` / `Mod+L` as fullscreen-only. It does not list the Live Show console keys, the black-out key, or the emergency key. This document is the complete list.
+- **In-app shortcuts overlay.** Lives in `src/components/Settings.tsx` (`SHORTCUT_GROUPS`). It lists all shortcuts across Navigation, Reading & Study, Live Show Console, Presentation Controls, Songs/Slides & Plan, Search & AI, Team Collaboration, Font Size, and Theme Designer, with instant search and category filtering.
 - **No rebinding.** Keys are fixed. Moving a binding means editing the file named in the source note for its section.
 - **Typing guard.** In presentation mode, plain keys (`C`, `Enter`, `Backspace`, arrows) are skipped while an `<input>`, `<textarea>` or editable element has focus, so typing is never hijacked. Modifier shortcuts are not skipped.
 

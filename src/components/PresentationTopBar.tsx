@@ -14,6 +14,7 @@ import { useStageWindow } from "../features/stage/useStageWindow";
 import { useClockTicks } from "../hooks/useClockTicks";
 import SettingsSheet from "./Settings";
 import AccountButton from "./account/AccountButton";
+import { TeamShareTargetSelector, useTeamShareStore } from "../features/teamShare";
 
 type PresentationTab = "scriptures" | "slides" | "songs" | "themes";
 
@@ -102,6 +103,11 @@ export default function PresentationTopBar() {
       if (mod && e.shiftKey && e.code === "KeyQ") {
         e.preventDefault();
         setServiceOrderOpen(!serviceOrderOpen);
+        return;
+      }
+      if (mod && e.shiftKey && (e.code === "KeyT" || e.key.toLowerCase() === "t")) {
+        e.preventDefault();
+        void useTeamShareStore.getState().sendVerse();
         return;
       }
       if (mod && presentationActive && e.code in presentationContextKeys) {
@@ -231,6 +237,19 @@ export default function PresentationTopBar() {
             />
             {remoteOpen && <RemotePanel onClose={() => setRemoteOpen(false)} />}
           </div>
+        </div>
+
+        {/* Team Scripture Sharing */}
+        <div className="flex items-center gap-1 bg-surface-variant/25 p-0.5 rounded-lg border border-outline-variant/30">
+          <TeamShareTargetSelector />
+          <button
+            onClick={() => void useTeamShareStore.getState().sendVerse()}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-primary hover:bg-primary/10 transition-colors shrink-0"
+            title="Send active verse to team (Ctrl+Shift+T)"
+            aria-label="Send active verse to team"
+          >
+            <span className="material-symbols-outlined !text-[16px] leading-none">send</span>
+          </button>
         </div>
 
         <div className="hidden md:block w-px h-4 bg-outline-variant/60 mx-1" />

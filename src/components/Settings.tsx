@@ -1,5 +1,7 @@
 import { forPlatform } from "../lib/platform";
-import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useShortcutStore } from "../lib/shortcuts";
+import { useSearchFilterStore } from "../store/searchFilterStore";
 import { createPortal } from "react-dom";
 import { useAppStore, type DisplayPrefs } from "../store/app";
 import { api, type Preferences } from "../lib/tauri";
@@ -762,84 +764,39 @@ function ChipButton({ active, onClick, children, mono }: { active: boolean; onCl
 
 // ── Shortcuts overlay ─────────────────────────────────────────────────────────
 
-const SHORTCUT_GROUPS: Array<{
-  label: string;
-  icon: string;
-  shortcuts: Array<{ keys: string[]; description: string; note?: string; /** Show the keys exactly as written (Cmd+Q is the Mac Quit command). */ literal?: boolean }>;
-}> = [
-  {
-    label: "Navigation",
-    icon: "menu_book",
-    shortcuts: [
-      { keys: ["Ctrl", "P"], description: "Previous chapter" },
-      { keys: ["Ctrl", "N"], description: "Next chapter" },
-      { keys: ["Alt", "H"], description: "Search history" },
-    ],
-  },
-  {
-    label: "Reading",
-    icon: "chrome_reader_mode",
-    shortcuts: [
-      { keys: ["Ctrl", "F"], description: "Toggle fullscreen" },
-      { keys: ["Esc"], description: "Exit fullscreen / close panels" },
-      { keys: ["Ctrl", "K"], description: "Word search palette", note: "Fullscreen only" },
-      { keys: ["Ctrl", "L"], description: "Focus scripture navigator", note: "Fullscreen only" },
-    ],
-  },
-  {
-    label: "Parallel",
-    icon: "splitscreen",
-    shortcuts: [
-      { keys: ["splitscreen"], description: "Toggle parallel mode" },
-      { keys: ["sync"], description: "Sync scroll between panes", note: "Parallel on" },
-    ],
-  },
-  {
-    label: "Font size",
-    icon: "format_size",
-    shortcuts: [
-      { keys: ["Ctrl", "+"], description: "Increase font size by 1px" },
-      { keys: ["Ctrl", "−"], description: "Decrease font size by 1px" },
-      { keys: ["Ctrl", "Alt", "+"], description: "Jump to next preset size" },
-      { keys: ["Ctrl", "Alt", "−"], description: "Jump to previous preset size" },
-    ],
-  },
-  {
-    label: "Search",
-    icon: "search",
-    shortcuts: [
-      { keys: ["Alt", "P"], description: "Previous search result" },
-      { keys: ["Alt", "N"], description: "Next search result" },
-    ],
-  },
-  {
-    label: "Service queue / Schedule",
-    icon: "queue_play_next",
-    shortcuts: [
-      { keys: ["Ctrl", "Q"], description: "Add selected verse(s) to schedule", literal: true },
-      { keys: ["Ctrl", "Shift", "Q"], description: "Toggle service queue drawer", literal: true },
-      { keys: ["Shift", "Click"], description: "Select range of scriptures", note: "Live Show" },
-    ],
-  },
-  {
-    label: "Presentation",
-    icon: "slideshow",
-    shortcuts: [
-      { keys: ["Ctrl", "1"], description: "Active verse only", note: "Presentation active" },
-      { keys: ["Ctrl", "2"], description: "Active + next verse", note: "Presentation active" },
-      { keys: ["Ctrl", "3"], description: "Prev + active + next", note: "Presentation active" },
-      { keys: ["Ctrl", "4"], description: "Full chapter scroll", note: "Presentation active" },
-    ],
-  },
-];
-
 export function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogA11y(dialogRef, true, onClose);
+  const [search, setSearch] = useState("");
+  const [selectedGroup, setSelectedGroup] = useState<string>("all");
+
+  const groups = useShortcutStore((s) => s.groups);
+  const activeFilters = useSearchFilterStore((s) => s.count);
+  const totalCount = useMemo(() => groups.reduce((acc, g) => acc + g.shortcuts.length, 0), [groups]);
+
+  const filteredGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return groups.map((group) => {
+      if (selectedGroup !== "all" && group.label !== selectedGroup) return null;
+      if (!q) return group;
+      const matchesGroup = group.label.toLowerCase().includes(q);
+      const matchingShortcuts = group.shortcuts.filter((s) => {
+        if (matchesGroup) return true;
+        if (s.description.toLowerCase().includes(q)) return true;
+        if (s.note && s.note.toLowerCase().includes(q)) return true;
+        if (s.keys.some((k) => k.toLowerCase().includes(q) || forPlatform(k).toLowerCase().includes(q))) return true;
+        return false;
+      });
+      if (matchingShortcuts.length === 0) return null;
+      return { ...group, shortcuts: matchingShortcuts };
+    }).filter((g): g is NonNullable<typeof g> => g !== null);
+  }, [groups, search, selectedGroup]);
+
+  const matchingCount = useMemo(() => filteredGroups.reduce((acc, g) => acc + g.shortcuts.length, 0), [filteredGroups]);
 
   return (
     <div
-      className="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-6"
+      className="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4 sm:p-6"
       onClick={onClose}
     >
       <div
@@ -847,57 +804,144 @@ export function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="shortcuts-title"
-        className="w-full max-w-lg max-h-[80vh] flex flex-col glass glass-strong rounded-3xl"
+        className="w-full max-w-2xl max-h-[85vh] flex flex-col glass glass-strong rounded-3xl overflow-hidden shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-secondary">keyboard</span>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant shrink-0">
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-[20px] text-secondary">keyboard</span>
             <h2 id="shortcuts-title" className="font-headline-sm text-headline-sm text-on-surface">Keyboard Shortcuts</h2>
+            <span className="font-metadata-mono text-[11px] px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant">
+              {matchingCount} {matchingCount === 1 ? "shortcut" : "shortcuts"}
+            </span>
+            {activeFilters > 0 && (
+              <span className="font-metadata-mono text-[11px] px-2 py-0.5 rounded-full bg-primary text-on-primary">
+                {activeFilters} search {activeFilters === 1 ? "filter" : "filters"} active
+              </span>
+            )}
           </div>
-          <button onClick={onClose} aria-label="Close" className="p-1 rounded text-secondary hover:text-primary transition-colors">
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="p-1 rounded-lg text-secondary hover:text-on-surface hover:bg-surface-container-low transition-colors"
+          >
             <span className="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
           </button>
         </div>
 
+        {/* Search & Filter Toolbar */}
+        <div className="px-6 pt-4 pb-2 border-b border-outline-variant/60 space-y-3 shrink-0">
+          <div className="relative">
+            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-secondary pointer-events-none">
+              search
+            </span>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search shortcuts by name, key, or function..."
+              aria-label="Search shortcuts"
+              className="field w-full pl-9 pr-8 py-2 rounded-xl text-[13px] font-body-ui text-on-surface placeholder:text-on-surface-variant/60 outline-none"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-secondary hover:text-on-surface rounded"
+              >
+                <span className="material-symbols-outlined text-[16px] leading-none">close</span>
+              </button>
+            )}
+          </div>
+
+          {/* Category Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[12px] font-body-ui scrollbar-none">
+            <button
+              type="button"
+              onClick={() => setSelectedGroup("all")}
+              className={`px-2.5 py-1 rounded-lg shrink-0 transition-colors ${
+                selectedGroup === "all"
+                  ? "ctl-active font-semibold"
+                  : "ctl text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              All ({totalCount})
+            </button>
+            {groups.map((group) => (
+              <button
+                key={group.label}
+                type="button"
+                onClick={() => setSelectedGroup(group.label === selectedGroup ? "all" : group.label)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg shrink-0 transition-colors ${
+                  selectedGroup === group.label
+                    ? "ctl-active font-semibold"
+                    : "ctl text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[14px]">{group.icon}</span>
+                <span>{group.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Body */}
-        {/* min-h-0 is required here: a flex child defaults to min-height:auto,
-            which stops it from ever shrinking below its content size — without
-            it, this content just grows past the parent's max-h-[80vh] instead
-            of activating this div's own overflow-y-auto scroll, so the last
-            group(s) get cut off instead of being reachable by scrolling. */}
-        <div className="overflow-y-auto flex-1 min-h-0 px-5 py-4 space-y-5">
-          {SHORTCUT_GROUPS.map((group) => (
-            <div key={group.label}>
-              <div className="flex items-center gap-1.5 mb-2">
-                <span className="material-symbols-outlined text-[14px] text-secondary">{group.icon}</span>
-                <span className="font-body-ui font-medium text-[12px] text-on-surface-variant ">{group.label}</span>
-              </div>
-              <div className="space-y-1">
-                {group.shortcuts.map((s) => (
-                  <div key={s.description} className="flex items-center justify-between gap-4 py-1.5 px-2 rounded hover:bg-surface-container-low transition-colors">
-                    <div>
-                      <span className="font-body-ui text-[13px] text-on-surface">{s.description}</span>
-                      {s.note && (
-                        <span className="ml-2 font-body-ui text-[12px] text-on-surface-variant italic">{s.note}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {s.keys.map((k, i) => (
-                        <span key={i} className="inline-flex items-center justify-center text-on-surface px-1.5 py-0.5 field rounded-md">
-                          {/^[a-z_]+$/.test(k)
-                            ? <span className="material-symbols-outlined text-[14px] leading-none">{k}</span>
-                            : <span className="font-metadata-mono text-[12px]">{s.literal ? k : forPlatform(k)}</span>
-                          }
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+        <div className="overflow-y-auto flex-1 min-h-0 px-6 py-4 space-y-6">
+          {filteredGroups.length === 0 ? (
+            <div className="py-12 text-center text-on-surface-variant space-y-1">
+              <span className="material-symbols-outlined text-[36px] text-secondary opacity-60">search_off</span>
+              <p className="font-body-ui text-[14px]">No shortcuts found matching &ldquo;{search}&rdquo;</p>
+              <button
+                type="button"
+                onClick={() => { setSearch(""); setSelectedGroup("all"); }}
+                className="mt-2 text-[12px] text-primary hover:underline"
+              >
+                Clear filter
+              </button>
             </div>
-          ))}
+          ) : (
+            filteredGroups.map((group) => (
+              <div key={group.label} className="space-y-1.5">
+                <div className="flex items-center gap-1.5 pb-1 border-b border-outline-variant/40">
+                  <span className="material-symbols-outlined text-[15px] text-secondary">{group.icon}</span>
+                  <span className="font-body-ui font-semibold text-[12px] uppercase tracking-wider text-on-surface-variant">{group.label}</span>
+                </div>
+                <div className="space-y-0.5">
+                  {group.shortcuts.map((s, idx) => (
+                    <div
+                      key={(s.id || s.description) + idx}
+                      className="flex items-center justify-between gap-4 py-2 px-2.5 rounded-lg hover:bg-surface-container-low/70 transition-colors"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <span className="font-body-ui text-[13px] text-on-surface">{s.description}</span>
+                        {s.note && (
+                          <span className="ml-2 font-body-ui text-[11px] text-on-surface-variant italic">{s.note}</span>
+                        )}
+                        {s.id === "search-clear-filters" && activeFilters > 0 && (
+                          <span className="ml-2 font-metadata-mono text-[11px] px-1.5 py-0.5 rounded-full bg-primary text-on-primary">{activeFilters} active</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {s.keys.map((k, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center justify-center text-on-surface px-2 py-0.5 field rounded-md shadow-xs"
+                          >
+                            {(k === "splitscreen" || k === "sync")
+                              ? <span className="material-symbols-outlined text-[14px] leading-none">{k}</span>
+                              : <span className="font-metadata-mono text-[12px]">{s.literal ? k : forPlatform(k)}</span>
+                            }
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

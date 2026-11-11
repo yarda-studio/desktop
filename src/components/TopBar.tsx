@@ -5,6 +5,7 @@ import { api } from "../lib/tauri";
 import ScriptureNav from "./ScriptureNav";
 import SettingsSheet from "./Settings";
 import AccountButton from "./account/AccountButton";
+import { TeamShareTargetSelector, useTeamShareStore } from "../features/teamShare";
 
 export default function TopBar() {
   const {
@@ -36,6 +37,11 @@ export default function TopBar() {
         return;
       }
       if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.shiftKey && (e.code === "KeyT" || e.key.toLowerCase() === "t")) {
+        e.preventDefault();
+        void useTeamShareStore.getState().sendVerse();
+        return;
+      }
       if (e.key === "k") {
         e.preventDefault();
         setSearchMode("word");
@@ -124,6 +130,18 @@ export default function TopBar() {
 
       {/* Right: toolbar actions */}
       <div className="flex items-center gap-1.5">
+        {/* Team scripture share target selector and instant send */}
+        <div className="flex items-center gap-1 bg-surface-variant/25 p-0.5 rounded-lg border border-outline-variant/30">
+          <TeamShareTargetSelector />
+          <button
+            onClick={() => void useTeamShareStore.getState().sendVerse()}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-primary hover:bg-primary/10 transition-colors shrink-0"
+            title={forPlatform("Send active verse to team (Ctrl+Shift+T)")}
+            aria-label="Send active verse to team"
+          >
+            <span className="material-symbols-outlined !text-[16px] leading-none">send</span>
+          </button>
+        </div>
         {workspace === "presentation" && (
           <button
             aria-label="Service queue"

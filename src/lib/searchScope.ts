@@ -1,4 +1,4 @@
-import { normalizeBookName } from "../data/books";
+import { findBooks, normalizeBookName } from "../data/books";
 import { BOOK_GROUPS, NT_BOOKS, OT_BOOKS } from "./books";
 
 /**
@@ -9,7 +9,8 @@ import { BOOK_GROUPS, NT_BOOKS, OT_BOOKS } from "./books";
 export type SearchScope =
   | { kind: "all" }
   | { kind: "testament"; testament: "OT" | "NT" }
-  | { kind: "books"; books: string[]; label: string };
+  | { kind: "books"; books: string[]; label: string }
+  | { kind: "chapter"; book: string; chapter: number };
 
 export const ALL_SCOPE: SearchScope = { kind: "all" };
 
@@ -76,25 +77,47 @@ export function parseScopedQuery(raw: string): ScopedQuery | null {
 export function scopeLabel(scope: SearchScope): string {
   if (scope.kind === "testament") return scope.testament === "OT" ? "Old Testament" : "New Testament";
   if (scope.kind === "books") return scope.label;
+  if (scope.kind === "chapter") return `${scope.book} ${scope.chapter}`;
   return "All books";
 }
 
-/** The SearchOptions fields that express a scope. */
-export function scopeOptions(scope: SearchScope): { testament?: "OT" | "NT"; book_filter?: string[] } {
-  if (scope.kind === "testament") return { testament: scope.testament };
-  if (scope.kind === "books") return { book_filter: scope.books };
-  return {};
+/** Label for a set of filters, joined with "or" since a verse only has to match one. */
+export function scopesLabel(scopes: SearchScope[]): string {
+  return scopes.length === 0 ? "All books" : scopes.map(scopeLabel).join(", ");
+}
+
+/**
+ * The SearchOptions fields for a set of filters. Filters are OR'd: testaments and books
+ * merge into one `book_filter`, chapters go in `chapter_filters`, and the backend matches
+ * a verse that is in any of them. No filters means no restriction.
+ */
+export function scopesOptions(scopes: SearchScope[]): { book_filter?: string[]; chapter_filters?: [string, number][] } {
+  const books: string[] = [];
+  const chapters: [string, number][] = [];
+  for (const s of scopes) {
+    if (s.kind === "testament") for (const b of s.testament === "OT" ? OT_BOOKS : NT_BOOKS) { if (!books.includes(b)) books.push(b); }
+    else if (s.kind === "books") for (const b of s.books) { if (!books.includes(b)) books.push(b); }
+    else if (s.kind === "chapter") chapters.push([s.book, s.chapter]);
+  }
+  return {
+    ...(books.length ? { book_filter: books } : {}),
+    ...(chapters.length ? { chapter_filters: chapters } : {}),
+  };
 }
 
 export function sameScope(a: SearchScope, b: SearchScope): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-/** The typed form of a scope ("nt/", "1 John/"), used to save scoped searches in history. */
-export function scopePrefix(scope: SearchScope): string {
-  if (scope.kind === "testament") return `${scope.testament.toLowerCase()}/`;
-  if (scope.kind === "books") return `${scope.books.join(",")}/`;
-  return "";
+/** The typed form of a set of filters ("nt,john/"), used to save scoped searches in history. */
+export function scopesPrefix(scopes: SearchScope[]): string {
+  const parts: string[] = [];
+  for (const s of scopes) {
+    if (s.kind === "testament") parts.push(s.testament.toLowerCase());
+    else if (s.kind === "books") parts.push(...s.books);
+    else if (s.kind === "chapter") parts.push(s.book); // history can't re-run a chapter; falls back to the book
+  }
+  return parts.length ? `${[...new Set(parts)].join(",")}/` : "";
 }
 
 // ── Recently used scopes (a per-viewer convenience; fails soft without storage) ──
@@ -116,4 +139,61 @@ export function rememberScope(scope: SearchScope): SearchScope[] {
   const next = [scope, ...loadRecentScopes().filter((s) => !sameScope(s, scope))].slice(0, RECENT_MAX);
   try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
   return next;
+}
+
+/**
+ * "/john", "/nt", "/c" typed in the search bar, then Space: the same filter as "john/".
+ * `/c` (or `/ch`) means the chapter currently on screen. Null when the text after the
+ * slash isn't a scope, so Space just types a space.
+ */
+export function parseSlashScope(raw: string, current: { book: string; chapter: number }): SearchScope | null {
+  const s = raw.trimStart();
+  if (!s.startsWith("/")) return null;
+  const name = s.slice(1).trim();
+  if (!name) return null;
+  const key = squash(name);
+  if (key === "c" || key === "ch" || key === "chapter") return { kind: "chapter", book: current.book, chapter: current.chapter };
+  const exact = parseScopedQuery(`${name}/`)?.scope;
+  if (exact) return exact;
+  // "1 t": a number plus letters picks the first matching book in canon order (1 Thessalonians).
+  if (/^\d\s*[a-z]/i.test(name)) {
+    const first = findBooks(name)[0];
+    if (first) return { kind: "books", books: [first], label: first };
+  }
+  return null;
+}
+
+export interface SlashCandidate {
+  label: string;
+  hint?: string;
+  scope: SearchScope;
+}
+
+/**
+ * What the text after a leading "/" could mean as a filter, best match first: the exact
+ * reading (what Space would commit), then other books that start with it. `/c` offers the
+ * current chapter. Empty when the text isn't (the start of) a filter name.
+ */
+export function slashCandidates(raw: string, current: { book: string; chapter: number }): SlashCandidate[] {
+  const s = raw.trimStart();
+  if (!s.startsWith("/")) return [];
+  const name = s.slice(1).trim();
+  if (!name) return [];
+  const key = squash(name);
+  const out: SlashCandidate[] = [];
+  const push = (c: SlashCandidate) => { if (!out.some((o) => sameScope(o.scope, c.scope))) out.push(c); };
+
+  if (key.length >= 1 && "chapter".startsWith(key)) {
+    push({ label: `${current.book} ${current.chapter}`, hint: "this chapter", scope: { kind: "chapter", book: current.book, chapter: current.chapter } });
+  }
+  const exact = parseScopedQuery(`${name}/`)?.scope;
+  if (exact) push({ label: scopeLabel(exact), hint: exact.kind === "books" && exact.books.length > 1 ? `${exact.books.length} books` : undefined, scope: exact });
+  if (key.length >= 1 && ("ot".startsWith(key) || "nt".startsWith(key))) {
+    for (const t of ["OT", "NT"] as const) if (t.toLowerCase().startsWith(key)) push({ label: scopeLabel({ kind: "testament", testament: t }), scope: { kind: "testament", testament: t } });
+  }
+  if (key.length >= 2) {
+    for (const g of BOOK_GROUPS) if (squash(g.label).startsWith(key)) push({ label: g.label, hint: `${g.books.length} books`, scope: { kind: "books", books: g.books, label: g.label } });
+  }
+  for (const b of findBooks(name).slice(0, 8)) push({ label: b, scope: { kind: "books", books: [b], label: b } });
+  return out;
 }

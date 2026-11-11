@@ -6,9 +6,10 @@ import { sanitizeSnippet } from "../lib/sanitize";
 import { routeQuery, ASK_PREFIX, WORD_PREFIX, type QueryRoute } from "../lib/searchRouting";
 import { useScriptureInput } from "../hooks/useScriptureInput";
 import { useAiSearchStore } from "../store/aiSearchStore";
+import { useSearchFilterStore } from "../store/searchFilterStore";
 import {
-  ALL_SCOPE, loadRecentScopes, parseScopedQuery, rememberScope, scopeLabel, scopeOptions, scopePrefix,
-  type SearchScope,
+  loadRecentScopes, parseScopedQuery, parseSlashScope, rememberScope, sameScope, scopeLabel, scopesLabel, scopesOptions,
+  scopesPrefix, slashCandidates, type SearchScope,
 } from "../lib/searchScope";
 import ScriptureSuggestions from "./ScriptureSuggestions";
 import SearchHistoryMenu from "./SearchHistoryMenu";
@@ -59,7 +60,9 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
   const [results, setResults] = useState<SearchResult[]>([]);
   const [settled, setSettled] = useState("");
   const [active, setActive] = useState(0);
-  const [menuScope, setMenuScope] = useState<SearchScope>(ALL_SCOPE);
+  const [filters, setFilters] = useState<SearchScope[]>([]);
+  const [slashActive, setSlashActive] = useState(0);
+  const [slashMoved, setSlashMoved] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
   const [recentScopes, setRecentScopes] = useState<SearchScope[]>(loadRecentScopes);
@@ -75,9 +78,20 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
   const nav = useScriptureInput({ value, setValue, setOpen, inputRef, baseRef, goTo: onNavigate });
   const isReference = route.kind === "reference";
   const wordText = route.kind === "word" ? route.text : "";
-  // A typed prefix (ot/, john/) wins over the filter menu's selection.
-  const scope: SearchScope = route.kind === "word" && route.scope ? route.scope : menuScope;
-  const scopeKey = JSON.stringify(scope);
+  // A typed prefix (ot/, john/) counts as one more filter alongside the chosen ones.
+  const scopes: SearchScope[] = route.kind === "word" && route.scope && !filters.some((f) => sameScope(f, route.scope!))
+    ? [...filters, route.scope]
+    : filters;
+  const scopeKey = JSON.stringify(scopes);
+  useEffect(() => {
+    useSearchFilterStore.getState().setCount(filters.length);
+    return () => useSearchFilterStore.getState().setCount(0);
+  }, [filters.length]);
+  // "/1pe", "/c": what the text after the slash could mean as a filter, shown as you type.
+  const candidates = useMemo(() => slashCandidates(value, baseRef), [value, baseRef.book, baseRef.chapter]);
+  const exactSlash = useMemo(() => parseSlashScope(value, baseRef), [value, baseRef.book, baseRef.chapter]);
+  const showCandidates = open && candidates.length > 0;
+  useEffect(() => { setSlashActive(0); setSlashMoved(false); }, [value]);
 
   // Debounced word search against the current Bible module.
   useEffect(() => {
@@ -85,7 +99,7 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
     if (!wordText || !primaryModule) { setResults([]); setSettled(""); setHasMore(false); return; }
     let cancelled = false;
     const timer = setTimeout(() => {
-      api.search(wordText, { modules: [primaryModule], page_size: PAGE_SIZE, whole_word: wholeWord, ...scopeOptions(scope) })
+      api.search(wordText, { modules: [primaryModule], page_size: PAGE_SIZE, whole_word: wholeWord, ...scopesOptions(scopes) })
         .then((r) => { if (!cancelled) { setResults(r); setActive(0); setHasMore(r.length === PAGE_SIZE); } })
         .catch(() => { if (!cancelled) { setResults([]); setHasMore(false); } })
         .finally(() => { if (!cancelled) setSettled(wordText); });
@@ -98,23 +112,36 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
     if (!hasMore || loadingMore || !primaryModule) return;
     const next = pageRef.current + 1;
     setLoadingMore(true);
-    api.search(wordText, { modules: [primaryModule], page: next, page_size: PAGE_SIZE, whole_word: wholeWord, ...scopeOptions(scope) })
+    api.search(wordText, { modules: [primaryModule], page: next, page_size: PAGE_SIZE, whole_word: wholeWord, ...scopesOptions(scopes) })
       .then((r) => { pageRef.current = next; setResults((prev) => [...prev, ...r]); setHasMore(r.length === PAGE_SIZE); })
       .catch(() => setHasMore(false))
       .finally(() => setLoadingMore(false));
   }
 
-  function changeScope(next: SearchScope) {
-    setMenuScope(next);
+  /** Add a filter (no-op if already active). */
+  function addFilter(next: SearchScope) {
+    setFilters((cur) => (cur.some((f) => sameScope(f, next)) ? cur : [...cur, next]));
     setRecentScopes(rememberScope(next));
     inputRef.current?.focus();
+  }
+
+  function toggleFilter(next: SearchScope) {
+    if (filters.some((f) => sameScope(f, next))) setFilters(filters.filter((f) => !sameScope(f, next)));
+    else addFilter(next);
+  }
+
+  function commitCandidate(c: SearchScope) {
+    addFilter(c);
+    setValue("");
+    setResults([]);
   }
 
   /** Run a saved search again, with its book or testament filter if it had one. */
   function runHistory(query: string) {
     const scoped = parseScopedQuery(query);
     if (scoped) {
-      changeScope(scoped.scope);
+      setFilters([scoped.scope]);
+      setRecentScopes(rememberScope(scoped.scope));
       setValue(scoped.text);
     } else {
       setValue(query);
@@ -132,7 +159,7 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
 
   function pick(r: SearchResult) {
     // Saved with its scope prefix so the history view can re-run it scoped.
-    if (wordText) useAppStore.getState().addToSearchHistory(scopePrefix(scope) + wordText);
+    if (wordText) useAppStore.getState().addToSearchHistory(scopesPrefix(scopes) + wordText);
     onNavigate({ book: r.book, chapter: r.chapter, verse: r.verse });
     reset();
   }
@@ -145,9 +172,24 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Escape") { reset(); return; }
+    if (e.altKey && e.shiftKey && e.code === "KeyF") { e.preventDefault(); setFilters([]); setMenuOpen(false); return; }
     if (e.altKey && e.code === "KeyF") { e.preventDefault(); setMenuOpen((o) => !o); return; }
     // Backspace on an empty box drops the scope chip.
-    if (e.key === "Backspace" && !value && menuScope.kind !== "all") { setMenuScope(ALL_SCOPE); return; }
+    if (e.key === "Backspace" && !value && filters.length > 0) { setFilters(filters.slice(0, -1)); return; }
+
+    // "/john", "/nt", "/c" shows matching filters as you type. Arrows move, Space or Enter
+    // adds one. Space only commits when the text names a filter outright (or you arrowed to
+    // one), so "/lord of hosts" still types spaces.
+    if (candidates.length > 0 && !e.nativeEvent.isComposing) {
+      const n = candidates.length;
+      if (e.key === "ArrowDown") { e.preventDefault(); setSlashMoved(true); setSlashActive((i) => (i + 1) % n); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setSlashMoved(true); setSlashActive((i) => (i - 1 + n) % n); return; }
+      if (e.key === "Enter" || (e.key === " " && (slashMoved || exactSlash))) {
+        e.preventDefault();
+        commitCandidate(candidates[slashActive].scope);
+        return;
+      }
+    }
 
     if (isReference) {
       if (e.key === " ") nav.handleSpace(e);
@@ -196,20 +238,6 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
 
       <SearchHistoryMenu entries={searchHistory} onPick={runHistory} onClear={clearSearchHistory} />
 
-      {menuScope.kind !== "all" && (
-        <span className="shrink-0 flex items-center gap-1 rounded-lg pl-2 pr-1 py-1 bg-secondary-container text-on-secondary-container font-body-ui text-[12px] max-w-[160px]">
-          <span className="truncate">{scopeLabel(menuScope)}</span>
-          <button
-            type="button"
-            onClick={() => { setMenuScope(ALL_SCOPE); inputRef.current?.focus(); }}
-            aria-label={`Remove ${scopeLabel(menuScope)} filter`}
-            className="flex items-center"
-          >
-            <span className="material-symbols-outlined text-[14px] leading-none">close</span>
-          </button>
-        </span>
-      )}
-
       <div className="relative flex-1 min-w-[220px]">
         <span className={`material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-[18px] pointer-events-none select-none ${route.kind === "ask" ? "text-primary" : "text-on-surface-variant"}`}>
           {ui.icon}
@@ -220,10 +248,10 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
           placeholder={forPlatform(`Verse (jn 3:16), a word, or ${ASK_PREFIX} to ask  (Ctrl+K)`)}
           value={value}
           onChange={(e) => {
-            // "ot/" or "john,romans/" typed: lift the scope out of the text into the chip.
+            // "ot/" or "john,romans/" typed: lift the scope out of the text into a filter.
             const scoped = parseScopedQuery(e.target.value.trimStart());
             if (scoped) {
-              changeScope(scoped.scope);
+              addFilter(scoped.scope);
               setValue(scoped.text);
             } else {
               setValue(e.target.value);
@@ -244,8 +272,10 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
         )}
 
         <SearchScopeMenu
-          scope={menuScope}
-          onChange={changeScope}
+          filters={filters}
+          onToggle={toggleFilter}
+          onRemove={(f) => setFilters(filters.filter((x) => !sameScope(x, f)))}
+          onClear={() => { setFilters([]); inputRef.current?.focus(); }}
           open={menuOpen}
           onOpenChange={setMenuOpen}
           recent={recentScopes}
@@ -253,11 +283,33 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
           onWholeWordChange={setWholeWord}
         />
 
+        {showCandidates && (
+          <div className="absolute top-full left-0 right-0 mt-1 z-[200] glass rounded-2xl py-1 font-body-ui text-body-ui">
+            <p className="px-3 pt-1 pb-0.5 font-metadata-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
+              Filter search to…{filters.length > 0 ? " (adds to current filters)" : ""}
+            </p>
+            {candidates.map((c, i) => (
+              <button
+                key={JSON.stringify(c.scope)}
+                onMouseDown={(e) => { e.preventDefault(); commitCandidate(c.scope); }}
+                onMouseEnter={() => { setSlashActive(i); setSlashMoved(true); }}
+                className={`w-full flex items-center justify-between px-3 py-1.5 text-left transition-colors ${i === slashActive ? "bg-secondary-container text-on-secondary-container" : "text-on-surface hover:bg-surface-container-low"}`}
+              >
+                <span>{c.label}{c.hint && <span className="ml-2 text-[12px] text-on-surface-variant">{c.hint}</span>}</span>
+                {i === slashActive && (slashMoved || exactSlash || i === 0) && (
+                  <span className="rounded-md px-2 py-0.5 text-[12px] bg-surface-container-high text-on-surface-variant">{slashMoved || exactSlash ? "Space" : "Enter"}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
         {open && isReference && !bookOnly && (
           <ScriptureSuggestions
             suggestions={nav.suggestions}
             previewText={nav.previewText}
             showDropdown={nav.showDropdown}
+            spaceAccepts={nav.spaceAccepts}
             onPick={nav.applyBook}
           />
         )}
@@ -277,14 +329,14 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
           </Hint>
         )}
 
-        {open && route.kind === "word" && !wordText && route.scope && (
+        {open && !showCandidates && route.kind === "word" && !wordText && route.scope && (
           <Hint icon="filter_list" kbd="Type">
             <span className="text-primary">{scopeLabel(route.scope)}</span>
             <span className="text-on-surface-variant ml-2">· type a word to search only here</span>
           </Hint>
         )}
 
-        {open && route.kind === "word" && wordText && rect && (
+        {open && !showCandidates && route.kind === "word" && wordText && rect && (
           <div
             data-tour="live-search-results"
             className="fixed z-[200] glass rounded-xl overflow-y-auto"
@@ -293,11 +345,11 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
             {settled !== wordText && results.length === 0 ? (
               <p className="px-3 py-2 font-body-ui text-[12px] text-on-surface-variant">Searching…</p>
             ) : results.length === 0 ? (
-              <p className="px-3 py-2 font-body-ui text-[12px] text-on-surface-variant">No matches in {scope.kind === "all" ? primaryModule : `${scopeLabel(scope)} (${primaryModule})`}.</p>
+              <p className="px-3 py-2 font-body-ui text-[12px] text-on-surface-variant">No matches in {scopes.length === 0 ? primaryModule : `${scopesLabel(scopes)} (${primaryModule})`}.</p>
             ) : (
               <>
               <p className="px-3 pt-1.5 pb-0.5 font-metadata-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
-                {results.length}{hasMore ? "+" : ""} {results.length === 1 && !hasMore ? "match" : "matches"} · {scopeLabel(scope)}{wholeWord ? " · whole words" : ""}
+                {results.length}{hasMore ? "+" : ""} {results.length === 1 && !hasMore ? "match" : "matches"} · {scopesLabel(scopes)}{wholeWord ? " · whole words" : ""}
               </p>
               {results.map((r, i) => (
                 <button

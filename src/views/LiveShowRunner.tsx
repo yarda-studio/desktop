@@ -18,6 +18,7 @@ import { addVerseToPlan } from "../features/plan/addToPlan";
 import { reportVerseParts, verseKey } from "../features/plan/verseParts";
 import { registerScriptureStepper } from "../features/remote/registry";
 import { usePresentationStage } from "../hooks/usePresentationStage";
+import { useTeamShareStore } from "../features/teamShare";
 import type { PresentState } from "../lib/presentation";
 import TranslationBar from "../components/TranslationBar";
 import PresentationSearchBar, { type PresentationSearchBarHandle } from "../components/PresentationSearchBar";
@@ -550,6 +551,18 @@ export default function LiveShowRunner() {
         addSelectedToQueue();
         return;
       }
+      // Ctrl+Shift+T / Cmd+Shift+T: Send preview verse / selected range to team
+      if (mod && e.shiftKey && (e.code === "KeyT" || e.key.toLowerCase() === "t")) {
+        e.preventDefault();
+        const first = Math.min(selectedRange.start, selectedRange.end);
+        const last = Math.max(selectedRange.start, selectedRange.end);
+        void useTeamShareStore.getState().sendVerse({
+          ref: { book: previewRef.book, chapter: previewRef.chapter, verse: first },
+          verseEnd: last > first ? last : undefined,
+          module: primaryModule,
+        });
+        return;
+      }
       // One search bar, no modes: Ctrl+K and Ctrl+L both just focus it, and what
       // gets typed decides whether it jumps, searches the text or asks the AI.
       if (mod && !e.altKey && !e.shiftKey && (e.code === "KeyL" || e.code === "KeyK")) {
@@ -840,6 +853,23 @@ export default function LiveShowRunner() {
                 aria-label="Add this passage to the service plan"
               >
                 <span className="material-symbols-outlined text-[14px]">playlist_add_check</span>
+              </button>
+              <button
+                onClick={() => {
+                  const first = Math.min(selectedRange.start, selectedRange.end);
+                  const last = Math.max(selectedRange.start, selectedRange.end);
+                  void useTeamShareStore.getState().sendVerse({
+                    ref: { book: previewRef.book, chapter: previewRef.chapter, verse: first },
+                    verseEnd: last > first ? last : undefined,
+                    module: primaryModule,
+                  });
+                }}
+                disabled={!primaryModule}
+                className="p-1.5 ctl rounded-md text-on-surface-variant hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                title={forPlatform("Send previewed passage to team (Ctrl+Shift+T)")}
+                aria-label="Send previewed passage to team"
+              >
+                <span className="material-symbols-outlined text-[15px]">forward_to_inbox</span>
               </button>
               <button
                 onClick={goBack}

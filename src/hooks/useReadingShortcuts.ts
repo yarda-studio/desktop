@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { api, type ChapterText, type SearchResult } from "../lib/tauri";
 import type { VerseRef, DisplayPrefs, View } from "../store/app";
 import type { Workspace } from "../store/slices/navigationSlice";
+import { useTeamShareStore } from "../features/teamShare";
 
 const FONT_SIZE_PRESETS = [14, 16, 32, 48, 64, 72, 98] as const;
 
@@ -192,6 +193,13 @@ export function useReadingShortcuts(args: Args) {
       if (ctrl && e.shiftKey && e.code === "KeyQ" && workspace === "presentation") {
         e.preventDefault();
         setServiceOrderOpen(!serviceOrderOpen);
+        return;
+      }
+
+      // Ctrl+Shift+T: send current verse to team
+      if (ctrl && e.shiftKey && (e.code === "KeyT" || e.key.toLowerCase() === "t")) {
+        e.preventDefault();
+        void useTeamShareStore.getState().sendVerse({ ref: currentRef });
         return;
       }
 

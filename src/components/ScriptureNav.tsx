@@ -68,6 +68,7 @@ export default function ScriptureNav({ inputRef, baseRef, onNavigate, placeholde
           suggestions={nav.suggestions}
           previewText={nav.previewText}
           showDropdown={nav.showDropdown}
+          spaceAccepts={nav.spaceAccepts}
           onPick={nav.applyBook}
         />
       )}

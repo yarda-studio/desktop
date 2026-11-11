@@ -59,6 +59,7 @@ export interface SearchOptions {
   modules: string[];
   testament?: "OT" | "NT" | "all";
   book_filter?: string[];
+  chapter_filters?: [string, number][];
   whole_word?: boolean;
   page?: number;
   page_size?: number;

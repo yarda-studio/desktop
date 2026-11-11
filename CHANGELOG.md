@@ -4,6 +4,17 @@ All notable changes to Scriptura are listed here, newest first.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-11
+
+### Added
+- **Filter the Live Show search by several books at once.** Type `/john` and press Space (or `/1 t`, `/nt`, `/gospels`) and the text becomes a filter. A dropdown shows matching books as you type; arrow keys and Enter or Space pick one. Filters add up and match any of them (John or Romans), and `/c` limits the search to the chapter you are on. The filter button shows how many are active; click it to see them, remove one, or clear all. Alt+Shift+F clears every filter, and Backspace on an empty box removes the last one.
+- **Send a verse to your team.** Pick who gets it (everyone or one member) next to the top bar's send button, or press Ctrl/Cmd+Shift+T to send the verse you are on or the range selected in Live Show. Teammates see it as a notification. This needs the new `team_scripture_shares` database migration applied to your Supabase project.
+- **The shortcuts list shows how many search filters are active.**
+
+### Changed
+- **Typing only a number in the search bar no longer completes a book.** `1` + Space used to open 1 Samuel. Now keep typing: `1 s` + Space opens 1 Samuel, and `1 t` + Space opens the first match in book order, 1 Thessalonians.
+- **The keyboard shortcuts list is now complete**, grouped by area with search, instead of listing reading-view keys only.
+
 ## [0.5.0] - 2026-11-11
 
 ### Changed

@@ -21,7 +21,7 @@ interface Options {
  */
 export function useScriptureInput({ value, setValue, setOpen, inputRef, baseRef, goTo }: Options) {
   const jump = parseLocalJump(value);
-  const { matchedBook, suggestions, chapter, verse, refPart } = parseScriptureInput(value);
+  const { matchedBook, suggestions, chapter, verse, refPart, bookPart } = parseScriptureInput(value);
   const showDropdown = suggestions.length > 0 && !matchedBook && !jump;
   const canNavigate = !!(jump || matchedBook || suggestions.length > 0);
 
@@ -46,7 +46,11 @@ export function useScriptureInput({ value, setValue, setOpen, inputRef, baseRef,
 
   /** Space handling: completes a book name, or inserts ":" after a chapter number. */
   function handleSpace(e: KeyboardEvent<HTMLInputElement>) {
-    if (!matchedBook && suggestions.length > 0) {
+    if (!matchedBook && suggestions.length > 0 && /^\d+\s*$/.test(bookPart)) {
+      // Just a number so far ("1", "2"): it could be any of several books, so don't pick
+      // one. Keep typing the name ("1 s" + space → 1 Samuel). One space only.
+      if (/\s$/.test(value)) e.preventDefault();
+    } else if (!matchedBook && suggestions.length > 0) {
       // "mat" + space -> "Matthew " — same completion Tab used to do.
       e.preventDefault();
       applyBook(suggestions[0]);
@@ -73,5 +77,6 @@ export function useScriptureInput({ value, setValue, setOpen, inputRef, baseRef,
     ? `${previewBook} ${chapter}${verse ? `:${verse}` : ""}`
     : null;
 
-  return { matchedBook, suggestions, showDropdown, canNavigate, previewText, applyBook, navigate, handleSpace };
+  const spaceAccepts = !/^\d+\s*$/.test(bookPart);
+  return { matchedBook, suggestions, showDropdown, spaceAccepts, canNavigate, previewText, applyBook, navigate, handleSpace };
 }

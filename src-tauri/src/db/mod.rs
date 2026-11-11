@@ -466,13 +466,25 @@ impl Database {
             }
         };
 
-        let book_clause = if let Some(ref books) = effective_books {
-            let base = options.modules.len() + 2; // ?1=query, ?2..?{n+1}=modules
-            let placeholders: String = (0..books.len())
-                .map(|i| format!("?{}", base + i))
-                .collect::<Vec<_>>()
-                .join(",");
-            format!("AND book IN ({placeholders})")
+        // Books and (book, chapter) pairs are OR'd together: a verse matches if it is in
+        // any selected book or in any selected chapter.
+        let chapters: Vec<(String, u32)> = options.chapter_filters.clone().unwrap_or_default();
+        let book_count = effective_books.as_ref().map_or(0, |b| b.len());
+        let base = options.modules.len() + 2; // ?1=query, ?2..?{n+1}=modules
+        let book_clause = if effective_books.is_some() || !chapters.is_empty() {
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(ref books) = effective_books {
+                let placeholders: String = (0..books.len())
+                    .map(|i| format!("?{}", base + i))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                parts.push(format!("book IN ({placeholders})"));
+            }
+            for i in 0..chapters.len() {
+                let p = base + book_count + i * 2;
+                parts.push(format!("(book = ?{} AND chapter = ?{})", p, p + 1));
+            }
+            format!("AND ({})", parts.join(" OR "))
         } else {
             String::new()
         };
@@ -496,6 +508,10 @@ impl Database {
             for b in books {
                 params_vec.push(Box::new(b.clone()));
             }
+        }
+        for (book, chapter) in &chapters {
+            params_vec.push(Box::new(book.clone()));
+            params_vec.push(Box::new(*chapter));
         }
 
         let params_refs: Vec<&dyn rusqlite::types::ToSql> =
@@ -3616,6 +3632,7 @@ mod tests {
                     modules: vec!["KJV".to_string()],
                     testament: None,
                     book_filter: None,
+                    chapter_filters: None,
                     strongs_filter: None,
                     whole_word: None,
                     page: None,
@@ -3640,6 +3657,7 @@ mod tests {
                     modules: vec!["KJV".to_string()],
                     testament: None,
                     book_filter: None,
+                    chapter_filters: None,
                     strongs_filter: None,
                     whole_word: None,
                     page: None,
@@ -3765,6 +3783,7 @@ mod tests {
                     modules: vec!["KJV".to_string()],
                     testament: None,
                     book_filter: None,
+                    chapter_filters: None,
                     strongs_filter: None,
                     whole_word: None,
                     page: None,
