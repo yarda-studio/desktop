@@ -66,8 +66,8 @@ export default function SideNav({ variant }: Props) {
 
   // full variant
   return (
-    <nav data-tour="side-nav" className="w-sidebar-width glass !rounded-none !border-y-0 !border-l-0 h-full flex flex-col shrink-0 z-40">
-      <div className="p-5 pb-3">
+    <nav data-tour="side-nav" className="w-16 lg:w-sidebar-width glass !rounded-none !border-y-0 !border-l-0 h-full flex flex-col shrink-0 z-40">
+      <div className="hidden lg:block p-5 pb-3">
         <h2 className="font-headline-md text-headline-md font-bold text-primary">
           Yarda
         </h2>
@@ -76,19 +76,21 @@ export default function SideNav({ variant }: Props) {
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-2 px-3 space-y-1.5">
+      <div className="flex-1 overflow-y-auto py-3 lg:py-2 px-2 lg:px-3 space-y-1.5">
         {items.map((item) => {
           const active = view === item.id;
           return (
             <button
               key={item.id}
               onClick={() => setView(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all text-left ${
+              title={item.label}
+              aria-label={item.label}
+              className={`w-full flex items-center justify-center lg:justify-start gap-3 px-2 lg:px-4 py-2.5 rounded-lg transition-all text-left ${
                 active ? "ctl-active font-bold" : "text-secondary hover:text-on-surface"
               }`}
             >
               <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-              <span className="font-body-ui text-body-ui">{item.label}</span>
+              <span className="hidden lg:inline font-body-ui text-body-ui">{item.label}</span>
             </button>
           );
         })}

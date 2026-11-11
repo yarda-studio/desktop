@@ -22,6 +22,8 @@ export function usePresentationSync(args: {
   emergency?: boolean;
   /** Which split part of the active verse to show (0 = a, 1 = b, …). */
   versePart?: number;
+  /** The console's own split of the active verse — the output shows these exact parts. */
+  verseParts?: string[];
 }) {
   // A Strong's lookup stays private to the operator until "Show on output" —
   // the selection only goes out while it is live.
@@ -31,7 +33,7 @@ export function usePresentationSync(args: {
   const {
     presentationActive, primaryModule, currentRef, parallelModule,
     parallelMode, selectedStrongs, strongsGroup, strongsSource, displayPrefs,
-    readingFontSize, presentationTheme, black, emergency, versePart,
+    readingFontSize, presentationTheme, black, emergency, versePart, verseParts,
   } = args;
 
   useEffect(() => {
@@ -54,6 +56,7 @@ export function usePresentationSync(args: {
       black,
       emergency,
       versePart,
+      verseParts,
     });
-  }, [presentationActive, currentRef, primaryModule, parallelModule, parallelMode, selectedStrongs, strongsGroup, strongsSource, strongsLive, strongsPage, strongsDoc, displayPrefs, readingFontSize, presentationTheme, black, emergency, versePart]);
+  }, [presentationActive, currentRef, primaryModule, parallelModule, parallelMode, selectedStrongs, strongsGroup, strongsSource, strongsLive, strongsPage, strongsDoc, displayPrefs, readingFontSize, presentationTheme, black, emergency, versePart, verseParts]);
 }

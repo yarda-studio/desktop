@@ -59,9 +59,9 @@ export default function SearchHistory() {
     <div className="flex flex-1 overflow-hidden">
       <SideNav variant="full" />
 
-      <main className="flex-1 flex flex-col overflow-hidden bg-background">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-background">
         {/* Header */}
-        <div className="p-6 border-b border-outline-variant shrink-0">
+        <div className="p-4 lg:p-6 border-b border-outline-variant shrink-0">
           <div className="flex items-center justify-between mb-4">
             <h1 className="font-display-lg text-display-lg text-on-surface">Search History</h1>
             {searchHistory.length > 0 && (
@@ -106,7 +106,7 @@ export default function SearchHistory() {
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto p-6 max-w-3xl">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-6 max-w-3xl">
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <span className="material-symbols-outlined text-[56px] text-on-surface-variant mb-3">history</span>

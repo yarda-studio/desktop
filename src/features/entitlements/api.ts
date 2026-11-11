@@ -77,7 +77,10 @@ export async function fetchEntitlements(): Promise<Entitlements> {
 export async function createCheckout(params: {
   plan: "pro" | "team";
   org_id?: string;
+  /** Team only: number of seats (1-1000). */
   seats?: number;
+  /** Pro only: choose the monthly or yearly product when both are configured. */
+  interval?: "monthly" | "yearly";
 }): Promise<string> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("Supabase is not configured.");

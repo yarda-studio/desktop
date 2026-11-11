@@ -63,7 +63,7 @@ export default function OrgSwitcher() {
       </button>
 
       {open && (
-        <div className="absolute left-0 mt-1.5 w-64 rounded-xl border border-outline-variant bg-surface shadow-xl z-50 p-1.5 space-y-1">
+        <div className="absolute right-0 bottom-full mb-1.5 w-64 rounded-xl border border-outline-variant bg-surface shadow-xl z-50 p-1.5 space-y-1">
           <div className="px-2 py-1 text-[11px] font-body-ui font-semibold text-on-surface-variant uppercase tracking-wider">
             Organizations
           </div>

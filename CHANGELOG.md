@@ -4,6 +4,14 @@ All notable changes to Scriptura are listed here, newest first.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-11
+
+### Changed
+- **The app now fits smaller windows and screens.** The window opens sized to the screen it is on instead of a fixed 1280×800 that ran off the edge on scaled displays, and the minimum size is lower (720×520). The presentation top bar no longer overlaps at narrow widths, the side navigation collapses to an icon rail, the Module Library toolbar wraps, and Live Show, Songs and Slides keep a usable Preview column. The Theme Designer and the Song Editor show one panel at a time below 1024 px, switched with tabs.
+
+### Fixed
+- **Split verses now match between the console and the output window.** The console splits the live verse against the output window's real size and your theme's verse box, then sends those exact parts to the output, so the two can no longer cut a verse in different places. The measurement now also counts the theme's letter spacing and a filled verse box's padding, and the output shrinks a part slightly instead of cutting it off if it still overflows. The output window's size is checked four times a second instead of once.
+
 ## [0.4.1] - 2026-11-08
 
 ### Changed

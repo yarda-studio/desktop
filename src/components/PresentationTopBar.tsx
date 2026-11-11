@@ -145,7 +145,7 @@ export default function PresentationTopBar() {
 
   return (
     <header
-      className="relative flex items-center justify-between h-11 px-content-margin w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0"
+      className="relative flex items-center justify-between gap-2 h-11 px-2 md:px-content-margin w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0"
       style={IS_MAC ? { paddingLeft: MAC_WINDOW_BUTTONS_WIDTH } : undefined}
     >
       {/* The bar is also the window's title bar (there is no separate one), so its empty parts drag the window. */}
@@ -159,9 +159,10 @@ export default function PresentationTopBar() {
       </nav>
 
       {/* Center: Master broadcast transport deck (absolute dead center) */}
+      <div className="flex-1 min-w-0 flex justify-center">
       <div
         data-tour="live-controls"
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center p-0.5 bg-surface-container-high/60 border border-outline-variant/60 rounded-lg shadow-xs"
+        className="shrink-0 flex items-center p-0.5 bg-surface-container-high/60 border border-outline-variant/60 rounded-lg shadow-xs"
       >
         <button
           onClick={output.toggle}
@@ -197,6 +198,7 @@ export default function PresentationTopBar() {
           CLEAR
         </button>
       </div>
+      </div>
 
       {/* Right: Tools & Utilities */}
       <div className="flex items-center gap-1.5 shrink-0">
@@ -231,7 +233,7 @@ export default function PresentationTopBar() {
           </div>
         </div>
 
-        <div className="w-px h-4 bg-outline-variant/60 mx-1" />
+        <div className="hidden md:block w-px h-4 bg-outline-variant/60 mx-1" />
 
         {/* System & Account */}
         <div className="flex items-center gap-1">
@@ -239,6 +241,7 @@ export default function PresentationTopBar() {
             icon={isDark ? "light_mode" : "dark_mode"}
             label={isDark ? "Switch to light mode" : "Switch to dark mode"}
             onClick={toggleTheme}
+            className="hidden md:flex"
           />
           <IconButton
             icon="settings"

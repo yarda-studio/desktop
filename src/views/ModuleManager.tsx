@@ -126,9 +126,9 @@ export default function ModuleManager() {
     <div className="flex flex-1 overflow-hidden">
       <SideNav variant="full" />
 
-      <main className="flex-1 flex flex-col overflow-hidden bg-background">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-background">
         {/* Header */}
-        <div className="p-6 border-b border-outline-variant shrink-0">
+        <div className="p-4 lg:p-6 border-b border-outline-variant shrink-0">
           <h1 className="font-display-lg text-display-lg text-on-surface mb-1">Module Library</h1>
           <p className="font-body-ui text-body-ui text-on-surface-variant">
             Download and manage Bible texts, commentaries, and lexicons.
@@ -136,13 +136,13 @@ export default function ModuleManager() {
         </div>
 
         {/* Tabs + search */}
-        <div className="flex items-center gap-4 px-6 py-3 border-b border-outline-variant bg-surface shrink-0">
-          <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 lg:px-6 py-3 border-b border-outline-variant bg-surface shrink-0">
+          <div className="flex gap-2 shrink-0">
             {(["available", "installed"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`px-4 py-1.5 rounded-md font-body-ui text-body-ui capitalize transition-colors ${
+                className={`px-3 lg:px-4 py-1.5 whitespace-nowrap rounded-md font-body-ui text-body-ui capitalize transition-colors ${
                   tab === t
                     ? "btn-primary"
                     : "text-secondary hover:bg-surface-container-low"
@@ -152,7 +152,7 @@ export default function ModuleManager() {
               </button>
             ))}
           </div>
-          <div className="flex gap-2 ml-4 flex-wrap">
+          <div className="flex gap-2 lg:ml-4 flex-wrap">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat}
@@ -167,10 +167,10 @@ export default function ModuleManager() {
               </button>
             ))}
           </div>
-          <div className="relative ml-auto">
+          <div className="relative lg:ml-auto basis-full sm:basis-auto">
             <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
             <input
-              className="pl-8 pr-3 py-1.5 focus:outline-none font-body-ui text-body-ui w-56 transition-colors field rounded-lg"
+              className="pl-8 pr-3 py-1.5 focus:outline-none font-body-ui text-body-ui w-full sm:w-56 transition-colors field rounded-lg"
               placeholder="Filter modules…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -179,7 +179,7 @@ export default function ModuleManager() {
         </div>
 
         {/* Module list */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-6">
           {tab === "available" && loading && available.length === 0 ? (
             <div className="flex items-center justify-center h-32">
               <p className="font-body-ui text-body-ui text-on-surface-variant">Loading modules…</p>

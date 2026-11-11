@@ -45,7 +45,7 @@ export function usePresentationStage(presentationActive: boolean): StageSize {
       }
     }
     poll();
-    const timer = setInterval(poll, 1000);
+    const timer = setInterval(poll, 250);
     return () => { cancelled = true; clearInterval(timer); };
   }, [presentationActive]);
 

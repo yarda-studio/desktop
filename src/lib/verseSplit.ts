@@ -170,6 +170,8 @@ export interface MeasureTextStyle {
   lineHeight: number;
   fontWeight?: number;
   textAlign?: string;
+  /** CSS letter-spacing, e.g. "0.05em" — must match what the output renders or lines wrap differently. */
+  letterSpacing?: string;
 }
 
 /**
@@ -211,6 +213,7 @@ export function measureVersePartsDOM(
     lineHeight: String(style.lineHeight),
     fontWeight: String(style.fontWeight ?? 600),
     textAlign: style.textAlign ?? "left",
+    letterSpacing: style.letterSpacing ?? "normal",
     whiteSpace: "normal",
     wordBreak: "break-word",
     boxSizing: "border-box",

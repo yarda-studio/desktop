@@ -46,6 +46,12 @@ export interface PresentState {
    */
   versePart?: number;
   /**
+   * The parts of the live verse, as the operator console split them against the
+   * output window's real size. The output shows these exactly instead of splitting
+   * again on its own, so the two screens can never disagree about where a verse cuts.
+   */
+  verseParts?: string[];
+  /**
    * A song slide to show instead of scripture. When set, the output renders
    * this text (styled by the active theme) and ignores the verse fields.
    */

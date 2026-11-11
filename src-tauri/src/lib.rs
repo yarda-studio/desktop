@@ -15,6 +15,23 @@ mod versification;
 use std::sync::Arc;
 use tauri::Manager;
 
+/// The configured 1280x800 window is larger than many screens once display scaling is applied,
+/// which left the app cut off at first launch. Shrink it to fit the monitor's usable area.
+fn fit_main_window_to_screen(app: &tauri::App) {
+    let Some(win) = app.get_webview_window("main") else { return };
+    let Ok(Some(monitor)) = win.current_monitor() else { return };
+    let scale = monitor.scale_factor();
+    let screen = monitor.size().to_logical::<f64>(scale);
+    // Leave room for the taskbar / menu bar and window chrome.
+    let max_w = (screen.width * 0.94).floor();
+    let max_h = (screen.height * 0.88).floor();
+    let w = 1280f64.min(max_w);
+    let h = 800f64.min(max_h);
+    let _ = win.set_min_size(Some(tauri::LogicalSize::new(720f64.min(max_w), 520f64.min(max_h))));
+    let _ = win.set_size(tauri::LogicalSize::new(w, h));
+    let _ = win.center();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -30,6 +47,8 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir)?;
 
             install_panic_hook(data_dir.join("crash.log"));
+
+            fit_main_window_to_screen(app);
 
             let old_db = data_dir.join("scriptura.db");
             let yarda_db = data_dir.join("yarda.db");

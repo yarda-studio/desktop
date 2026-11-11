@@ -209,7 +209,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden ambient text-on-background font-body-ui text-body-ui selection:bg-secondary-container selection:text-on-secondary-container">
+    <div className="h-dvh flex flex-col overflow-hidden ambient text-on-background font-body-ui text-body-ui selection:bg-secondary-container selection:text-on-secondary-container">
       {!isFullscreen && (presenting ? <PresentationTopBar /> : <TopBar />)}
 
       {/* The service plan drives all three output tabs; each tab shows it at the top of its Schedule column.

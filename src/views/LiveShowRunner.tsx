@@ -135,13 +135,6 @@ export default function LiveShowRunner() {
     max: () => window.innerHeight - 260,
   });
 
-  usePresentationSync({
-    presentationActive, primaryModule, currentRef, parallelModule, parallelMode,
-    selectedStrongs, strongsGroup, strongsSource, displayPrefs, readingFontSize,
-    presentationTheme: activePresentationTheme,
-    black: liveBlack, emergency: liveEmergency,
-    versePart: displayPrefs.splitLongVerses ? versePart : undefined,
-  });
 
   const { chapter: previewChapter, parallelChapter: previewParallelChapter } = useChapterData(primaryModule, previewRef.book, previewRef.chapter, parallelMode, parallelModule);
   const { chapter: liveChapter, parallelChapter: liveParallelChapter } = useChapterData(primaryModule, currentRef.book, currentRef.chapter, parallelMode, parallelModule);
@@ -166,7 +159,8 @@ export default function LiveShowRunner() {
       boxW = (((100 - 2 * hPadPct) / 100) * screenW - gap) / 2;
       boxH = ctx === 1 ? screenH - 80 : screenH * (ctx === 3 ? 0.5 : 0.6);
     } else if (ctx === 1 && theme) {
-      boxW = (theme.verse_box_width / 100) * screenW;
+      // A filled verse box is drawn with 1.2% padding each side (see FreeformVerseLayout).
+      boxW = (theme.verse_box_width / 100) * screenW * (theme.verse_box_fill ? 0.976 : 1);
       boxH = (theme.verse_box_height / 100) * screenH;
     } else if (ctx === 2 || ctx === 3) {
       boxW = ((100 - 2 * hPadPct) / 100) * screenW;
@@ -187,6 +181,7 @@ export default function LiveShowRunner() {
         lineHeight: 1 + live.lineSpacing,
         fontWeight: theme?.text_font_weight ?? 600,
         textAlign: live.textAlign,
+        letterSpacing: `${live.letterSpacing * 0.1}em`,
       },
     };
   }, [displayPrefs, activePresentationTheme, stage.w, stage.h, parallelMode, parallelModule]);
@@ -669,12 +664,24 @@ export default function LiveShowRunner() {
   }, [outputState, currentPreviewSlide, previewRef, previewPart, displayPrefs.splitLongVerses, selectedStrongs, strongsGroup, strongsSource, strongsPage, strongsDoc]);
 
   const liveText = verseText(liveChapter?.verses, currentRef.verse);
-  const liveParts = displayPrefs.splitLongVerses ? splitParts(liveText) : [liveText];
+  const liveParts = useMemo(
+    () => (displayPrefs.splitLongVerses ? splitParts(liveText) : [liveText]),
+    [displayPrefs.splitLongVerses, splitParts, liveText],
+  );
   const liveSplit = liveParts.length > 1;
   // Tell the service plan how many parts this verse has so it can step through them.
   // Only once the chapter on screen is the live one: until then the text (and so the count) is the previous chapter's.
   const livePartCount = liveParts.length;
   const chapterLoaded = liveChapter?.book === currentRef.book && liveChapter?.chapter === currentRef.chapter;
+  // The output shows exactly these parts, so it can never split a verse differently from this console.
+  usePresentationSync({
+    presentationActive, primaryModule, currentRef, parallelModule, parallelMode,
+    selectedStrongs, strongsGroup, strongsSource, displayPrefs, readingFontSize,
+    presentationTheme: activePresentationTheme,
+    black: liveBlack, emergency: liveEmergency,
+    versePart: displayPrefs.splitLongVerses ? versePart : undefined,
+    verseParts: displayPrefs.splitLongVerses && chapterLoaded ? liveParts : undefined,
+  });
   useEffect(() => {
     if (chapterLoaded) reportVerseParts(verseKey(currentRef), livePartCount);
   }, [currentRef, livePartCount, chapterLoaded]);
@@ -717,7 +724,7 @@ export default function LiveShowRunner() {
       {/* Schedule | Preview | Live — each column ends in an output strip */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* ── Schedule (queue) ── */}
-        <section data-tour="live-schedule" style={{ width: queueW.size }} className="shrink-0 flex flex-col overflow-hidden panel rounded-3xl">
+        <section data-tour="live-schedule" style={{ width: queueW.size }} className="shrink min-w-0 max-w-[32%] flex flex-col overflow-hidden panel rounded-3xl">
           <ErrorBoundary compact label="Service plan">
             <PlanSection />
           </ErrorBoundary>
@@ -849,9 +856,10 @@ export default function LiveShowRunner() {
                 disabled={currentPreviewSlide ? (sameRef(currentPreviewSlide.ref, currentRef) && currentPreviewSlide.part === versePart) : (sameRef(previewRef, currentRef) && previewPart === versePart)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md btn-primary font-body-ui text-[13px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 title="Send the previewed verse live (Enter, or double-click it)"
+                aria-label="Go Live"
               >
                 <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                Go Live
+                <span className="hidden min-[900px]:inline">Go Live</span>
               </button>
             </div>
           </div>
@@ -946,7 +954,7 @@ export default function LiveShowRunner() {
         <ResizeHandle spaced axis="x" label="live" dragging={liveW.dragging} handleProps={liveW.handleProps} />
 
         {/* ── Live ── */}
-        <section data-tour="live-output" style={{ width: liveW.size }} className="shrink-0 flex flex-col overflow-hidden panel rounded-3xl">
+        <section data-tour="live-output" style={{ width: liveW.size }} className="shrink min-w-0 max-w-[38%] flex flex-col overflow-hidden panel rounded-3xl">
           <div className="shrink-0 flex items-center gap-3 px-3.5 py-2.5 border-b border-outline-variant">
             <h2 className="font-body-ui text-[13px] font-bold text-on-surface ">Live</h2>
             {presentationActive && (
@@ -1050,12 +1058,12 @@ export default function LiveShowRunner() {
       <ResizeHandle axis="y" label="library" dragging={bottomH.dragging} handleProps={bottomH.handleProps} />
 
       {/* ── Library: reference bar + verse list + Ask Scripture ── */}
-      <div style={{ height: bottomH.size }} className="shrink-0 panel rounded-3xl flex overflow-hidden">
+      <div style={{ height: bottomH.size, maxHeight: "55%" }} className="shrink-0 panel rounded-3xl flex overflow-hidden">
         {/* Left column: reference bar + verses list */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
           <div className="shrink-0 h-[49px] flex items-center gap-3 px-3.5 py-2 border-b border-outline-variant/40">
             <TranslationBar />
-            <span className="font-body-ui text-[13px] font-semibold text-on-surface shrink-0">{rangeCitation}</span>
+            <span className="hidden min-[900px]:inline font-body-ui text-[13px] font-semibold text-on-surface shrink-0">{rangeCitation}</span>
             <div className="flex items-center gap-2 shrink-0">
               <button onClick={() => stepChapter(-1)} className="p-1 rounded-md ctl text-on-surface-variant" title={forPlatform("Previous chapter (Ctrl+P)")}>
                 <span className="material-symbols-outlined text-[16px]">chevron_left</span>
@@ -1065,7 +1073,7 @@ export default function LiveShowRunner() {
               </button>
             </div>
             <div className="w-px h-4 bg-outline-variant shrink-0" />
-            <div data-tour="live-search" className="flex-1 min-w-0 max-w-xl">
+            <div data-tour="live-search" className="flex-1 min-w-[140px] max-w-xl">
               <PresentationSearchBar
                 ref={searchBarRef}
                 baseRef={previewRef}

@@ -14,7 +14,7 @@ export default function LivePanel({ width, stage }: { width: number; stage: { w:
   const slide = live?.slides[live.index];
 
   return (
-    <section style={{ width }} className="shrink-0 flex flex-col overflow-hidden panel rounded-3xl">
+    <section style={{ width }} className="shrink min-w-0 max-w-[38%] flex flex-col overflow-hidden panel rounded-3xl">
       <div className="shrink-0 flex items-center gap-3 px-3.5 py-2.5 border-b border-outline-variant">
         <h2 className="font-body-ui text-[13px] font-bold text-on-surface ">Live</h2>
         {presentationActive && (

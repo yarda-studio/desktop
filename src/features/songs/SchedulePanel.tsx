@@ -6,7 +6,7 @@ export default function SchedulePanel({ width }: { width: number }) {
   const { schedule, previewId, live, preview, goLive, removeFromSchedule, moveInSchedule, clearSchedule } = useSongsLive();
 
   return (
-    <section style={{ width }} className="shrink-0 flex flex-col overflow-hidden panel rounded-3xl">
+    <section style={{ width }} className="shrink min-w-0 max-w-[32%] flex flex-col overflow-hidden panel rounded-3xl">
       <ErrorBoundary compact label="Service plan">
         <PlanSection />
       </ErrorBoundary>

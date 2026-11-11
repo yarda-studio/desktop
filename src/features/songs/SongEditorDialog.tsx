@@ -18,6 +18,7 @@ export default function SongEditorDialog() {
 
   const [leftTab, setLeftTab] = useState<"words" | "slides">("words");
   const [rightTab, setRightTab] = useState<"details" | "slide">("details");
+  const [view, setView] = useState<"left" | "preview" | "right">("left");
   const [pasting, setPasting] = useState(false);
   const [selected, setSelected] = useState(0);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -44,17 +45,17 @@ export default function SongEditorDialog() {
   const firstSlideOf = (key: string) => Math.max(0, slides.findIndex((s) => s.sectionKey === key));
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onMouseDown={(e) => e.target === e.currentTarget && requestCancel()}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Song Editor" className="w-[min(1280px,96vw)] h-[min(820px,94vh)] flex flex-col glass glass-strong rounded-3xl overflow-hidden">
+    <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-0 sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && requestCancel()}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Song Editor" className="w-screen h-dvh sm:w-[min(1280px,96vw)] sm:h-[min(820px,94dvh)] flex flex-col glass glass-strong rounded-none sm:rounded-3xl overflow-hidden">
         {/* Header */}
-        <header className="flex items-center gap-3 px-4 py-3 border-b border-outline-variant shrink-0">
+        <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-3 border-b border-outline-variant shrink-0">
           <input
             value={draft.title}
             onChange={(e) => update({ title: e.target.value })}
             placeholder="Song title"
             autoFocus={draft.id === null}
             aria-label="Song title"
-            className="field w-80 max-w-[40%] rounded-md h-9 px-3 font-body-ui text-[14px] text-on-surface outline-none"
+            className="field order-1 flex-1 min-w-[140px] lg:flex-none lg:w-80 lg:max-w-[40%] rounded-md h-9 px-3 font-body-ui text-[14px] text-on-surface outline-none"
           />
           <button
             onClick={() => update({ favourite: !draft.favourite })}
@@ -71,13 +72,28 @@ export default function SongEditorDialog() {
           >
             <span className="material-symbols-outlined text-[16px]">content_paste</span>Paste lyrics
           </button>
-          <span className="flex-1" />
-          <h2 className="font-body-ui text-[13px] text-on-surface-variant">Song Editor{dirty ? " — unsaved" : ""}</h2>
+          <span className="hidden lg:block flex-1" />
+          <h2 className="order-2 lg:order-none font-body-ui text-[13px] text-on-surface-variant">Song Editor{dirty ? " — unsaved" : ""}</h2>
         </header>
+
+        {/* Mobile / tablet view switcher */}
+        <div role="tablist" aria-label="Editor section" className="lg:hidden flex shrink-0 border-b border-outline-variant">
+          {([["left", "Lyrics"], ["preview", "Preview"], ["right", "Details"]] as const).map(([id, label]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={view === id}
+              onClick={() => setView(id)}
+              className={`flex-1 py-2 font-body-ui text-[13px] border-b-2 ${view === id ? "border-primary text-primary font-semibold" : "border-transparent text-on-surface-variant"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         <div className="flex flex-1 min-h-0">
           {/* Words / Slides */}
-          <section className="w-[360px] shrink-0 flex flex-col border-r border-outline-variant min-h-0">
+          <section className={`${view === "left" ? "flex" : "hidden"} lg:flex w-full lg:w-[320px] xl:w-[360px] lg:shrink-0 flex-col lg:border-r border-outline-variant min-h-0`}>
             <Tabs value={leftTab} onChange={setLeftTab} tabs={[["words", "Words"], ["slides", "Slides"]]} />
             {leftTab === "words" ? (
               pasting
@@ -89,7 +105,7 @@ export default function SongEditorDialog() {
           </section>
 
           {/* Preview */}
-          <section className="flex-1 min-w-0 flex flex-col items-center justify-center gap-3 p-6 bg-surface-container-lowest/30">
+          <section className={`${view === "preview" ? "flex" : "hidden"} lg:flex flex-1 min-w-0 flex-col items-center justify-center gap-3 p-4 lg:p-6 bg-surface-container-lowest/30 overflow-y-auto`}>
             <div className="w-full max-w-[780px] rounded-sm overflow-hidden shadow-lg ring-1 ring-outline-variant">
               <SlideCanvas slide={slide} copyright={showCopyright ? draft.copyright : undefined} />
             </div>
@@ -105,7 +121,7 @@ export default function SongEditorDialog() {
           </section>
 
           {/* Details / Slide settings */}
-          <section className="w-[320px] shrink-0 flex flex-col border-l border-outline-variant min-h-0">
+          <section className={`${view === "right" ? "flex" : "hidden"} lg:flex w-full lg:w-[280px] xl:w-[320px] lg:shrink-0 flex-col lg:border-l border-outline-variant min-h-0`}>
             <Tabs value={rightTab} onChange={setRightTab} tabs={[["details", "Details"], ["slide", "Slide"]]} />
             {rightTab === "details" ? (
               <DetailsPane song={draft} onChange={update} />
@@ -130,8 +146,8 @@ export default function SongEditorDialog() {
         </div>
 
         {/* Footer */}
-        <footer className="flex items-center gap-3 px-4 py-3 border-t border-outline-variant shrink-0">
-          <p className={`flex-1 min-w-0 truncate font-body-ui text-[12px] ${saveError ? "text-error" : "text-on-surface-variant"}`}>
+        <footer className="flex flex-wrap items-center justify-end gap-2 sm:gap-3 px-3 sm:px-4 py-3 border-t border-outline-variant shrink-0">
+          <p className={`basis-full sm:basis-0 sm:flex-1 min-w-0 truncate empty:hidden font-body-ui text-[12px] ${saveError ? "text-error" : "text-on-surface-variant"}`}>
             {saveError ?? (confirmDiscard ? "Discard your changes?" : "")}
           </p>
           {confirmDiscard ? (

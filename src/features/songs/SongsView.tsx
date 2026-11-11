@@ -71,7 +71,7 @@ export default function SongsView() {
 
       <ResizeHandle axis="y" label="library" dragging={bottomH.dragging} handleProps={bottomH.handleProps} />
 
-      <div style={{ height: bottomH.size }} className="shrink-0 panel rounded-3xl flex overflow-hidden">
+      <div style={{ height: bottomH.size, maxHeight: "55%" }} className="shrink-0 panel rounded-3xl flex overflow-hidden">
         <ErrorBoundary compact label="Song library"><SongList onImport={() => setImporting(true)} /></ErrorBoundary>
       </div>
 

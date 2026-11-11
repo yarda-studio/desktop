@@ -182,12 +182,13 @@ export default function CustomizationStudio() {
     setMessage(`“${theme.name}” is live.`);
   }
 
+  const [pane, setPane] = useState<"library" | "canvas" | "inspector">("canvas");
   const canSave = (dirty || newTheme) && !saving;
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden p-3 gap-3">
-        <header className="glass rounded-3xl shrink-0 flex items-center justify-between gap-4 px-6 py-3">
+        <header className="glass rounded-3xl shrink-0 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 lg:px-6 py-3">
           <div className="flex items-baseline gap-3 min-w-0">
             <h1 className="font-headline-md text-headline-md font-bold text-on-surface shrink-0">Theme Designer</h1>
             {dirty && <span className="font-body-ui font-medium text-[12px] text-primary">Unsaved changes</span>}
@@ -208,7 +209,23 @@ export default function CustomizationStudio() {
           </div>
         </header>
 
-        <div className="flex-1 min-h-0 grid grid-cols-[220px_minmax(0,1fr)_300px] xl:grid-cols-[280px_minmax(0,1fr)_340px] gap-3 overflow-hidden">
+        {/* Below lg the three panels do not fit side by side: show one at a time. */}
+        <div role="tablist" aria-label="Theme designer section" className="lg:hidden shrink-0 flex rounded-xl panel p-1 gap-1">
+          {([["library", "Themes"], ["canvas", "Canvas"], ["inspector", "Settings"]] as const).map(([id, label]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={pane === id}
+              onClick={() => setPane(id)}
+              className={`flex-1 py-1.5 rounded-lg font-body-ui text-[13px] ${pane === id ? "btn-primary font-semibold" : "text-on-surface-variant"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[240px_minmax(0,1fr)_300px] xl:grid-cols-[280px_minmax(0,1fr)_340px] gap-3 overflow-hidden">
+          <div className={`${pane === "library" ? "flex" : "hidden"} lg:contents flex-1 min-h-0 flex-col [&>*]:flex-1`}>
           <ThemeLibrary
             themes={presentationThemes}
             selectedId={selectedId}
@@ -221,6 +238,8 @@ export default function CustomizationStudio() {
             onMakeDefault={makeDefault}
             onDelete={remove}
           />
+          </div>
+          <div className={`${pane === "canvas" ? "flex" : "hidden"} lg:contents flex-1 min-h-0 flex-col [&>*]:flex-1`}>
           <ThemeCanvas
             draft={draft}
             onChange={setDraft}
@@ -232,6 +251,8 @@ export default function CustomizationStudio() {
             onUndo={undo}
             onRedo={redo}
           />
+          </div>
+          <div className={`${pane === "inspector" ? "flex" : "hidden"} lg:contents flex-1 min-h-0 flex-col [&>*]:flex-1`}>
           <ThemeInspector
             draft={draft}
             onChange={patchDraft}
@@ -240,6 +261,7 @@ export default function CustomizationStudio() {
             lockAspect={lockAspect}
             onLockAspect={setLockAspect}
           />
+          </div>
         </div>
       </main>
     </div>

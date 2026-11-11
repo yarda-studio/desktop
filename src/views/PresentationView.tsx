@@ -59,6 +59,7 @@ function measureStyle(prefs: DisplayPrefs, fontSize: number, theme: Presentation
     lineHeight: 1 + prefs.lineSpacing,
     fontWeight: theme?.text_font_weight ?? 600,
     textAlign: (theme?.text_align ?? prefs.textAlign) as string,
+    letterSpacing: `${prefs.letterSpacing * 0.1}em`,
   };
 }
 
@@ -334,6 +335,9 @@ function ContextLayout({ ctx, state, chapter, parallelChapter, fontSize, prefs, 
   // sized to match this context's real presentation box — no hardcoded ratios.
   const activeParts = useMemo(() => {
     if (!state.displayPrefs.splitLongVerses) return [rawActiveText];
+    // The console already split this verse against this window's real size: show its parts verbatim.
+    const sent = state.verseParts;
+    if (sent && sent.length > 0 && sent.join(" ").replace(/\s+/g, " ") === rawActiveText.trim().replace(/\s+/g, " ")) return sent;
     const style = measureStyle(prefs, fontSize, presentationTheme);
     if (parallelOn) {
       // Two columns: half the safe width each, less the gap (grid-gap 16 / 12 rem units below).
@@ -344,7 +348,7 @@ function ContextLayout({ ctx, state, chapter, parallelChapter, fontSize, prefs, 
     }
     if (ctx === 1 && presentationTheme) {
       // Freeform layout: box is absolutely positioned at the theme percentages.
-      const w = (presentationTheme.verse_box_width / 100) * stage.w;
+      const w = (presentationTheme.verse_box_width / 100) * stage.w * (presentationTheme.verse_box_fill ? 0.976 : 1);
       const h = (presentationTheme.verse_box_height / 100) * stage.h;
       return measureVersePartsDOM(rawActiveText.trim(), w, h, style);
     }
@@ -355,7 +359,7 @@ function ContextLayout({ ctx, state, chapter, parallelChapter, fontSize, prefs, 
     const h = stage.h * activeVh / 100;
     return measureVersePartsDOM(rawActiveText.trim(), w, h, style);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawActiveText, ctx, presentationTheme, fontSize, prefs.lineSpacing, prefs.fontFamily, prefs.textAlign, hPadPct, state.displayPrefs.splitLongVerses, stage.w, stage.h, parallelOn]);
+  }, [rawActiveText, state.verseParts, ctx, presentationTheme, fontSize, prefs.lineSpacing, prefs.fontFamily, prefs.textAlign, hPadPct, state.displayPrefs.splitLongVerses, stage.w, stage.h, parallelOn]);
   const isSplitVerse = activeParts.length > 1;
   const partIdx = state.versePart ?? 0;
   const activeDisplayText = isSplitVerse ? (activeParts[partIdx] ?? activeParts[0]) : rawActiveText;
@@ -486,18 +490,23 @@ function ShrinkingVerseText({ text, maxFontSize, prefs, centered, widen, maxHeig
 }) {
   const presentationTheme = useContext(PresentationThemeContext);
   const stage = useStage();
+  // The text is drawn at maxFontSize x font_scale, so the fit loop has to work in those same pixels.
+  const scale = presentationTheme?.font_scale ?? 1;
+  const maxPx = maxFontSize * scale;
+  // A verse that was split to fit keeps its size; the floor below is only a safety net, so a part
+  // that still overflows (a very long word, a late font load) shrinks a little rather than being cut off.
   const minSize = noShrink
-    ? maxFontSize
+    ? Math.max(14, maxPx * 0.6)
     : presentationTheme
-      ? (presentationTheme.auto_layout ? Math.max(14, maxFontSize * presentationTheme.min_font_scale) : maxFontSize)
+      ? (presentationTheme.auto_layout ? Math.max(14, maxPx * presentationTheme.min_font_scale) : maxPx)
       : 24;
   const { containerRef, textRef, fontSize, widthPct } = useShrinkToFit({
     text,
-    maxSize: maxFontSize,
+    maxSize: maxPx,
     minSize,
     widthRange: widen ? SINGLE_VERSE_WIDTH_RANGE : undefined,
   });
-  const style = makeTextStyle(prefs, fontSize, presentationTheme);
+  const style = { ...makeTextStyle(prefs, maxFontSize, presentationTheme), fontSize: `${fontSize}px` };
   const containerStyle: React.CSSProperties = {
     ...(widen ? { width: `${widthPct}%` } : undefined),
     ...(maxHeightVh ? { maxHeight: `${(stage.h * maxHeightVh) / 100}px` } : undefined),
