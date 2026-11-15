@@ -205,7 +205,7 @@ export default function MembersTable() {
             <button
               onClick={handleRemoveMember}
               disabled={busy}
-              className="btn-primary !bg-error rounded-lg px-3 py-1 font-body-ui text-[12px] font-bold"
+              className="btn-primary !bg-error rounded-lg px-3 py-1 font-body-ui text-[12px] font-medium"
             >
               {busy ? "Removing…" : "Remove member"}
             </button>
@@ -233,7 +233,7 @@ export default function MembersTable() {
             <button
               onClick={handleLeave}
               disabled={busy}
-              className="btn-primary !bg-error rounded-lg px-3 py-1 font-body-ui text-[12px] font-bold"
+              className="btn-primary !bg-error rounded-lg px-3 py-1 font-body-ui text-[12px] font-medium"
             >
               {busy ? "Leaving…" : "Yes, leave team"}
             </button>
@@ -261,7 +261,7 @@ export default function MembersTable() {
             <button
               onClick={handleTransferOwnership}
               disabled={busy}
-              className="btn-primary rounded-lg px-3 py-1 font-body-ui text-[12px] font-bold"
+              className="btn-primary rounded-lg px-3 py-1 font-body-ui text-[12px] font-medium"
             >
               {busy ? "Transferring…" : "Confirm transfer"}
             </button>

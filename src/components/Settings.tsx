@@ -22,7 +22,7 @@ const EXIT_MS = 180;
 const FONT_SIZE_PRESETS = [14, 16, 32, 48, 64, 72, 98];
 
 const DEFAULT_PREFS: Preferences = {
-  theme: "light",
+  theme: "dark",
   font_size_reading: 18,
   show_strongs: true,
   show_morph: false,
@@ -44,7 +44,7 @@ const DEFAULT_PREFS: Preferences = {
   default_lexicon_source: "ours",
   workspace: "study",
   split_long_verses: false,
-  accent: "ink",
+  accent: "yarda",
 };
 
 const FONTS: { id: DisplayPrefs["fontFamily"]; label: string }[] = [

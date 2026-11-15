@@ -66,9 +66,9 @@ export default function CountdownPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="flex gap-2">
-        {idle && <button onClick={s.start} className="flex-1 h-9 rounded-md btn-primary font-body-ui text-[13px] font-bold">Start</button>}
+        {idle && <button onClick={s.start} className="flex-1 h-9 rounded-md btn-primary font-body-ui text-[13px] font-medium">Start</button>}
         {s.status === "running" && <button onClick={s.pause} className="flex-1 h-9 rounded-md ctl font-body-ui text-[13px] font-bold text-on-surface">Pause</button>}
-        {s.status === "paused" && <button onClick={s.resume} className="flex-1 h-9 rounded-md btn-primary font-body-ui text-[13px] font-bold">Resume</button>}
+        {s.status === "paused" && <button onClick={s.resume} className="flex-1 h-9 rounded-md btn-primary font-body-ui text-[13px] font-medium">Resume</button>}
         <button onClick={s.reset} disabled={s.status === "idle"} className="h-9 px-4 rounded-md ctl font-body-ui text-[13px] text-on-surface disabled:opacity-40">Reset</button>
       </div>
 

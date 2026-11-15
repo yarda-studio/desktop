@@ -81,7 +81,7 @@ export default function ProGate({
         <button
           onClick={handleUpgrade}
           disabled={upgrading}
-          className="btn-primary rounded-lg px-3 py-1 font-body-ui text-[11px] font-bold shrink-0 disabled:opacity-40"
+          className="btn-primary rounded-lg px-3 py-1 font-body-ui text-[11px] font-medium shrink-0 disabled:opacity-40"
         >
           {upgrading ? "Opening…" : "Upgrade"}
         </button>
@@ -104,7 +104,7 @@ export default function ProGate({
       <button
         onClick={handleUpgrade}
         disabled={upgrading}
-        className="btn-primary rounded-xl px-5 py-2.5 font-body-ui text-[13px] font-bold shadow-xs hover:opacity-95 disabled:opacity-40 mt-1"
+        className="btn-primary rounded-xl px-5 py-2.5 font-body-ui text-[13px] font-medium shadow-xs hover:opacity-95 disabled:opacity-40 mt-1"
       >
         {upgrading ? "Launching checkout…" : `Upgrade to ${info.targetPlan === "team" ? "Team" : "Pro"}`}
       </button>

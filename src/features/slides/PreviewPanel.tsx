@@ -18,7 +18,7 @@ export default function PreviewPanel({ stage }: { stage: { w: number; h: number 
         <button
           onClick={() => void goLive()}
           disabled={!previewSlide || alreadyLive}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md btn-primary font-body-ui text-[13px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md btn-primary font-body-ui text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
           title="Send the previewed slide live (or double-click it in the schedule)"
         >
           <span className="material-symbols-outlined text-[16px]">play_arrow</span>

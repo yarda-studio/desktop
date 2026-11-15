@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import logoUrl from "../../assets/logo.png";
 import { useDialogA11y } from "../../hooks/useDialogA11y";
 import { stepsFor, type TourDepth, type TourWorkspace } from "./steps";
 
@@ -46,9 +47,10 @@ export default function WelcomeScreen({ onDone }: Props) {
         tabIndex={-1}
         className="w-full max-w-[760px] glass glass-strong rounded-3xl p-8 my-auto outline-none"
       >
-        <div className="text-center mb-7">
+        <div className="text-center mb-7 flex flex-col items-center">
+          <img src={logoUrl} alt="Yarda" className="w-14 h-14 object-contain mb-2 drop-shadow-sm" />
           <p className="font-headline-md text-headline-md font-bold text-primary select-none">Yarda</p>
-          <h1 id="welcome-title" className="font-headline-md text-headline-md text-on-surface mt-2">
+          <h1 id="welcome-title" className="font-headline-md text-headline-md text-on-surface mt-1">
             How will you use Yarda?
           </h1>
           <p className="font-body-ui text-body-ui text-on-surface-variant mt-1.5">

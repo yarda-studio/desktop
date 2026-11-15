@@ -78,7 +78,7 @@ export default function AcceptInviteDialog({ onClose }: Props) {
             <button
               type="submit"
               disabled={loading || !token.trim()}
-              className="btn-primary rounded-lg px-4 py-1.5 text-[12px] font-bold font-body-ui disabled:opacity-40"
+              className="btn-primary rounded-lg px-4 py-1.5 text-[12px] font-medium font-body-ui disabled:opacity-40"
             >
               {loading ? "Joining team…" : "Join organization"}
             </button>

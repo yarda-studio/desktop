@@ -407,10 +407,9 @@ export default function ReadingView() {
                     normally never hides that the actual output is overridden. */}
                 {presentationActive && (liveEmergency || liveBlack) && (
                   <span
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-error text-on-error font-body-ui text-[12px] font-bold"
+                    className="badge-live"
                     title={liveEmergency ? "The output window is showing the emergency standby screen" : "The output window is blacked out"}
                   >
-                    <span className="material-symbols-outlined text-[14px]">{liveEmergency ? "emergency" : "brightness_1"}</span>
                     {liveEmergency ? "Emergency" : "Black"}
                   </span>
                 )}

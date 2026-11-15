@@ -4,6 +4,13 @@ All notable changes to Scriptura are listed here, newest first.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-15
+
+### Changed
+- **Reading column follows the design spec.** Scripture text is capped at a 680px column and set at 19px; verse numbers and mono labels are 11px.
+- **Strong's tags are gold.** The Strong's number in the lexicon panel and the word tags in the reader use the gold tag style.
+- **Live badge and primary buttons are consistent.** The emergency/blackout badge uses a shared pulsing-dot style, and primary buttons share one radius, height and weight.
+
 ## [0.7.1] - 2026-11-15
 
 ### Changed

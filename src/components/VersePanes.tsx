@@ -62,8 +62,9 @@ export function PrimaryPane({
   if (error) return <div className="flex-1 p-8"><p className="font-body-ui text-body-ui text-error">{error}</p></div>;
   if (!chapter) return <div className="flex-1 flex items-center justify-center"><span className="font-body-ui text-body-ui text-on-surface-variant">Select a module to begin reading.</span></div>;
 
-  const maxWidth = fullscreen ? "100%" : "1100px";
   const horizPadding = `max(16px, ${displayPrefs.margins / 2}%)`;
+  // Design spec: the reading column never exceeds 680px (padding sits outside it).
+  const maxWidth = fullscreen ? "100%" : `calc(680px + 2 * ${horizPadding})`;
   const textStyle: React.CSSProperties = {
     fontSize: `${readingFontSize}px`,
     // Strong's underlines sit between lines, so give them extra room.
@@ -121,7 +122,7 @@ export function ParallelPane({ chapter, onStrongsClick, showStrongs, readingFont
   };
   return (
     <div ref={scrollContainerRef as React.RefObject<HTMLDivElement>} className="flex-1 overflow-y-auto">
-      <div className="max-w-[1100px] mx-auto w-full py-8 space-y-4" style={{ paddingLeft: horizPadding, paddingRight: horizPadding }}>
+      <div className="mx-auto w-full py-8 space-y-4" style={{ maxWidth: `calc(680px + 2 * ${horizPadding})`, paddingLeft: horizPadding, paddingRight: horizPadding }}>
         <h2 className="font-headline-md text-headline-md text-primary mb-4 pb-2">
           {chapter.module_id}
         </h2>
@@ -222,7 +223,7 @@ export const VerseRow = memo(function VerseRow({
                   title={strongsNumbers.length === 1 ? "Double-click to look up in concordance" : "Double-click to look up this phrase's Strong's numbers"}
                   onDoubleClick={(e) => { e.stopPropagation(); onStrongsClick(strongsNumbers); }}
                 >
-                  <span className="strongs-tag absolute -top-3 left-1/2 -translate-x-1/2 flex gap-1 whitespace-nowrap font-metadata-mono text-[12px] text-secondary opacity-0 transition-opacity">
+                  <span className="strongs-tag absolute -top-3 left-1/2 -translate-x-1/2 flex gap-1 whitespace-nowrap font-metadata-mono text-[11px] tracking-[0.05em] text-gold opacity-0 transition-opacity">
                     {strongsNumbers.map((strongs) => (
                       <button
                         key={strongs}

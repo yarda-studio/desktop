@@ -26,7 +26,7 @@ export default function PreviewPanel({ stage }: { stage: { w: number; h: number 
         <button
           onClick={() => goLive()}
           disabled={!slide || alreadyLive}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md btn-primary font-body-ui text-[13px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md btn-primary font-body-ui text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
           title="Send the previewed slide live (or double-click it)"
           aria-label="Go Live"
         >

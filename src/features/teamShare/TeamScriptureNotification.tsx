@@ -161,7 +161,7 @@ export default function TeamScriptureNotification({
 
             <button
               onClick={handleSendLive}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[12px] font-body-ui font-bold btn-primary transition-all shadow-xs"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[12px] font-body-ui font-medium btn-primary transition-all shadow-xs"
               title="Send directly to the live presentation screen"
             >
               <span className="material-symbols-outlined !text-[15px]">play_arrow</span>

@@ -155,7 +155,7 @@ export default function TeamShareModal() {
           <button
             onClick={handleSend}
             disabled={sending}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-body-ui font-bold btn-primary disabled:opacity-50"
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-body-ui font-medium btn-primary disabled:opacity-50"
           >
             <span className="material-symbols-outlined !text-[16px]">send</span>
             <span>{sending ? "Sending…" : "Send Scripture"}</span>

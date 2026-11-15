@@ -184,7 +184,7 @@ export default function OrgSettingsPanel() {
             {isAdmin && (
               <button
                 onClick={() => openPortal(currentOrgId ?? undefined)}
-                className="btn-primary rounded-lg px-3 py-1 font-body-ui text-[11px] font-bold shrink-0"
+                className="btn-primary rounded-lg px-3 py-1 font-body-ui text-[11px] font-medium shrink-0"
               >
                 Update payment
               </button>
@@ -264,7 +264,7 @@ export default function OrgSettingsPanel() {
                   <button
                     type="submit"
                     disabled={savingGeneral || !name.trim()}
-                    className="btn-primary rounded-xl px-4 py-2 font-body-ui text-[13px] font-bold disabled:opacity-40"
+                    className="btn-primary rounded-xl px-4 py-2 font-body-ui text-[13px] font-medium disabled:opacity-40"
                   >
                     {savingGeneral ? "Saving…" : "Save changes"}
                   </button>
@@ -317,7 +317,7 @@ export default function OrgSettingsPanel() {
                     <button
                       disabled={isFull}
                       onClick={() => setInviteOpen(true)}
-                      className="btn-primary rounded-lg px-3.5 py-1.5 font-body-ui text-[12px] font-bold flex items-center gap-1 disabled:opacity-40"
+                      className="btn-primary rounded-lg px-3.5 py-1.5 font-body-ui text-[12px] font-medium flex items-center gap-1 disabled:opacity-40"
                     >
                       <span className="material-symbols-outlined text-[16px]">person_add</span>
                       Invite
@@ -339,7 +339,7 @@ export default function OrgSettingsPanel() {
                 </p>
                 <button
                   onClick={() => setInviteOpen(true)}
-                  className="btn-primary rounded-lg px-3 py-1.5 font-body-ui text-[12px] font-bold flex items-center gap-1"
+                  className="btn-primary rounded-lg px-3 py-1.5 font-body-ui text-[12px] font-medium flex items-center gap-1"
                 >
                   <span className="material-symbols-outlined text-[16px]">add</span>
                   Create invite
@@ -475,7 +475,7 @@ export default function OrgSettingsPanel() {
                 </div>
                 <button
                   onClick={() => openCheckout("team", currentOrgId ?? undefined, seatLimit + 5)}
-                  className="btn-primary rounded-lg px-3.5 py-1.5 font-body-ui text-[12px] font-bold"
+                  className="btn-primary rounded-lg px-3.5 py-1.5 font-body-ui text-[12px] font-medium"
                 >
                   Add 5 seats
                 </button>

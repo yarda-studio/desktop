@@ -253,6 +253,10 @@ html, body {
   .btn-primary {
     background: rgb(var(--col-primary));
     color: rgb(var(--col-on-primary));
+    border-radius: 8px;
+    min-height: 32px;
+    font-size: 14px;
+    font-weight: 500;
     transition: filter 150ms ease, transform 150ms ease;
   }
   .btn-primary:hover { filter: brightness(1.08); }
@@ -262,6 +266,46 @@ html, body {
     background: var(--live-gradient);
     color: #fff;
     box-shadow: 0 0 18px rgb(var(--col-error) / 0.35);
+  }
+  /* Strong's Concordance / exegesis tag: gold-tinted mono pill */
+  .tag-strongs {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono Variable', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: rgb(var(--col-gold) / 0.12);
+    color: rgb(var(--col-gold));
+  }
+  /* Live presentation badge: pulsing crimson dot on a glass backplate */
+  .badge-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-family: 'Inter Variable', sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(var(--col-on-surface));
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+    backdrop-filter: blur(24px) saturate(150%);
+  }
+  .badge-live::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: rgb(var(--col-error));
+    animation: badge-live-pulse 1.6s ease-in-out infinite;
   }
   /* Keycap-style hint (⌘K, shortcuts) */
   .kbd {
@@ -372,6 +416,7 @@ html, body {
   --dur-fast: 150ms;
   --dur-base: 300ms;
 }
+@keyframes badge-live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes motion-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes motion-rise { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
 @keyframes motion-item { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
@@ -421,7 +466,7 @@ button:not(:disabled):not([role="tab"]):active, [role="button"]:not([aria-disabl
 
 @media (prefers-reduced-motion: reduce) {
   .motion-view > *, .motion-backdrop, .motion-backdrop > :first-child, .motion-item,
-  .motion-from-left, .motion-from-right, .motion-swap, .motion-fade, .motion-pop { animation: none; }
+  .motion-from-left, .motion-from-right, .motion-swap, .motion-fade, .motion-pop, .badge-live::before { animation: none; }
   .presentation-transition-fade, .presentation-transition-slide, .settings-pane-in { animation: none; }
   *, *::before, *::after {
     transition-duration: 0.01ms !important;

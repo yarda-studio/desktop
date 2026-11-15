@@ -4,52 +4,54 @@
 /* Yarda brand (default), exact logo colours:
    olive #628937 (98 137 55) · sage #88AB81 (136 171 129) · deep forest #1D400B (29 64 11)
    ink #0B171B (11 23 27) · white #FDFDFD (253 253 253).
-   The accent follows the mode: deep forest on the light background (about 11.7:1 against white),
-   sage on the dark one (about 7.4:1 against ink). Olive stays as the supporting shade. */
+   Light mode uses an organic warm bone canvas (#F8F9F5 / #FDFDFB) with rich Yarda olive (#3E5724)
+   for primary actions/accents (7.9:1 contrast, AAA) and soft sage (#E0EBDE) containers.
+   Dark mode uses continuous ink (#0B171B) with sage (#88AB81) accents and deep forest (#1D400B) containers. */
 [data-accent="yarda"] {
-  --col-primary: 29 64 11;                 /* #1D400B deep forest */
-  --col-on-primary: 253 253 253;           /* #FDFDFD */
-  --col-primary-container: 136 171 129;    /* #88AB81 */
-  --col-on-primary-container: 29 64 11;    /* #1D400B */
-  --col-primary-fixed: 136 171 129;        /* #88AB81 */
-  --col-primary-fixed-dim: 98 137 55;      /* #628937 */
+  --col-primary: 62 87 36;                 /* #3E5724 rich Yarda olive (AAA contrast 7.9:1 on bone) */
+  --col-on-primary: 253 253 251;           /* #FDFDFB bone white */
+  --col-primary-container: 224 235 222;    /* #E0EBDE soft sage container (sage-100) */
+  --col-on-primary-container: 29 64 11;    /* #1D400B deep forest text on sage (9.5:1 contrast) */
+  --col-primary-fixed: 224 235 222;        /* #E0EBDE */
+  --col-primary-fixed-dim: 98 137 55;      /* #628937 brand olive */
   --col-on-primary-fixed: 29 64 11;        /* #1D400B */
-  --col-on-primary-fixed-variant: 29 64 11;
-  --col-secondary-container: 136 171 129;  /* #88AB81 */
+  --col-on-primary-fixed-variant: 62 87 36;/* #3E5724 */
+  --col-secondary: 78 94 77;               /* #4E5E4D muted forest slate */
+  --col-on-secondary: 253 253 251;         /* #FDFDFB */
+  --col-secondary-container: 236 241 234;  /* #ECF1EA soft sage tint */
   --col-on-secondary-container: 29 64 11;  /* #1D400B */
-  --col-surface-tint: 29 64 11;
+  --col-surface-tint: 62 87 36;
   --col-inverse-primary: 136 171 129;
-  --blob-1: rgba(29, 64, 11, 0.10);
+  --blob-1: rgba(98, 137, 55, 0.12);
+  --blob-2: rgba(136, 171, 129, 0.12);
+  --blob-3: rgba(62, 87, 36, 0.08);
 
-  /* Backgrounds: canvas + surface are exact #FDFDFD; the container steps are ink #0B171B
-     mixed into white (4/7/11/15%) so layers stay distinguishable. */
-  --hairline: rgba(11, 23, 27, 0.08);
-  --glass-bg: rgba(253, 253, 253, 0.72);
-  --glass-strong-bg: rgba(253, 253, 253, 0.97);
-  --glass-shadow: 0 8px 32px -4px rgba(11, 23, 27, 0.12);
-  --col-background: 253 253 253;                 /* #FDFDFD */
-  --col-surface: 253 253 253;
-  --col-surface-bright: 253 253 253;
-  --col-surface-dim: 243 244 244;
-  --col-surface-variant: 226 228 228;
-  --col-surface-container-lowest: 253 253 253;
-  --col-surface-container-low: 248 249 249;
-  --col-surface-container: 243 244 244;
-  --col-surface-container-high: 236 237 237;
-  --col-surface-container-highest: 226 228 228;
-  --col-on-surface: 11 23 27;                    /* #0B171B */
-  --col-on-background: 11 23 27;
-  --col-on-surface-variant: 96 104 106;
-  --col-outline: 120 127 129;
-  --col-outline-variant: 226 228 228;
-  --col-inverse-surface: 11 23 27;
-  --col-inverse-on-surface: 253 253 253;
-  --col-secondary: 96 104 106;
-  --col-on-secondary: 253 253 253;
-  --col-secondary-fixed: 236 237 237;
-  --col-secondary-fixed-dim: 217 218 219;
-  --col-on-secondary-fixed: 11 23 27;
-  --col-on-secondary-fixed-variant: 70 80 82;
+  /* Backgrounds: warm organic bone canvas + paper surface with subtle sage-tinted steps. */
+  --hairline: rgba(29, 64, 11, 0.08);
+  --glass-bg: rgba(253, 253, 251, 0.82);
+  --glass-strong-bg: rgba(253, 253, 251, 0.98);
+  --glass-shadow: 0 8px 32px -4px rgba(29, 64, 11, 0.08);
+  --col-background: 248 249 245;                 /* #F8F9F5 warm bone canvas */
+  --col-surface: 253 253 251;                    /* #FDFDFB crisp bone paper */
+  --col-surface-bright: 255 255 255;
+  --col-surface-dim: 244 246 240;
+  --col-surface-variant: 232 236 226;
+  --col-surface-container-lowest: 255 255 255;
+  --col-surface-container-low: 248 249 245;
+  --col-surface-container: 243 245 239;
+  --col-surface-container-high: 236 239 231;
+  --col-surface-container-highest: 227 232 221;
+  --col-on-surface: 14 26 15;                    /* #0E1A0F deep forest ink (16.9:1 contrast) */
+  --col-on-background: 14 26 15;
+  --col-on-surface-variant: 78 94 77;            /* #4E5E4D muted slate (6.8:1 contrast) */
+  --col-outline: 133 154 128;                    /* #859A80 forest-400 */
+  --col-outline-variant: 227 232 221;            /* #E3E8DD forest-100 hairline */
+  --col-inverse-surface: 14 26 15;
+  --col-inverse-on-surface: 253 253 251;
+  --col-secondary-fixed: 236 239 231;
+  --col-secondary-fixed-dim: 217 223 210;
+  --col-on-secondary-fixed: 14 26 15;
+  --col-on-secondary-fixed-variant: 58 72 57;
 }
 
 .dark[data-accent="yarda"] {
@@ -65,7 +67,9 @@
   --col-on-secondary-container: 136 171 129; /* #88AB81 */
   --col-surface-tint: 136 171 129;
   --col-inverse-primary: 29 64 11;
-  --blob-1: rgba(136, 171, 129, 0.16);
+  --blob-1: rgba(29, 64, 11, 0.40);
+  --blob-2: rgba(98, 137, 55, 0.22);
+  --blob-3: rgba(136, 171, 129, 0.16);
 
   /* Backgrounds: canvas is exact ink #0B171B; raised layers step toward white. */
   --hairline: rgba(253, 253, 253, 0.07);

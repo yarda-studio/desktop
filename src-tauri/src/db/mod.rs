@@ -2281,7 +2281,7 @@ fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
 const SCHEMA_TABLES: &str = r#"
 CREATE TABLE IF NOT EXISTS preferences (
     id INTEGER PRIMARY KEY DEFAULT 1,
-    theme TEXT NOT NULL DEFAULT 'light',
+    theme TEXT NOT NULL DEFAULT 'dark',
     font_size_reading INTEGER NOT NULL DEFAULT 18,
     show_strongs INTEGER NOT NULL DEFAULT 1,
     show_morph INTEGER NOT NULL DEFAULT 0,
@@ -2474,10 +2474,9 @@ const SCHEMA_V15_SCROLL_V_PADDING: &str = r#"
 ALTER TABLE presentation_themes ADD COLUMN scroll_v_padding INTEGER NOT NULL DEFAULT 32;
 "#;
 
-/// v16: app accent colour preset (the app's "primary" hue). Existing installs
-/// keep the original indigo.
+/// v16: app accent colour preset (the app's "primary" hue).
 const SCHEMA_V16_ACCENT: &str = r#"
-ALTER TABLE preferences ADD COLUMN accent TEXT NOT NULL DEFAULT 'indigo';
+ALTER TABLE preferences ADD COLUMN accent TEXT NOT NULL DEFAULT 'yarda';
 "#;
 
 /// v17: live-output text styling moves from the global display preferences into
@@ -2976,7 +2975,7 @@ mod tests {
         // No row yet — falls back to Preferences::default() rather than erroring.
         let defaults = db.get_preferences().unwrap();
         assert_eq!(defaults.theme, Preferences::default().theme);
-        assert_eq!(defaults.accent, "ink");
+        assert_eq!(defaults.accent, "yarda");
 
         db.update_preferences(&serde_json::json!({
             "theme": "dark",

@@ -271,7 +271,7 @@ pub struct Preferences {
     /// so each part fits the presentation screen at the configured font size
     /// without excessive shrinking.
     pub split_long_verses: bool,
-    /// App accent colour preset ("ink", "indigo", "blue", "teal", "green", "gold",
+    /// App accent colour preset ("yarda", "ink", "indigo", "blue", "teal", "green", "gold",
     /// "orange" or "rose") — see src/lib/accents.ts and styles/accents.css.
     pub accent: String,
 }
@@ -407,7 +407,7 @@ fn default_theme_image_dim() -> f64 {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
-            theme: "light".into(),
+            theme: "dark".into(),
             font_size_reading: 18,
             show_strongs: true,
             show_morph: false,
@@ -434,7 +434,7 @@ impl Default for Preferences {
             default_lexicon_source: "ours".into(),
             workspace: "study".into(),
             split_long_verses: false,
-            accent: "ink".into(),
+            accent: "yarda".into(),
         }
     }
 }

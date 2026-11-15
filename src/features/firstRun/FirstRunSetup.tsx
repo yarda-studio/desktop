@@ -1,4 +1,5 @@
 import { useFirstRunSetup, type SetupStep } from "./useFirstRunSetup";
+import logoUrl from "../../assets/logo.png";
 
 interface Props {
   required: string[];
@@ -23,9 +24,10 @@ export default function FirstRunSetup({ required, installed, onComplete, onSkip 
     // No top bar here, so the empty background is what drags the window (see tauri.conf.json: no native title bar).
     <div data-tauri-drag-region className="fixed inset-0 z-[100] ambient flex items-center justify-center p-6 overflow-y-auto">
       <div className="w-full max-w-[520px] my-auto" role="status" aria-live="polite">
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 flex flex-col items-center">
+          <img src={logoUrl} alt="Yarda" className="w-14 h-14 object-contain mb-3 drop-shadow-sm" />
           <p className="font-headline-md text-headline-md font-bold text-primary select-none">Yarda</p>
-          <p className="font-body-ui text-body-ui text-on-surface-variant mt-3 leading-relaxed">
+          <p className="font-body-ui text-body-ui text-on-surface-variant mt-2 leading-relaxed">
             Yarda is a free, open-source Bible study app, and it works offline once your library is in place.
             Study the text, follow words back to the Greek and Hebrew, and present it on screen at church.
           </p>

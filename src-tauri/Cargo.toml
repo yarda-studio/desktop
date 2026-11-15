@@ -1,6 +1,6 @@
 [package]
 name = "yarda"
-version = "0.6.0"
+version = "0.7.2"
 description = "Yarda — desktop Bible study app"
 authors = []
 license = "MIT"

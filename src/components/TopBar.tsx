@@ -1,5 +1,6 @@
 import { forPlatform, IS_MAC, MAC_WINDOW_BUTTONS_WIDTH } from "../lib/platform";
 import { useEffect, useRef } from "react";
+import logoUrl from "../assets/logo.png";
 import { useAppStore, type Theme } from "../store/app";
 import { api } from "../lib/tauri";
 import ScriptureNav from "./ScriptureNav";
@@ -83,9 +84,19 @@ export default function TopBar() {
       {/* The bar is also the window's title bar (there is no separate one), so its empty parts drag the window. */}
       <div data-tauri-drag-region aria-hidden="true" className="absolute inset-0 -z-10" />
       {/* Left: logo + current reading position */}
-      <div data-tauri-drag-region className="flex items-center gap-4">
+      <div data-tauri-drag-region className="flex items-center gap-2.5">
         <button
-          className="ctl rounded-lg px-3 py-1 text-on-surface font-semibold font-body-ui text-[13px]"
+          onClick={() => setView("reading")}
+          className="flex items-center gap-2 rounded-lg py-1 px-1.5 hover:bg-surface-variant/30 transition-colors group"
+          title="Yarda Library"
+          aria-label="Yarda Library"
+        >
+          <img src={logoUrl} alt="Yarda" className="w-5 h-5 object-contain" />
+          <span className="font-semibold text-primary font-body-ui text-[13px] tracking-tight">Yarda</span>
+        </button>
+        <div className="h-4 w-px bg-outline-variant/60" aria-hidden="true" />
+        <button
+          className="ctl rounded-lg px-2.5 py-1 text-on-surface font-semibold font-body-ui text-[13px]"
           onClick={() => setView("reading")}
         >
           {refLabel}

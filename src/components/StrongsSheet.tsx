@@ -767,7 +767,7 @@ export default function StrongsSheet({ docked = false, output }: {
                     )}
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-metadata-mono text-[12px] tracking-wide">
+                    <span className="tag-strongs">
                       Strong's {entry.number}
                     </span>
                     {entry.part_of_speech && (

@@ -95,7 +95,7 @@ export default function InviteDialog({ onClose }: Props) {
                 />
                 <button
                   onClick={() => handleCopy(generatedToken)}
-                  className="btn-primary rounded-lg px-3 py-1.5 text-[12px] font-bold"
+                  className="btn-primary rounded-lg px-3 py-1.5 text-[12px] font-medium"
                 >
                   {copied ? "Copied!" : "Copy"}
                 </button>
@@ -122,7 +122,7 @@ export default function InviteDialog({ onClose }: Props) {
             </div>
 
             <div className="pt-2 flex justify-end">
-              <button onClick={onClose} className="btn-primary rounded-lg px-4 py-1.5 text-[13px] font-bold">
+              <button onClick={onClose} className="btn-primary rounded-lg px-4 py-1.5 text-[13px] font-medium">
                 Done
               </button>
             </div>
@@ -213,7 +213,7 @@ export default function InviteDialog({ onClose }: Props) {
               <button
                 type="submit"
                 disabled={loading}
-                className="btn-primary rounded-lg px-4 py-1.5 text-[12px] font-bold font-body-ui disabled:opacity-40"
+                className="btn-primary rounded-lg px-4 py-1.5 text-[12px] font-medium font-body-ui disabled:opacity-40"
               >
                 {loading ? "Generating…" : "Create invite"}
               </button>
