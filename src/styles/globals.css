@@ -379,15 +379,18 @@ html, body {
 @keyframes motion-right { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
 @keyframes motion-swap { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 
+/* Fill mode is `backwards`, never `both`/`forwards`: every animation here ends in the element's normal
+   state, so holding it afterwards does nothing except keep the element (for .motion-view, the whole
+   screen) on its own animated layer, where text can render softer than normal page text. */
 /* Opacity only: a transform here would trap fixed-position children while it runs. */
-.motion-view > * { animation: motion-fade 280ms ease-out both; }
-.motion-backdrop { animation: motion-fade 240ms ease-out both; }
-.motion-backdrop > :first-child { animation: motion-rise 320ms var(--ease-out) both; }
-.motion-item { animation: motion-item var(--dur-base) var(--ease-out) both; }
-.motion-from-left { animation: motion-left var(--dur-base) var(--ease-out) both; }
-.motion-from-right { animation: motion-right var(--dur-base) var(--ease-out) both; }
-.motion-swap { animation: motion-swap 240ms var(--ease-out) both; }
-.motion-fade { animation: motion-fade 240ms ease-out both; }
+.motion-view > * { animation: motion-fade 280ms ease-out backwards; }
+.motion-backdrop { animation: motion-fade 240ms ease-out backwards; }
+.motion-backdrop > :first-child { animation: motion-rise 320ms var(--ease-out) backwards; }
+.motion-item { animation: motion-item var(--dur-base) var(--ease-out) backwards; }
+.motion-from-left { animation: motion-left var(--dur-base) var(--ease-out) backwards; }
+.motion-from-right { animation: motion-right var(--dur-base) var(--ease-out) backwards; }
+.motion-swap { animation: motion-swap 240ms var(--ease-out) backwards; }
+.motion-fade { animation: motion-fade 240ms ease-out backwards; }
 
 /* Every button, everywhere: colour changes ease instead of snapping, and a press gives a small
    physical dip. This is the floor; a component that sets its own transition classes keeps them
@@ -414,7 +417,7 @@ button:not(:disabled):not([role="tab"]):active, [role="button"]:not([aria-disabl
 @container (max-width: 160px) { .seg .seg-count { display: none; } .seg .seg-tab { padding-inline: 4px; } }
 /* Menus and popovers grow out of the control that opened them. */
 @keyframes motion-pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
-.motion-pop { transform-origin: top right; animation: motion-pop 200ms var(--ease-out) both; }
+.motion-pop { transform-origin: top right; animation: motion-pop 200ms var(--ease-out) backwards; }
 
 @media (prefers-reduced-motion: reduce) {
   .motion-view > *, .motion-backdrop, .motion-backdrop > :first-child, .motion-item,

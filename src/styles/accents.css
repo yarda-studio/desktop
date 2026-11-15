@@ -3,9 +3,11 @@
 
 /* Yarda brand (default), exact logo colours:
    olive #628937 (98 137 55) · sage #88AB81 (136 171 129) · deep forest #1D400B (29 64 11)
-   ink #0B171B (11 23 27) · white #FDFDFD (253 253 253). No derived shades for primary/container. */
+   ink #0B171B (11 23 27) · white #FDFDFD (253 253 253).
+   The accent follows the mode: deep forest on the light background (about 11.7:1 against white),
+   sage on the dark one (about 7.4:1 against ink). Olive stays as the supporting shade. */
 [data-accent="yarda"] {
-  --col-primary: 98 137 55;                /* #628937 */
+  --col-primary: 29 64 11;                 /* #1D400B deep forest */
   --col-on-primary: 253 253 253;           /* #FDFDFD */
   --col-primary-container: 136 171 129;    /* #88AB81 */
   --col-on-primary-container: 29 64 11;    /* #1D400B */
@@ -15,9 +17,9 @@
   --col-on-primary-fixed-variant: 29 64 11;
   --col-secondary-container: 136 171 129;  /* #88AB81 */
   --col-on-secondary-container: 29 64 11;  /* #1D400B */
-  --col-surface-tint: 98 137 55;
+  --col-surface-tint: 29 64 11;
   --col-inverse-primary: 136 171 129;
-  --blob-1: rgba(98, 137, 55, 0.14);
+  --blob-1: rgba(29, 64, 11, 0.10);
 
   /* Backgrounds: canvas + surface are exact #FDFDFD; the container steps are ink #0B171B
      mixed into white (4/7/11/15%) so layers stay distinguishable. */
@@ -51,8 +53,8 @@
 }
 
 .dark[data-accent="yarda"] {
-  --col-primary: 98 137 55;                /* #628937 */
-  --col-on-primary: 253 253 253;           /* #FDFDFD */
+  --col-primary: 136 171 129;              /* #88AB81 sage */
+  --col-on-primary: 11 23 27;              /* #0B171B ink */
   --col-primary-container: 29 64 11;       /* #1D400B */
   --col-on-primary-container: 253 253 253; /* #FDFDFD */
   --col-primary-fixed: 29 64 11;           /* #1D400B */
@@ -62,8 +64,8 @@
   --col-secondary-container: 29 64 11;     /* #1D400B */
   --col-on-secondary-container: 136 171 129; /* #88AB81 */
   --col-surface-tint: 136 171 129;
-  --col-inverse-primary: 98 137 55;
-  --blob-1: rgba(98, 137, 55, 0.18);
+  --col-inverse-primary: 29 64 11;
+  --blob-1: rgba(136, 171, 129, 0.16);
 
   /* Backgrounds: canvas is exact ink #0B171B; raised layers step toward white. */
   --hairline: rgba(253, 253, 253, 0.07);

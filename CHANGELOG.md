@@ -4,6 +4,14 @@ All notable changes to Scriptura are listed here, newest first.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-15
+
+### Changed
+- **The Yarda accent follows the mode.** Deep forest green on the light background and sage green on the dark one, instead of olive in both. Both are well above the recommended text contrast.
+
+### Fixed
+- **Text could look slightly soft.** Switching screens left the finished fade-in attached to the whole screen, which keeps it on its own layer where text can render less sharply. The animation is now released as soon as it finishes.
+
 ## [0.7.0] - 2026-11-15
 
 ### Added
