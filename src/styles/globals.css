@@ -286,6 +286,11 @@ html, body {
   /* Drawers and sheets that sit over busy content: same glass, firmer fill */
   .glass-strong { background: var(--glass-strong-bg); }
 
+  /* Menus, dropdowns and popovers that open over text are positioned (absolute/fixed) glass.
+     At the base 72% fill the words behind show through and collide with the menu's own, so
+     anything that floats gets the firm fill. Static glass (the top bar, panels) keeps the soft one. */
+  .glass.absolute, .glass.fixed { background: var(--glass-strong-bg); }
+
   /* Soft sand / jade / gold blooms behind the glass. Peripheral only:
      scripture is always on a solid surface, never on this. */
   .ambient {
@@ -350,7 +355,70 @@ html, body {
 
 .settings-pane-in { animation: settings-pane-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 
+/* ── Interface motion ──────────────────────────────────────────────────────
+   One small vocabulary so everything moves the same way: quick (150ms) for
+   hover/press feedback, 180–240ms for things appearing, always ease-out so a
+   thing arrives fast and settles. Motion only ever shows where something came
+   from or went; it never loops or delays an action. All of it is switched off
+   under prefers-reduced-motion (see the block below).
+     .motion-view      fade the screen in when the main view changes
+     .motion-backdrop  dim fades in and its first child (the dialog) rises in
+     .motion-item      a list row appears (added to a schedule, plan, queue…)
+     .motion-from-left / .motion-from-right  a panel slides in from that side
+     .motion-swap      content that changes in place (now/next line, counts)
+   ──────────────────────────────────────────────────────────────────────── */
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 150ms;
+  --dur-base: 300ms;
+}
+@keyframes motion-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes motion-rise { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes motion-item { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes motion-left { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+@keyframes motion-right { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@keyframes motion-swap { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* Opacity only: a transform here would trap fixed-position children while it runs. */
+.motion-view > * { animation: motion-fade 280ms ease-out both; }
+.motion-backdrop { animation: motion-fade 240ms ease-out both; }
+.motion-backdrop > :first-child { animation: motion-rise 320ms var(--ease-out) both; }
+.motion-item { animation: motion-item var(--dur-base) var(--ease-out) both; }
+.motion-from-left { animation: motion-left var(--dur-base) var(--ease-out) both; }
+.motion-from-right { animation: motion-right var(--dur-base) var(--ease-out) both; }
+.motion-swap { animation: motion-swap 240ms var(--ease-out) both; }
+.motion-fade { animation: motion-fade 240ms ease-out both; }
+
+/* Every button, everywhere: colour changes ease instead of snapping, and a press gives a small
+   physical dip. This is the floor; a component that sets its own transition classes keeps them
+   (utility classes outrank this element rule). Uses the `scale` property rather than `transform`,
+   so it never fights a button's own positioning transform. Disabled buttons and tabs (which have
+   their own glide) are left alone. Reduced motion zeroes the durations below. */
+button, [role="button"] {
+  transition-property: color, background-color, border-color, box-shadow, opacity, scale;
+  transition-duration: 160ms;
+  transition-timing-function: ease;
+}
+button:not(:disabled):not([role="tab"]):active, [role="button"]:not([aria-disabled="true"]):active { scale: 0.98; }
+
+/* Centred page column: header and body of a section use the same gutters, so their content lines up
+   and sits in the middle of the window (a 56rem column, never narrower than 1rem/1.5rem of margin). */
+.page-gutter { padding-inline: max(1rem, calc((100% - 56rem) / 2)); }
+@media (min-width: 1024px) { .page-gutter { padding-inline: max(1.5rem, calc((100% - 56rem) / 2)); } }
+
+/* Segmented switch (Plan | Schedule): two equal tabs. In a tight column the icon and
+   count step aside first, so the two names are always whole and readable. */
+.seg { container-type: inline-size; }
+.seg-tabs { display: grid; grid-template-columns: 1fr 1fr; }
+@container (max-width: 210px) { .seg .seg-ico { display: none; } }
+@container (max-width: 160px) { .seg .seg-count { display: none; } .seg .seg-tab { padding-inline: 4px; } }
+/* Menus and popovers grow out of the control that opened them. */
+@keyframes motion-pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+.motion-pop { transform-origin: top right; animation: motion-pop 200ms var(--ease-out) both; }
+
 @media (prefers-reduced-motion: reduce) {
+  .motion-view > *, .motion-backdrop, .motion-backdrop > :first-child, .motion-item,
+  .motion-from-left, .motion-from-right, .motion-swap, .motion-fade, .motion-pop { animation: none; }
   .presentation-transition-fade, .presentation-transition-slide, .settings-pane-in { animation: none; }
   *, *::before, *::after {
     transition-duration: 0.01ms !important;

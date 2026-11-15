@@ -738,11 +738,10 @@ export default function LiveShowRunner() {
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* ── Schedule (queue) ── */}
         <section data-tour="live-schedule" style={{ width: queueW.size }} className="shrink min-w-0 max-w-[32%] flex flex-col overflow-hidden panel rounded-3xl">
-          <ErrorBoundary compact label="Service plan">
-            <PlanSection />
-          </ErrorBoundary>
-          <div className="shrink-0 flex items-center justify-between gap-3 px-3.5 py-2.5 border-b border-outline-variant">
-            <h2 className="font-body-ui text-[13px] font-bold text-on-surface shrink-0">Schedule</h2>
+          <ErrorBoundary compact label="Plan and schedule">
+          <PlanSection scheduleCount={serviceOrder.length}>
+          <div className="shrink-0 flex items-center justify-between gap-3 px-3 py-2 border-b border-outline-variant">
+            <span className="font-body-ui text-[12px] text-on-surface-variant shrink-0">{serviceOrder.length} {serviceOrder.length === 1 ? "item" : "items"} queued</span>
             <div className="flex items-center gap-2 whitespace-nowrap">
               <button
                 onClick={() => setServiceOrderOpen(true)}
@@ -764,7 +763,7 @@ export default function LiveShowRunner() {
               )}
             </div>
           </div>
-          <div data-tour="live-schedule-list" className="flex-1 min-h-0 overflow-y-auto p-1.5">
+          <div data-tour="live-schedule-list" className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
             {serviceOrder.length === 0 ? (
               <div className="p-4 text-center">
                 <p className="font-body-ui text-[12px] text-on-surface-variant leading-relaxed">
@@ -777,7 +776,7 @@ export default function LiveShowRunner() {
                   const isSelected = activeQueueItemId ? item.id === activeQueueItemId : idx === previewQueueIndex;
                   const isLive = itemContainsRef(item, currentRef);
                   return (
-                    <li key={item.id}>
+                    <li key={item.id} className="motion-item">
                       <button
                         onClick={() => selectQueueItem(item)}
                         onDoubleClick={() => {
@@ -809,6 +808,8 @@ export default function LiveShowRunner() {
               </ul>
             )}
           </div>
+          </PlanSection>
+          </ErrorBoundary>
         </section>
 
         <ResizeHandle spaced axis="x" label="schedule" dragging={queueW.dragging} handleProps={queueW.handleProps} />

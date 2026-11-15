@@ -37,7 +37,7 @@ export default function WelcomeScreen({ onDone }: Props) {
   }), [mode]);
 
   return (
-    <div className="fixed inset-0 z-[90] bg-black/60 flex items-center justify-center p-6 overflow-y-auto">
+    <div className="motion-backdrop fixed inset-0 z-[90] bg-black/60 flex items-center justify-center p-6 overflow-y-auto">
       <div
         ref={ref}
         role="dialog"

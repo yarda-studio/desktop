@@ -18,8 +18,12 @@ use tauri::Manager;
 /// The configured 1280x800 window is larger than many screens once display scaling is applied,
 /// which left the app cut off at first launch. Shrink it to fit the monitor's usable area.
 fn fit_main_window_to_screen(app: &tauri::App) {
-    let Some(win) = app.get_webview_window("main") else { return };
-    let Ok(Some(monitor)) = win.current_monitor() else { return };
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    let Ok(Some(monitor)) = win.current_monitor() else {
+        return;
+    };
     let scale = monitor.scale_factor();
     let screen = monitor.size().to_logical::<f64>(scale);
     // Leave room for the taskbar / menu bar and window chrome.
@@ -27,7 +31,10 @@ fn fit_main_window_to_screen(app: &tauri::App) {
     let max_h = (screen.height * 0.88).floor();
     let w = 1280f64.min(max_w);
     let h = 800f64.min(max_h);
-    let _ = win.set_min_size(Some(tauri::LogicalSize::new(720f64.min(max_w), 520f64.min(max_h))));
+    let _ = win.set_min_size(Some(tauri::LogicalSize::new(
+        720f64.min(max_w),
+        520f64.min(max_h),
+    )));
     let _ = win.set_size(tauri::LogicalSize::new(w, h));
     let _ = win.center();
 }
@@ -189,6 +196,8 @@ pub fn run() {
             commands::get_verse,
             commands::get_strongs_entry,
             commands::ensure_stepbible_lexicon,
+            commands::list_builtin_lexicons,
+            commands::set_builtin_lexicon_enabled,
             commands::search,
             commands::get_commentary,
             commands::get_cross_references,

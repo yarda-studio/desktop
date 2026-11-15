@@ -45,7 +45,7 @@ export default function SongEditorDialog() {
   const firstSlideOf = (key: string) => Math.max(0, slides.findIndex((s) => s.sectionKey === key));
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-0 sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && requestCancel()}>
+    <div className="motion-backdrop fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-0 sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && requestCancel()}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Song Editor" className="w-screen h-dvh sm:w-[min(1280px,96vw)] sm:h-[min(820px,94dvh)] flex flex-col glass glass-strong rounded-none sm:rounded-3xl overflow-hidden">
         {/* Header */}
         <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-3 border-b border-outline-variant shrink-0">

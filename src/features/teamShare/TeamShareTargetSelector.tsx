@@ -53,7 +53,7 @@ export default function TeamShareTargetSelector({ compact = false }: { compact?:
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 w-60 z-50 glass shadow-xl rounded-xl border border-outline-variant/60 p-1.5 animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute right-0 top-full mt-1.5 w-60 z-50 glass shadow-xl rounded-xl border border-outline-variant/60 p-1.5 motion-pop">
           <div className="px-2.5 py-1.5 text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">
             Send Verses To
           </div>

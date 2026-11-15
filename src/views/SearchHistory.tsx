@@ -1,6 +1,6 @@
+import SegmentedControl from "../components/SegmentedControl";
 import { useState } from "react";
 import { useAppStore } from "../store/app";
-import SideNav from "../components/SideNav";
 import { parseScopedQuery } from "../lib/searchScope";
 
 type Filter = "today" | "month" | "all";
@@ -57,11 +57,9 @@ export default function SearchHistory() {
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      <SideNav variant="full" />
-
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-background">
         {/* Header */}
-        <div className="p-4 lg:p-6 border-b border-outline-variant shrink-0">
+        <div className="page-gutter py-4 lg:py-6 border-b border-outline-variant shrink-0">
           <div className="flex items-center justify-between mb-4">
             <h1 className="font-display-lg text-display-lg text-on-surface">Search History</h1>
             {searchHistory.length > 0 && (
@@ -75,21 +73,19 @@ export default function SearchHistory() {
           </div>
 
           {/* Filter tabs */}
-          <div className="flex gap-2 mb-4">
-            {(["today", "month", "all"] as Filter[]).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-4 py-1.5 rounded-md text-[13px] font-body-ui capitalize transition-colors ${
-                  filter === f
-                    ? "btn-primary"
-                    : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high"
-                }`}
-              >
-                {f === "today" ? "Today" : f === "month" ? "This Month" : "All"}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            ariaLabel="Show history from"
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: "today", label: "Today" },
+              { value: "month", label: "This Month" },
+              { value: "all", label: "All" },
+            ] satisfies { value: Filter; label: string }[]}
+            className="gap-2 mb-4"
+            itemClassName="px-4 py-1.5 rounded-md text-[13px] font-semibold"
+            idleItemClassName="bg-surface-container-low text-on-surface-variant hover:text-primary"
+          />
 
           {/* Search filter */}
           <div className="relative max-w-xl">
@@ -106,7 +102,7 @@ export default function SearchHistory() {
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto p-4 lg:p-6 max-w-3xl">
+        <div className="flex-1 overflow-y-auto page-gutter py-4 lg:py-6 [scrollbar-gutter:stable_both-edges]">
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <span className="material-symbols-outlined text-[56px] text-on-surface-variant mb-3">history</span>

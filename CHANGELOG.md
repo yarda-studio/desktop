@@ -4,6 +4,24 @@ All notable changes to Scriptura are listed here, newest first.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-15
+
+### Added
+- **Yarda brand colours are now the default.** A new Yarda accent uses the logo's olive, sage and deep forest with a clean white (light) or ink (dark) background. The other accents are still in Settings, and anyone who already picked one keeps it.
+- **Built-in lexicons are listed in the Module Library.** Thayer, Abbott-Smith, Brown-Driver-Briggs and the optional full Liddell-Scott-Jones now appear with the installed modules, marked Built-in. Each has an On/Off switch: off hides it from the Strong's panel and from the default-source choice, and nothing is deleted. The full LSJ is offered under Browse and downloads when you install it. Before this, these lexicons worked but never showed as installed.
+- **Plan and Schedule share one panel.** A Plan | Schedule switch at the top of the Live, Songs and Slides column replaces the two stacked sections. Back and next, the Now / Next line and the clock stay in view in both.
+- **Smooth transitions throughout.** Tabs, the top bar, the side navigation and every switcher glide to the chosen option, screens fade in, dialogs and menus ease open, and list rows ease in. All of it respects the reduced-motion setting.
+
+### Changed
+- **One side navigation for every section.** It stays a slim icon rail and opens over the content while you hover it, instead of sitting open on Bookmarks, Search, History, Modules and Notes. Hovering an item turns it green. The small gap above the rail is gone.
+- **Sections are centred.** Bookmarks and Notes, Search and History now keep their header and content in one centred column.
+- **Menus that open over text are solid,** so the words behind a dropdown no longer show through it.
+
+### Fixed
+- **The top bar drags the window from any empty space,** not only the gaps with nothing around them.
+- **The fullscreen toolbar no longer sits under the macOS window buttons.**
+- **The Plan | Schedule names always fit,** and the schedule list lines up with the controls above it.
+
 ## [0.6.0] - 2026-11-11
 
 ### Added

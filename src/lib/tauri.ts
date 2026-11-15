@@ -80,6 +80,10 @@ export interface ModuleInfo {
   // "CrossWire", "eBible.org" — the listing came from); the backend's
   // InstalledModule struct doesn't carry this, so it's absent for installed items.
   source?: string;
+  /** Ships with Yarda (Thayer, Abbott-Smith, BDB, full LSJ) rather than from a module repository. */
+  built_in?: boolean;
+  /** Only meaningful for built-in lexicons: whether the user has it switched on. */
+  enabled?: boolean;
 }
 
 export interface InstalledModule extends ModuleInfo {
@@ -331,6 +335,13 @@ export const api = {
   // "TFLSJ") so it's cached before the user's first lookup.
   ensureStepBibleLexicon: (source_id: string) =>
     invoke<void>("ensure_stepbible_lexicon", { sourceId: source_id }),
+
+  /** The lexicons that ship with Yarda, present or not, with their on/off state. */
+  listBuiltinLexicons: () => invoke<InstalledModule[]>("list_builtin_lexicons"),
+
+  /** Switch a built-in lexicon on or off. Off hides it from the Strong's panel; nothing is deleted. */
+  setBuiltinLexiconEnabled: (id: string, enabled: boolean) =>
+    invoke<void>("set_builtin_lexicon_enabled", { id, enabled }),
 
   /** Strong's numbers that are grammatical markers (G3588, H853…), normalized. */
   listMarkerStrongs: () => invoke<string[]>("list_marker_strongs"),

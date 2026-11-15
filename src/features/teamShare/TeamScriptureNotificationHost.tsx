@@ -19,7 +19,7 @@ export default function TeamScriptureNotificationHost() {
       {notifications.length > 0 && (
         <aside
           aria-label="Team Scripture Notifications"
-          className="fixed top-14 right-4 z-[9999] flex flex-col gap-2.5 pointer-events-auto max-h-[calc(100vh-5rem)] overflow-y-auto p-1 animate-in fade-in slide-in-from-top-4 duration-200"
+          className="fixed top-14 right-4 z-[9999] flex flex-col gap-2.5 pointer-events-auto max-h-[calc(100vh-5rem)] overflow-y-auto p-1 motion-from-right"
         >
           {notifications.map((item) => (
             <TeamScriptureNotification key={item.id} item={item} />
@@ -33,7 +33,7 @@ export default function TeamScriptureNotificationHost() {
           role="status"
           aria-live="polite"
           onClick={clearToast}
-          className="fixed top-14 left-1/2 -translate-x-1/2 z-[10000] pointer-events-auto cursor-pointer animate-in fade-in slide-in-from-top-2 duration-150"
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-[10000] pointer-events-auto cursor-pointer motion-fade"
         >
           <div
             className={`flex items-center gap-2 px-3.5 py-2 rounded-xl glass shadow-lg border text-[12px] font-body-ui font-semibold ${

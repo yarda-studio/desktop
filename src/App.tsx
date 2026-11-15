@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "./store/app";
 import { api } from "./lib/tauri";
 import { applyAccent, isAccentId } from "./lib/accents";
+import { useBuiltinLexicons } from "./features/lexicons/builtinLexiconStore";
 import { importLegacyLocalStorageIfNeeded } from "./lib/legacyImport";
 import TopBar from "./components/TopBar";
+import SideNav, { SIDE_NAV_VIEWS, RAIL_WIDTH_PX } from "./components/SideNav";
 import PresentationTopBar from "./components/PresentationTopBar";
 import ReadingView from "./views/ReadingView";
 import EmptyLibrary from "./views/EmptyLibrary";
@@ -34,6 +36,7 @@ export default function App() {
     hydrateWorkspace, workspace, accent, setAccent, setMarkerStrongs,
   } = useAppStore();
   const presenting = workspace === "presentation";
+  const showSideNav = !isFullscreen && SIDE_NAV_VIEWS.includes(view);
   // Set on a fresh install: the app is held behind a setup screen until the
   // KJV and Strong's lexicons have fully downloaded.
   const [firstRun, setFirstRun] = useState<{ required: string[]; installed: string[] } | null>(null);
@@ -156,8 +159,12 @@ export default function App() {
         // pill click doesn't have to wait on a multi-second download. The
         // full LSJ lexicon (~32MB, opt-in "deep dive" tier) stays lazy —
         // fetched on first actual use instead.
-        api.ensureStepBibleLexicon("TBESG").catch(() => {});
-        api.ensureStepBibleLexicon("TBESH").catch(() => {});
+        // The built-in lexicons (these two, plus Thayer and the optional full LSJ) show in the module list.
+        // Load their on/off state now, and again once the downloads land so they count as installed.
+        void useBuiltinLexicons.getState().load();
+        const refreshBuiltin = () => { void useBuiltinLexicons.getState().load(); };
+        api.ensureStepBibleLexicon("TBESG").catch(() => {}).then(refreshBuiltin);
+        api.ensureStepBibleLexicon("TBESH").catch(() => {}).then(refreshBuiltin);
 
         // Only a Bible can be the reading module. A library holding just
         // lexicons (StrongsGreek, TSK…) used to fall back to modules[0] and
@@ -222,7 +229,9 @@ export default function App() {
       )}
 
       <div className="relative flex flex-1 overflow-hidden">
-        <div className="flex flex-1 overflow-hidden">
+        {/* One side navigation for every screen that has one: a slim icon rail that opens over the content on hover. */}
+        {showSideNav && <SideNav />}
+        <div className="motion-view flex flex-1 overflow-hidden" style={showSideNav ? { paddingLeft: RAIL_WIDTH_PX } : undefined}>
           {/* Each view gets its own boundary so a crash in one (e.g. Modules) can't
               take TopBar and the rest of the shell down with it — "Go back" just
               switches views, which unmounts the crashed tree instead of reloading. */}
@@ -232,7 +241,7 @@ export default function App() {
             </ErrorBoundary>
           )}
           {view === "modules" && (
-            <ErrorBoundary label="Modules" onReset={() => setView("reading")} resetLabel="Go to Reading">
+            <ErrorBoundary label="Modules" onReset={() => setView(presenting ? "live" : "reading")} resetLabel={presenting ? "Back to Live Show" : "Go to Reading"}>
               <ModuleManager />
             </ErrorBoundary>
           )}

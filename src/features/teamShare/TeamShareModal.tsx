@@ -51,13 +51,13 @@ export default function TeamShareModal() {
   }
 
   return (
-    <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+    <div className="motion-backdrop fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="share-verse-title"
-        className="w-full max-w-md glass rounded-2xl shadow-2xl border border-outline-variant/60 p-5 space-y-4 animate-in zoom-in-95 duration-150"
+        className="w-full max-w-md glass rounded-2xl shadow-2xl border border-outline-variant/60 p-5 space-y-4"
       >
         <div className="flex items-center justify-between pb-2 border-b border-outline-variant/40">
           <div className="flex items-center gap-2">

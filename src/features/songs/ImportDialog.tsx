@@ -101,7 +101,7 @@ export default function ImportDialog({ onClose }: { onClose: () => void }) {
   const selectedCount = candidates.filter((c) => c.selected).length;
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-6" onClick={onClose}>
+    <div className="motion-backdrop fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-6" onClick={onClose}>
       <div
         ref={dialogRef}
         role="dialog" aria-modal="true" aria-label="Import songs"

@@ -21,7 +21,7 @@ export default function AccountModal() {
   const signedIn = status === "signedIn";
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-6" onClick={closeModal}>
+    <div className="motion-backdrop fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-6" onClick={closeModal}>
       <div
         ref={dialogRef}
         role="dialog"

@@ -1,9 +1,8 @@
-import { forPlatform } from "../lib/platform";
+import { forPlatform, IS_MAC, MAC_WINDOW_BUTTONS_WIDTH } from "../lib/platform";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "../store/app";
 import { api, type InstalledModule, type MonitorInfo, type PresentationTheme } from "../lib/tauri";
 import BookNavigator from "../components/BookNavigator";
-import SideNav from "../components/SideNav";
 import StrongsSheet from "../components/StrongsSheet";
 import CrossRefSheet from "../components/CrossRefSheet";
 import CompareSheet from "../components/CompareSheet";
@@ -292,8 +291,13 @@ export default function ReadingView() {
     return (
       <>
         <div className="fixed inset-0 z-30 bg-surface flex flex-col overflow-hidden">
-          {/* Minimal fullscreen toolbar */}
-          <div className="flex items-center gap-3 px-6 py-2 border-b border-outline-variant/40 shrink-0">
+          {/* Minimal fullscreen toolbar. This covers the whole window, so on a Mac it must start clear of the red/yellow/green
+              buttons (the normal top bar does the same), and its empty space drags the window like the normal bar. */}
+          <div
+            data-tauri-drag-region
+            className="flex items-center gap-3 px-6 py-2 border-b border-outline-variant/40 shrink-0"
+            style={IS_MAC ? { paddingLeft: MAC_WINDOW_BUTTONS_WIDTH } : undefined}
+          >
             {/* Scripture nav */}
             <div className="flex items-center gap-1 shrink-0">
               <button
@@ -313,7 +317,7 @@ export default function ReadingView() {
               </button>
             </div>
 
-            <div className="flex-1" />
+            <div data-tauri-drag-region className="flex-1 self-stretch" />
 
             {/* Parallel module picker */}
             <div ref={fsParallelPickerRef} className="relative flex items-center gap-1">
@@ -554,9 +558,7 @@ export default function ReadingView() {
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      <SideNav variant="icon-rail" />
-
-      <main className="flex flex-1 overflow-hidden ml-16">
+      <main className="flex flex-1 overflow-hidden">
         <BookNavigator />
 
         {/* Center reading pane(s) */}

@@ -1,4 +1,5 @@
 pub mod bible;
+pub mod builtin;
 pub mod conf;
 pub mod crossref;
 pub mod file_cache;

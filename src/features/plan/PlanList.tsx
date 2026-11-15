@@ -34,7 +34,7 @@ export default function PlanList() {
           The plan is empty. Use “Add to plan” on a song, a slide or a verse, or add a cue below.
         </p>
       ) : (
-        <ol className="p-1.5 space-y-1">
+        <ol className="px-3 py-2 space-y-1">
           {items.map((item, i) => (
             <Row
               key={item.id}
@@ -120,7 +120,7 @@ function Row({ item, index, active, first, last, onActivate, onMove, onRemove, o
   }
 
   return (
-    <li className={`group relative rounded-lg border ${active ? "row-selected border-primary/40" : "border-outline-variant/50"}`}>
+    <li className={`motion-item group relative rounded-lg border transition-colors duration-200 ${active ? "row-selected border-primary/40" : "border-outline-variant/50"}`}>
       <div className="flex items-center gap-2 px-2 py-1.5">
         <span className={`w-5 shrink-0 text-right font-metadata-mono text-[12px] ${active ? "font-bold text-primary" : "text-on-surface-variant"}`}>{index + 1}</span>
         <button

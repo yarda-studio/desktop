@@ -3,6 +3,7 @@ import { useAppStore } from "../store/app";
 import { useSheetVisibility } from "../hooks/useSheetVisibility";
 import { defaultLexiconSourceFor, strongsNumbers } from "../hooks/useStrongsEntry";
 import { useStrongsPages } from "../features/strongs/useStrongsPages";
+import { useBuiltinLexicons, isLexiconOn } from "../features/lexicons/builtinLexiconStore";
 import type { StrongsStage } from "../features/strongs/pagination";
 import type { PresentationTheme } from "../lib/tauri";
 import { findBooks } from "../data/books";
@@ -511,9 +512,15 @@ export default function StrongsSheet({ docked = false, output }: {
   // via the pill row is a deliberate per-word override, not sticky. LSJ has
   // no Hebrew equivalent, so that preference falls back to the richer
   // Hebrew source (BDB) instead of silently doing nothing.
+  // A lexicon the user has switched off in the Module Library is not offered here, and is never the
+  // default: if the chosen default is off, fall back to Yarda's own Strong's data (always on).
+  const builtinLexicons = useBuiltinLexicons((s) => s.entries);
   const defaultSourceFor = useCallback(
-    (lang: "H" | "G"): LexiconSourceId => defaultLexiconSourceFor(displayPrefs.defaultLexiconSource, lang),
-    [displayPrefs.defaultLexiconSource]
+    (lang: "H" | "G"): LexiconSourceId => {
+      const wanted = defaultLexiconSourceFor(displayPrefs.defaultLexiconSource, lang);
+      return isLexiconOn(builtinLexicons, wanted) ? wanted : "ours";
+    },
+    [displayPrefs.defaultLexiconSource, builtinLexicons]
   );
   // source lives in the store so it syncs to the presentation window.
   // Seed it to the user's default whenever a new word is opened.
@@ -637,7 +644,7 @@ export default function StrongsSheet({ docked = false, output }: {
   // floating sheet puts them on two rows, the docked panel on one wrapping row).
   const sourcePills = (
     <>
-      {([{ id: "ours", label: "Strong's" }, ...LEXICON_PILLS[prefix]] as LexiconPill[]).map((pill) => (
+      {([{ id: "ours", label: "Strong's" }, ...LEXICON_PILLS[prefix].filter((p) => isLexiconOn(builtinLexicons, p.id))] as LexiconPill[]).map((pill) => (
         <button
           key={pill.id}
           type="button"

@@ -1,7 +1,7 @@
+import SegmentedControl from "../components/SegmentedControl";
 import { useEffect, useState } from "react";
 import { useAppStore } from "../store/app";
 import { api, type Bookmark, type Note } from "../lib/tauri";
-import SideNav from "../components/SideNav";
 
 export default function BookmarksNotes() {
   const { view, setCurrentRef, setView } = useAppStore();
@@ -35,31 +35,25 @@ export default function BookmarksNotes() {
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      <SideNav variant="full" />
-
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-background">
-        <div className="p-4 lg:p-6 border-b border-outline-variant shrink-0">
+        <div className="page-gutter py-4 lg:py-6 border-b border-outline-variant shrink-0">
           <h1 className="font-display-lg text-display-lg text-on-surface mb-4">
             {view === "bookmarks" ? "Bookmarks" : "Notes"}
           </h1>
-          <div className="flex gap-2">
-            {(["bookmarks", "notes"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-4 py-1.5 rounded-md font-body-ui text-body-ui capitalize transition-colors ${
-                  tab === t
-                    ? "btn-primary"
-                    : "text-secondary hover:bg-surface-container-low"
-                }`}
-              >
-                {t === "bookmarks" ? `Bookmarks (${bookmarks.length})` : `Notes (${notes.length})`}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            ariaLabel="Bookmarks or notes"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: "bookmarks", label: `Bookmarks (${bookmarks.length})` },
+              { value: "notes", label: `Notes (${notes.length})` },
+            ]}
+            className="gap-2"
+            itemClassName="px-4 py-1.5 rounded-md text-[13px] font-semibold"
+          />
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 lg:p-6 max-w-3xl">
+        <div className="flex-1 overflow-y-auto page-gutter py-4 lg:py-6 [scrollbar-gutter:stable_both-edges]">
           {loading && <p className="font-body-ui text-body-ui text-on-surface-variant">Loading…</p>}
 
           {!loading && tab === "bookmarks" && (

@@ -7,7 +7,7 @@ export const ConflictDialog: React.FC = () => {
   if (!conflict) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="motion-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center gap-2 mb-2 text-amber-600 dark:text-amber-400">
           <span className="material-symbols-outlined text-[24px]">sync_problem</span>

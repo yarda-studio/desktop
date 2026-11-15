@@ -83,7 +83,7 @@ export default function TopBar() {
       {/* The bar is also the window's title bar (there is no separate one), so its empty parts drag the window. */}
       <div data-tauri-drag-region aria-hidden="true" className="absolute inset-0 -z-10" />
       {/* Left: logo + current reading position */}
-      <div className="flex items-center gap-4">
+      <div data-tauri-drag-region className="flex items-center gap-4">
         <button
           className="ctl rounded-lg px-3 py-1 text-on-surface font-semibold font-body-ui text-[13px]"
           onClick={() => setView("reading")}
@@ -93,8 +93,8 @@ export default function TopBar() {
       </div>
 
       {/* Center: dual-mode search */}
-      <div className="flex-1 flex justify-center px-8 max-w-xl mx-auto">
-        <div data-tour="topbar-search" className="w-full max-w-sm hidden lg:flex items-center gap-1.5">
+      <div data-tauri-drag-region className="flex-1 flex justify-center px-8 max-w-xl mx-auto">
+        <div data-tauri-drag-region data-tour="topbar-search" className="w-full max-w-sm hidden lg:flex items-center gap-1.5">
 
           {/* Mode-switch icon button */}
           <button
@@ -129,9 +129,9 @@ export default function TopBar() {
       </div>
 
       {/* Right: toolbar actions */}
-      <div className="flex items-center gap-1.5">
+      <div data-tauri-drag-region className="flex items-center gap-1.5">
         {/* Team scripture share target selector and instant send */}
-        <div className="flex items-center gap-1 bg-surface-variant/25 p-0.5 rounded-lg border border-outline-variant/30">
+        <div data-tauri-drag-region className="flex items-center gap-1 bg-surface-variant/25 p-0.5 rounded-lg border border-outline-variant/30">
           <TeamShareTargetSelector />
           <button
             onClick={() => void useTeamShareStore.getState().sendVerse()}

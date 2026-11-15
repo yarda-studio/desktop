@@ -7,11 +7,10 @@ export default function SchedulePanel({ width }: { width: number }) {
 
   return (
     <section style={{ width }} className="shrink min-w-0 max-w-[32%] flex flex-col overflow-hidden panel rounded-3xl">
-      <ErrorBoundary compact label="Service plan">
-        <PlanSection />
-      </ErrorBoundary>
-      <div className="shrink-0 flex items-center justify-between gap-3 px-3.5 py-2.5 border-b border-outline-variant">
-        <h2 className="font-body-ui text-[13px] font-bold text-on-surface ">Schedule</h2>
+      <ErrorBoundary compact label="Plan and schedule">
+      <PlanSection scheduleCount={schedule.length}>
+      <div className="shrink-0 flex items-center justify-between gap-3 px-3 py-2 border-b border-outline-variant">
+        <span className="font-body-ui text-[12px] text-on-surface-variant">{schedule.length} {schedule.length === 1 ? "song" : "songs"} queued</span>
         {schedule.length > 0 && (
           <button
             onClick={() => void clearSchedule()}
@@ -23,7 +22,7 @@ export default function SchedulePanel({ width }: { width: number }) {
           </button>
         )}
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto p-1.5">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
         {schedule.length === 0 ? (
           <p className="p-4 text-center font-body-ui text-[12px] text-on-surface-variant leading-relaxed">
             Nothing scheduled yet. Double-click a song in the library below to add it.
@@ -34,7 +33,7 @@ export default function SchedulePanel({ width }: { width: number }) {
               const selected = s.id === previewId;
               const isLive = live?.songId === s.id;
               return (
-                <li key={s.id} className="group relative">
+                <li key={s.id} className="motion-item group relative">
                   <button
                     onClick={() => void preview(s.id)}
                     onDoubleClick={async () => { await preview(s.id); goLive(0); }}
@@ -63,6 +62,8 @@ export default function SchedulePanel({ width }: { width: number }) {
           </ul>
         )}
       </div>
+      </PlanSection>
+      </ErrorBoundary>
     </section>
   );
 }

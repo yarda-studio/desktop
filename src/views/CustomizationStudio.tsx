@@ -1,3 +1,4 @@
+import SegmentedControl from "../components/SegmentedControl";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type PresentationTheme, type PresentationThemeInput } from "../lib/tauri";
 import { emitPresentation } from "../lib/presentation";
@@ -210,19 +211,20 @@ export default function CustomizationStudio() {
         </header>
 
         {/* Below lg the three panels do not fit side by side: show one at a time. */}
-        <div role="tablist" aria-label="Theme designer section" className="lg:hidden shrink-0 flex rounded-xl panel p-1 gap-1">
-          {([["library", "Themes"], ["canvas", "Canvas"], ["inspector", "Settings"]] as const).map(([id, label]) => (
-            <button
-              key={id}
-              role="tab"
-              aria-selected={pane === id}
-              onClick={() => setPane(id)}
-              className={`flex-1 py-1.5 rounded-lg font-body-ui text-[13px] ${pane === id ? "btn-primary font-semibold" : "text-on-surface-variant"}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          ariaLabel="Theme designer section"
+          value={pane}
+          onChange={setPane}
+          stretch
+          options={[
+            { value: "library", label: "Themes" },
+            { value: "canvas", label: "Canvas" },
+            { value: "inspector", label: "Settings" },
+          ]}
+          className="lg:hidden shrink-0 rounded-xl panel p-1 gap-1"
+          itemClassName="py-1.5 rounded-lg text-[13px] font-semibold"
+          indicatorClassName="rounded-lg bg-primary shadow-xs"
+        />
 
         <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[240px_minmax(0,1fr)_300px] xl:grid-cols-[280px_minmax(0,1fr)_340px] gap-3 overflow-hidden">
           <div className={`${pane === "library" ? "flex" : "hidden"} lg:contents flex-1 min-h-0 flex-col [&>*]:flex-1`}>

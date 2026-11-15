@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../store/app";
 import { api, type SearchResult } from "../lib/tauri";
 import { sanitizeSnippet } from "../lib/sanitize";
-import SideNav from "../components/SideNav";
 import SearchScopeBar from "../components/SearchScopeBar";
 
 export default function SearchResults() {
@@ -60,10 +59,8 @@ export default function SearchResults() {
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      <SideNav variant="full" />
-
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-background">
-        <div className="p-4 lg:p-6 border-b border-outline-variant shrink-0">
+        <div className="page-gutter py-4 lg:py-6 border-b border-outline-variant shrink-0">
           <div className="flex items-center justify-between mb-3">
             <h1 className="font-display-lg text-display-lg text-on-surface">Search</h1>
             <button
@@ -101,7 +98,7 @@ export default function SearchResults() {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 lg:p-6 max-w-3xl">
+        <div className="flex-1 overflow-y-auto page-gutter py-4 lg:py-6 [scrollbar-gutter:stable_both-edges]">
           {loading && <p className="font-body-ui text-body-ui text-on-surface-variant">Searching…</p>}
 
           {!loading && ran && results.length === 0 && (

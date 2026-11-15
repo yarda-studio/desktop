@@ -47,7 +47,7 @@ export default function SlideEditorDialog() {
   const page = draft.pages[Math.min(pageIndex, draft.pages.length - 1)];
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onMouseDown={(e) => e.target === e.currentTarget && requestCancel()}>
+    <div className="motion-backdrop fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onMouseDown={(e) => e.target === e.currentTarget && requestCancel()}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Slide Editor" onKeyDown={onUndoKeys} className="w-[min(1180px,96vw)] h-[min(780px,94vh)] flex flex-col glass glass-strong rounded-3xl overflow-hidden">
         <header className="flex items-center gap-3 px-4 py-3 border-b border-outline-variant shrink-0">
           <input

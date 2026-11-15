@@ -259,6 +259,14 @@ fn local_path(cache_dir: &Path, source: &StepBibleSource) -> PathBuf {
     cache_dir.join(source.filename)
 }
 
+/// Size in bytes of the cached file for `source`, or None if it has not been downloaded yet.
+pub fn cached_size(cache_dir: &Path, source: &StepBibleSource) -> Option<u64> {
+    std::fs::metadata(local_path(cache_dir, source))
+        .ok()
+        .filter(|m| m.is_file())
+        .map(|m| m.len())
+}
+
 /// Downloads the source's data file if it isn't already cached. Safe to call
 /// on every lookup — the exists() check makes repeat calls a no-op.
 pub fn ensure_downloaded(cache_dir: &Path, source: &StepBibleSource) -> Result<()> {

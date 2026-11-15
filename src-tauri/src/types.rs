@@ -194,6 +194,17 @@ pub struct InstalledModule {
     pub size_bytes: Option<u64>,
     pub install_path: String,
     pub index_built: bool,
+    /// Ships with Yarda (or is fetched by it) rather than installed from a module repository.
+    /// Built-in lexicons are switched on and off instead of being installed and removed.
+    #[serde(default)]
+    pub built_in: bool,
+    /// Only meaningful for built-in lexicons; everything else is always on.
+    #[serde(default = "enabled_by_default")]
+    pub enabled: bool,
+}
+
+fn enabled_by_default() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

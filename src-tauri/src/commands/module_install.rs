@@ -43,9 +43,19 @@ pub fn list_installed_modules(
                 size_bytes: None,
                 install_path: path,
                 index_built,
+                built_in: false,
+                enabled: true,
             })
         })
         .collect();
+    let mut modules: Vec<InstalledModule> = modules;
+    // The lexicons that ship with Yarda have no database record (Thayer is compiled in and the
+    // STEPBible ones are cached files), so add whichever are present to the list.
+    modules.extend(
+        super::lexicon::builtin_lexicon_entries(&db, &registry)
+            .into_iter()
+            .filter(|m| m.installed),
+    );
     Ok(modules)
 }
 

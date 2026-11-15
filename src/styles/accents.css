@@ -1,6 +1,100 @@
 /* Accent presets — each overrides the primary tokens in globals.css (ink is the default
    and needs no attribute). Applied with <html data-accent="blue"> etc. */
 
+/* Yarda brand (default), exact logo colours:
+   olive #628937 (98 137 55) · sage #88AB81 (136 171 129) · deep forest #1D400B (29 64 11)
+   ink #0B171B (11 23 27) · white #FDFDFD (253 253 253). No derived shades for primary/container. */
+[data-accent="yarda"] {
+  --col-primary: 98 137 55;                /* #628937 */
+  --col-on-primary: 253 253 253;           /* #FDFDFD */
+  --col-primary-container: 136 171 129;    /* #88AB81 */
+  --col-on-primary-container: 29 64 11;    /* #1D400B */
+  --col-primary-fixed: 136 171 129;        /* #88AB81 */
+  --col-primary-fixed-dim: 98 137 55;      /* #628937 */
+  --col-on-primary-fixed: 29 64 11;        /* #1D400B */
+  --col-on-primary-fixed-variant: 29 64 11;
+  --col-secondary-container: 136 171 129;  /* #88AB81 */
+  --col-on-secondary-container: 29 64 11;  /* #1D400B */
+  --col-surface-tint: 98 137 55;
+  --col-inverse-primary: 136 171 129;
+  --blob-1: rgba(98, 137, 55, 0.14);
+
+  /* Backgrounds: canvas + surface are exact #FDFDFD; the container steps are ink #0B171B
+     mixed into white (4/7/11/15%) so layers stay distinguishable. */
+  --hairline: rgba(11, 23, 27, 0.08);
+  --glass-bg: rgba(253, 253, 253, 0.72);
+  --glass-strong-bg: rgba(253, 253, 253, 0.97);
+  --glass-shadow: 0 8px 32px -4px rgba(11, 23, 27, 0.12);
+  --col-background: 253 253 253;                 /* #FDFDFD */
+  --col-surface: 253 253 253;
+  --col-surface-bright: 253 253 253;
+  --col-surface-dim: 243 244 244;
+  --col-surface-variant: 226 228 228;
+  --col-surface-container-lowest: 253 253 253;
+  --col-surface-container-low: 248 249 249;
+  --col-surface-container: 243 244 244;
+  --col-surface-container-high: 236 237 237;
+  --col-surface-container-highest: 226 228 228;
+  --col-on-surface: 11 23 27;                    /* #0B171B */
+  --col-on-background: 11 23 27;
+  --col-on-surface-variant: 96 104 106;
+  --col-outline: 120 127 129;
+  --col-outline-variant: 226 228 228;
+  --col-inverse-surface: 11 23 27;
+  --col-inverse-on-surface: 253 253 253;
+  --col-secondary: 96 104 106;
+  --col-on-secondary: 253 253 253;
+  --col-secondary-fixed: 236 237 237;
+  --col-secondary-fixed-dim: 217 218 219;
+  --col-on-secondary-fixed: 11 23 27;
+  --col-on-secondary-fixed-variant: 70 80 82;
+}
+
+.dark[data-accent="yarda"] {
+  --col-primary: 98 137 55;                /* #628937 */
+  --col-on-primary: 253 253 253;           /* #FDFDFD */
+  --col-primary-container: 29 64 11;       /* #1D400B */
+  --col-on-primary-container: 253 253 253; /* #FDFDFD */
+  --col-primary-fixed: 29 64 11;           /* #1D400B */
+  --col-primary-fixed-dim: 98 137 55;      /* #628937 */
+  --col-on-primary-fixed: 253 253 253;
+  --col-on-primary-fixed-variant: 136 171 129; /* #88AB81 */
+  --col-secondary-container: 29 64 11;     /* #1D400B */
+  --col-on-secondary-container: 136 171 129; /* #88AB81 */
+  --col-surface-tint: 136 171 129;
+  --col-inverse-primary: 98 137 55;
+  --blob-1: rgba(98, 137, 55, 0.18);
+
+  /* Backgrounds: canvas is exact ink #0B171B; raised layers step toward white. */
+  --hairline: rgba(253, 253, 253, 0.07);
+  --glass-bg: rgba(11, 23, 27, 0.72);
+  --glass-strong-bg: rgba(11, 23, 27, 0.97);
+  --glass-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.4);
+  --col-background: 11 23 27;                    /* #0B171B */
+  --col-surface: 16 28 32;
+  --col-surface-bright: 43 55 59;
+  --col-surface-dim: 11 23 27;
+  --col-surface-variant: 38 50 54;
+  --col-surface-container-lowest: 8 18 22;
+  --col-surface-container-low: 14 26 30;
+  --col-surface-container: 21 33 37;
+  --col-surface-container-high: 29 41 45;
+  --col-surface-container-highest: 38 50 54;
+  --col-on-surface: 253 253 253;                 /* #FDFDFD */
+  --col-on-background: 253 253 253;
+  --col-on-surface-variant: 156 161 163;
+  --col-outline: 120 131 134;
+  --col-outline-variant: 30 43 47;
+  --col-inverse-surface: 253 253 253;
+  --col-inverse-on-surface: 11 23 27;
+  --col-secondary: 156 161 163;
+  --col-on-secondary: 11 23 27;
+  --col-secondary-fixed: 38 50 54;
+  --col-secondary-fixed-dim: 56 68 72;
+  --col-on-secondary-fixed: 253 253 253;
+  --col-on-secondary-fixed-variant: 200 204 205;
+}
+
 [data-accent="indigo"] {
   --col-primary: 91 91 240;
   --col-on-primary: 255 255 255;

@@ -1,4 +1,6 @@
 import { forPlatform } from "../lib/platform";
+import SegmentedControl from "./SegmentedControl";
+import { useBuiltinLexicons, isLexiconOn } from "../features/lexicons/builtinLexiconStore";
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useShortcutStore } from "../lib/shortcuts";
 import { useSearchFilterStore } from "../store/searchFilterStore";
@@ -66,10 +68,11 @@ export default function Settings() {
     showCrossRefs, setShowCrossRefs,
     showRedLetter, setShowRedLetter,
     displayPrefs, setDisplayPrefs,
-    workspace, setWorkspace,
+    workspace, setWorkspace, setView,
   } = useAppStore();
 
   const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
+  const builtinLexicons = useBuiltinLexicons((s) => s.entries);
   const [saving, setSaving] = useState(false);
   // `mounted` outlives `settingsOpen` by the exit duration so the close
   // animation can play; `visible` drives the CSS transition itself.
@@ -243,6 +246,15 @@ export default function Settings() {
                 </ChipButton>
               </div>
             </SubRow>
+            {/* The presentation top bar and Live Show screens have no side nav, so
+                this is the way to Modules from there. It is an overlay action:
+                it only changes the view and never touches the live output. */}
+            <SubRow label="Modules" description="Install, update and remove Bibles, lexicons and other reference modules.">
+              <ChipButton active={false} onClick={() => { setSettingsOpen(false); setView("modules"); }}>
+                <span className="material-symbols-outlined text-[14px] align-middle mr-1">extension</span>
+                Open Modules
+              </ChipButton>
+            </SubRow>
             <SubRow label="Interactive tour" description={`Replay the hands-on walkthrough of the ${workspace === "presentation" ? "Presentation" : "Study"} workspace. Essentials covers the daily basics; the full tour covers every feature.`}>
               <TourReplayButtons onStart={() => setSettingsOpen(false)} />
             </SubRow>
@@ -277,22 +289,17 @@ export default function Settings() {
 
               {/* Alignment */}
               <SubRow label="Alignment">
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => setDisplayPrefs({ textAlign: "left" })}
-                    title="Left align"
-                    className={`p-1.5 rounded-md transition-colors ${displayPrefs.textAlign === "left" ? "btn-primary" : "ctl text-on-surface-variant"}`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">format_align_left</span>
-                  </button>
-                  <button
-                    onClick={() => setDisplayPrefs({ textAlign: "justify" })}
-                    title="Justify"
-                    className={`p-1.5 rounded-md transition-colors ${displayPrefs.textAlign === "justify" ? "btn-primary" : "ctl text-on-surface-variant"}`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">format_align_justify</span>
-                  </button>
-                </div>
+                <SegmentedControl
+                  ariaLabel="Text alignment"
+                  value={displayPrefs.textAlign === "justify" ? "justify" : "left"}
+                  onChange={(v) => setDisplayPrefs({ textAlign: v })}
+                  options={[
+                    { value: "left", title: "Left align", ariaLabel: "Left align", label: <span className="material-symbols-outlined text-[18px]">format_align_left</span> },
+                    { value: "justify", title: "Justify", ariaLabel: "Justify", label: <span className="material-symbols-outlined text-[18px]">format_align_justify</span> },
+                  ]}
+                  className="gap-1.5"
+                  itemClassName="p-1.5 rounded-md"
+                />
               </SubRow>
 
               {/* Font size */}
@@ -421,11 +428,12 @@ export default function Settings() {
             <SubRow label="Default Strong's source" description="The concordance sheet's own pill switcher can still change this per lookup">
               <div className="flex gap-1.5">
                 {([
-                  { id: "ours", label: "Yarda" },
-                  { id: "rich", label: "BDB / Abbott-Smith" },
-                  { id: "thayer", label: "Thayer" },
-                  { id: "lsj", label: "Full LSJ" },
-                ] as const).map((opt) => (
+                  { id: "ours", label: "Yarda", on: true },
+                  // "rich" is Abbott-Smith for Greek and BDB for Hebrew, so it stays while either is on.
+                  { id: "rich", label: "BDB / Abbott-Smith", on: isLexiconOn(builtinLexicons, "TBESG") || isLexiconOn(builtinLexicons, "TBESH") },
+                  { id: "thayer", label: "Thayer", on: isLexiconOn(builtinLexicons, "THAYER") },
+                  { id: "lsj", label: "Full LSJ", on: isLexiconOn(builtinLexicons, "TFLSJ") },
+                ] as const).filter((opt) => opt.on).map((opt) => (
                   <ChipButton
                     key={opt.id}
                     active={prefs.default_lexicon_source === opt.id}

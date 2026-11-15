@@ -1,6 +1,7 @@
 /** App accent presets. Colours themselves live in styles/accents.css (keyed by
- *  `data-accent` on <html>); ink is the built-in default and needs no rule. */
+ *  `data-accent` on <html>); ink is the unstyled base (no attribute); yarda is the default. */
 export const ACCENTS = [
+  { id: "yarda",  label: "Yarda",  swatch: "#628937" },
   { id: "ink",    label: "Ink",    swatch: "#1c1b19" },
   { id: "indigo", label: "Indigo", swatch: "#5b5bf0" },
   { id: "blue",   label: "Blue",   swatch: "#2563eb" },

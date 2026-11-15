@@ -983,6 +983,23 @@ impl Database {
         .optional()
     }
 
+    /// Read a general-purpose setting from `app_meta`.
+    pub fn get_meta(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.conn();
+        Ok(Self::meta_get(&conn, key)?)
+    }
+
+    /// Write a general-purpose setting to `app_meta`.
+    pub fn set_meta(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO app_meta (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
     const LEGACY_IMPORT_MARKER: &'static str = "legacy_localstorage_imported";
 
     pub fn legacy_import_done(&self) -> Result<bool> {
@@ -3587,6 +3604,25 @@ mod tests {
         assert!(db.list_notes().unwrap().is_empty());
 
         cleanup(&path);
+    }
+
+    #[test]
+    fn app_meta_settings_round_trip_and_overwrite() {
+        let (db, path) = temp_db("meta-settings");
+        assert_eq!(db.get_meta("disabled_builtin_lexicons").unwrap(), None);
+        db.set_meta("disabled_builtin_lexicons", "[\"THAYER\"]")
+            .unwrap();
+        assert_eq!(
+            db.get_meta("disabled_builtin_lexicons").unwrap().as_deref(),
+            Some("[\"THAYER\"]")
+        );
+        db.set_meta("disabled_builtin_lexicons", "[]").unwrap();
+        assert_eq!(
+            db.get_meta("disabled_builtin_lexicons").unwrap().as_deref(),
+            Some("[]")
+        );
+        drop(db);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

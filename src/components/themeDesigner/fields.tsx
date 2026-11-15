@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import SegmentedControl from "../SegmentedControl";
 
 export function InspectorSection({ title, defaultOpen = true, children }: { title: string; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -84,24 +85,25 @@ export interface SegmentOption<T extends string> {
 
 export function Segmented<T extends string>({ options, value, onChange }: { options: SegmentOption<T>[]; value: T; onChange: (value: T) => void }) {
   return (
-    <div className="inline-flex gap-0.5 p-0.5 rounded-lg ctl" role="group">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          title={option.title}
-          aria-label={option.title}
-          aria-pressed={option.value === value}
-          onClick={() => onChange(option.value)}
-          className={`h-8 min-w-8 px-2 rounded-md flex items-center justify-center text-[12px] font-body-ui transition-colors ${
-            option.value === value ? "ctl-active" : "ghost text-on-surface-variant"
-          }`}
-        >
-          {option.icon && <span className="material-symbols-outlined text-[18px]">{option.icon}</span>}
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      ariaLabel="Options"
+      variant="soft"
+      value={value}
+      onChange={onChange}
+      options={options.map((option) => ({
+        value: option.value,
+        title: option.title,
+        ariaLabel: option.title,
+        label: (
+          <>
+            {option.icon && <span className="material-symbols-outlined text-[18px]">{option.icon}</span>}
+            {option.label}
+          </>
+        ),
+      }))}
+      className="gap-0.5 p-0.5 rounded-lg ctl"
+      itemClassName="h-8 min-w-8 px-2 rounded-md text-[12px] font-normal"
+    />
   );
 }
 

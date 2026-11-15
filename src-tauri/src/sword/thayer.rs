@@ -16,6 +16,11 @@ struct RawThayerEntry {
     long_def: String,
 }
 
+/// Size of the compressed Thayer data compiled into the app, for the module list.
+pub fn embedded_size() -> u64 {
+    THAYER_GREEK_GZ.len() as u64
+}
+
 static THAYER_ENTRIES: Lazy<HashMap<String, RawThayerEntry>> = Lazy::new(|| {
     let gz = GzDecoder::new(THAYER_GREEK_GZ);
     serde_json::from_reader(gz).unwrap_or_default()

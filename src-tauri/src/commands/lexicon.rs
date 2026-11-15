@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::modules::ModuleRegistry;
-use crate::sword::{stepbible, thayer, LexiconReader};
+use crate::sword::{builtin, stepbible, thayer, LexiconReader};
 use crate::types::*;
 use std::sync::Arc;
 use tauri::State;
@@ -17,6 +17,84 @@ fn stepbible_cache_dir(
         .ok_or_else(|| AppError::Sword("cannot resolve data directory".into()))?
         .join("stepbible");
     Ok(dir)
+}
+
+/// Every built-in lexicon (Thayer, Abbott-Smith, BDB, full LSJ) as a module-list entry.
+/// `installed` says whether its data is present: Thayer always is; the STEPBible ones are once
+/// their file has been downloaded. `enabled` is the user's on/off choice (default on).
+pub(crate) fn builtin_lexicon_entries(
+    db: &Database,
+    registry: &ModuleRegistry,
+) -> Vec<InstalledModule> {
+    let disabled = builtin::parse_disabled(
+        db.get_meta(builtin::DISABLED_META_KEY)
+            .ok()
+            .flatten()
+            .as_deref(),
+    );
+    let cache_dir = stepbible_cache_dir(registry).ok();
+    builtin::BUILTIN_LEXICONS
+        .iter()
+        .map(|l| {
+            let (size, path) = if l.embedded {
+                (Some(thayer::embedded_size()), "built-in".to_string())
+            } else {
+                let cached = cache_dir
+                    .as_ref()
+                    .zip(stepbible::source_for_id(l.id))
+                    .and_then(|(dir, source)| stepbible::cached_size(dir, source));
+                (
+                    cached,
+                    cache_dir
+                        .as_ref()
+                        .map(|d| d.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                )
+            };
+            InstalledModule {
+                id: l.id.to_string(),
+                name: l.name.to_string(),
+                description: l.description.to_string(),
+                language: l.language.to_string(),
+                version: l.version.to_string(),
+                category: ModuleCategory::Lexicon,
+                installed: l.embedded || size.is_some(),
+                requires_key: false,
+                has_strongs: false,
+                size_bytes: size,
+                install_path: path,
+                index_built: true,
+                built_in: true,
+                enabled: !disabled.iter().any(|d| d.eq_ignore_ascii_case(l.id)),
+            }
+        })
+        .collect()
+}
+
+/// All built-in lexicons, present or not, so the module list can offer to download the ones that
+/// are not on disk yet and show the on/off state of the rest.
+#[tauri::command]
+pub fn list_builtin_lexicons(
+    db: State<'_, Arc<Database>>,
+    registry: State<'_, Arc<ModuleRegistry>>,
+) -> std::result::Result<Vec<InstalledModule>, AppError> {
+    Ok(builtin_lexicon_entries(&db, &registry))
+}
+
+/// Switch a built-in lexicon on or off. Off hides it from the Strong's panel and the default-source
+/// choice; nothing is deleted, so turning it back on is instant.
+#[tauri::command]
+pub fn set_builtin_lexicon_enabled(
+    id: String,
+    enabled: bool,
+    db: State<'_, Arc<Database>>,
+) -> std::result::Result<(), AppError> {
+    let lexicon = builtin::find(&id)
+        .ok_or_else(|| AppError::Sword(format!("unknown built-in lexicon: {id}")))?;
+    let current = builtin::parse_disabled(db.get_meta(builtin::DISABLED_META_KEY)?.as_deref());
+    let next = builtin::with_enabled(current, lexicon.id, enabled);
+    let json = serde_json::to_string(&next).unwrap_or_else(|_| "[]".to_string());
+    db.set_meta(builtin::DISABLED_META_KEY, &json)
 }
 
 /// Every Strong's number that is a grammatical marker rather than a real word

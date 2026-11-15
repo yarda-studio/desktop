@@ -52,7 +52,7 @@ export default function InviteDialog({ onClose }: Props) {
   const joinUrl = generatedToken ? `yarda://join?token=${generatedToken}` : "";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+    <div className="motion-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
       <div className="w-full max-w-md rounded-2xl border border-outline-variant bg-surface p-5 shadow-2xl space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

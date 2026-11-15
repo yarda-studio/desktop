@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSlidingIndicator, GLIDE_EASE } from "../hooks/useSlidingIndicator";
 import { IS_MAC, MAC_WINDOW_BUTTONS_WIDTH } from "../lib/platform";
 import { useAppStore } from "../store/app";
 import { api } from "../lib/tauri";
@@ -47,6 +48,19 @@ export default function PresentationTopBar() {
     view === "slides" ? "slides" :
     view === "customize" ? "themes" :
     "scriptures";
+  // The highlight leads: it starts gliding the instant a tab is clicked, and the screen swaps in a beat
+  // later, so a heavy screen (Themes) mounting can never swallow the first frames of the motion.
+  const [pendingTab, setPendingTab] = useState<PresentationTab | null>(null);
+  const shownTab = pendingTab ?? activeTab;
+  useEffect(() => { if (pendingTab && pendingTab === activeTab) setPendingTab(null); }, [pendingTab, activeTab]);
+  const goTab = (tab: PresentationTab, target: Parameters<typeof setView>[0]) => {
+    if (tab === shownTab) return;
+    setPendingTab(tab);
+    window.setTimeout(() => setView(target), 110);
+    window.setTimeout(() => setPendingTab((p) => (p === tab ? null : p)), 800); // never leave it stuck if the view did not change
+  };
+  const tabsRef = useRef<HTMLElement>(null);
+  const tabBox = useSlidingIndicator(tabsRef, shownTab);
   const cleared = !liveBlack && !liveEmergency;
 
   // "System" resolves to whatever the OS is currently using, so the button
@@ -157,16 +171,23 @@ export default function PresentationTopBar() {
       {/* The bar is also the window's title bar (there is no separate one), so its empty parts drag the window. */}
       <div data-tauri-drag-region aria-hidden="true" className="absolute inset-0 -z-10" />
       {/* Left: Tab switcher */}
-      <nav className="flex items-center p-0.5 bg-surface-variant/35 rounded-lg border border-outline-variant/40 shrink-0">
-        <TabButton label="Scriptures" active={activeTab === "scriptures"} onClick={() => setView("live")} />
-        <TabButton label="Slides" active={activeTab === "slides"} onClick={() => setView("slides")} />
-        <TabButton label="Songs" active={activeTab === "songs"} onClick={() => setView("songs")} tour="songs-tab" />
-        <TabButton label="Themes" active={activeTab === "themes"} onClick={() => setView("customize")} tour="themes" />
+      <nav ref={tabsRef} className="relative flex items-center p-0.5 bg-surface-variant/35 rounded-lg border border-outline-variant/40 shrink-0">
+        {/* The highlight slides to the active tab (measured, so tabs can be any width). */}
+        <span
+          aria-hidden="true"
+          className={`pointer-events-none absolute left-0 top-0 rounded-md bg-primary shadow-xs ${tabBox.animate ? "transition-[transform,width,height] motion-reduce:transition-none" : ""}`}
+          style={{ transform: `translate(${tabBox.x}px, ${tabBox.y}px)`, width: tabBox.w, height: tabBox.h, opacity: tabBox.visible ? 1 : 0, transitionDuration: `${tabBox.duration}ms`, transitionTimingFunction: GLIDE_EASE }}
+        />
+        <TabButton label="Scriptures" active={shownTab === "scriptures"} onClick={() => goTab("scriptures", "live")} />
+        <TabButton label="Slides" active={shownTab === "slides"} onClick={() => goTab("slides", "slides")} />
+        <TabButton label="Songs" active={shownTab === "songs"} onClick={() => goTab("songs", "songs")} tour="songs-tab" />
+        <TabButton label="Themes" active={shownTab === "themes"} onClick={() => goTab("themes", "customize")} tour="themes" />
       </nav>
 
       {/* Center: Master broadcast transport deck (absolute dead center) */}
-      <div className="flex-1 min-w-0 flex justify-center">
+      <div data-tauri-drag-region className="flex-1 min-w-0 flex justify-center">
       <div
+        data-tauri-drag-region
         data-tour="live-controls"
         className="shrink-0 flex items-center p-0.5 bg-surface-container-high/60 border border-outline-variant/60 rounded-lg shadow-xs"
       >
@@ -207,7 +228,7 @@ export default function PresentationTopBar() {
       </div>
 
       {/* Right: Tools & Utilities */}
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div data-tauri-drag-region className="flex items-center gap-1.5 shrink-0">
         {/* Hardware & Peripherals */}
         <div className="flex items-center gap-0.5">
           <div className="relative" data-tour="outputs">
@@ -285,8 +306,9 @@ function TabButton({ label, active, disabled, onClick, className = "", tour }: {
       onClick={onClick}
       disabled={disabled}
       title={disabled ? "Coming soon" : undefined}
-      className={`px-2.5 py-0.5 rounded-md font-body-ui text-[12px] font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-        active ? "btn-primary shadow-xs" : "text-on-surface-variant hover:text-on-surface hover:bg-surface/50"
+      data-active={active ? "true" : undefined}
+      className={`relative z-10 px-2.5 py-0.5 rounded-md font-body-ui text-[12px] font-semibold transition-colors duration-200 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed ${
+        active ? "text-on-primary" : "text-on-surface-variant hover:text-on-surface hover:bg-surface/50"
       } ${className}`}
     >
       {label}
