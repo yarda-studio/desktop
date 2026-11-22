@@ -4,7 +4,7 @@ import { useSongsLive } from "./liveStore";
 import OutputStrip from "./OutputStrip";
 import { liveSlidePayload, useSongPresentState } from "./useSongOutput";
 
-export default function LivePanel({ width, stage }: { width: number; stage: { w: number; h: number } }) {
+export default function LivePanel({ width, stage, className = "flex" }: { width: number; stage: { w: number; h: number }; className?: string }) {
   const { live, setLiveIndex, clearLive } = useSongsLive();
   const presentationActive = useAppStore((s) => s.presentationActive);
   const liveBlack = useAppStore((s) => s.liveBlack);
@@ -14,7 +14,10 @@ export default function LivePanel({ width, stage }: { width: number; stage: { w:
   const slide = live?.slides[live.index];
 
   return (
-    <section style={{ width }} className="shrink min-w-0 max-w-[38%] flex flex-col overflow-hidden panel rounded-3xl">
+    <section
+      style={{ "--pane-w": `${width}px` } as React.CSSProperties}
+      className={`${className} w-full min-[880px]:w-[var(--pane-w)] shrink min-w-0 min-[880px]:max-w-[38%] flex-col overflow-hidden panel rounded-3xl`}
+    >
       <div className="shrink-0 flex items-center gap-3 px-3.5 py-2.5 border-b border-outline-variant">
         <h2 className="font-body-ui text-[13px] font-bold text-on-surface ">Live</h2>
         {presentationActive && (

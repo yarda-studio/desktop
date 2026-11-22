@@ -178,6 +178,8 @@ pub struct ModuleInfo {
     pub size_bytes: Option<u64>,
     /// Which module repository this listing came from (e.g. "CrossWire", "eBible.org").
     pub source: String,
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,6 +203,8 @@ pub struct InstalledModule {
     /// Only meaningful for built-in lexicons; everything else is always on.
     #[serde(default = "enabled_by_default")]
     pub enabled: bool,
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 fn enabled_by_default() -> bool {

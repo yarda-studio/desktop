@@ -27,7 +27,7 @@ export default function CountdownPanel({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   return (
-    <div ref={ref} role="dialog" aria-label="Countdown timer" className="absolute right-0 top-full mt-1 z-50 glass rounded-xl w-[300px] p-4 space-y-4">
+    <div ref={ref} role="dialog" aria-label="Countdown timer" className="absolute right-0 top-full mt-1 z-50 glass rounded-xl w-[300px] max-w-[calc(100vw-1rem)] p-4 space-y-4">
       <div className="text-center">
         <p className="font-metadata-mono text-[44px] leading-none text-on-surface tabular-nums" aria-live="off">{idle && s.status === "idle" ? "—:——" : left}</p>
         <p className="mt-1.5 font-body-ui text-[12px] text-on-surface-variant">

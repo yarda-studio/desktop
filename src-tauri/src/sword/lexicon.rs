@@ -109,7 +109,7 @@ impl LexiconReader {
 
     fn lookup_strongs_zld(&self, number: &str) -> Result<String> {
         let n = parse_strongs_number(number)?;
-        if let Ok(found) = self.lookup_strongs_zld_windowed(n) {
+        if let Ok(found) = self.lookup_strongs_zld_windowed(n, number) {
             return Ok(found);
         }
         // Supplementary lexicons (Abbott-Smith, BDB, Dodson) don't share
@@ -122,7 +122,7 @@ impl LexiconReader {
         self.lookup_strongs_zld_exhaustive(n, number)
     }
 
-    fn lookup_strongs_zld_windowed(&self, n: u32) -> Result<String> {
+    fn lookup_strongs_zld_windowed(&self, n: u32, number: &str) -> Result<String> {
         let zdx = self.read_file("zdx")?;
         let zdt = self.read_file("zdt")?;
         let num_blocks = zdx.len() / 8; // 8 bytes per zdx entry
@@ -133,7 +133,13 @@ impl LexiconReader {
         let start = estimated.saturating_sub(WINDOW);
         let end = (estimated + WINDOW + 1).min(num_blocks);
 
-        let target_attr = format!("n=\"{n}\"");
+        let prefix = number.chars().next().unwrap_or('H');
+        let candidates = [
+            format!("n=\"{n}\""),
+            format!("n=\"{prefix}{n:04}\""),
+            format!("n=\"{prefix}{n}\""),
+            format!("|{n:05}\""),
+        ];
 
         for bnum in start..end {
             let blk_off = read_u32_le(&zdx, bnum * 8).unwrap_or(0) as usize;
@@ -167,7 +173,7 @@ impl LexiconReader {
 
                 let content = &blk[entry_off..entry_off + entry_sz];
                 let txt = String::from_utf8_lossy(content);
-                if txt.contains(&target_attr) {
+                if candidates.iter().any(|c| txt.contains(c.as_str())) {
                     return self.decode(content);
                 }
             }
@@ -655,11 +661,27 @@ fn parse_strongs_tei(number: &str, raw: &str) -> Result<StrongsEntry> {
     };
     let is_untranslated_marker = is_untranslated_marker_text(&def_clean);
 
+    let part_of_speech = extract_tag_text(raw, "pos")
+        .or_else(|| extract_tag_text(raw, "gram"))
+        .or_else(|| {
+            if let (Some(f_end), Some(def_start)) = (raw.find("</foreign>"), raw.find("<def")) {
+                if f_end < def_start {
+                    let mid = &raw[f_end + 10..def_start];
+                    let clean = mid.replace("<lb/>", " ").replace("<lb>", " ").trim().to_string();
+                    if !clean.is_empty() && clean.len() < 30 {
+                        return Some(clean);
+                    }
+                }
+            }
+            None
+        })
+        .unwrap_or_default();
+
     Ok(StrongsEntry {
         number: number.to_string(),
         lemma,
         transliteration: header,
-        part_of_speech: String::new(),
+        part_of_speech,
         short_def: if short_def.is_empty() {
             def_clean.chars().take(200).collect()
         } else {
@@ -1181,5 +1203,16 @@ mod rich_lexicon_tests {
         let entry = parse_strongs_entry("G26", ABBOTT_G26).unwrap();
         assert!(entry.short_def.contains("love"));
         assert!(!entry.short_def.contains("LXX"));
+    }
+
+    #[test]
+    fn parses_dodson_tei_entry_correctly() {
+        let raw = r#"<entryFree n="G2048"><foreign xml:lang="grc">ἔρημος, ον</foreign><lb/>Adj<lb/><def rend="italic">deserted, desolate, a desert</def></entryFree>"#;
+        let entry = parse_strongs_entry("G2048", raw).unwrap();
+        assert_eq!(entry.number, "G2048");
+        assert_eq!(entry.lemma, "ἔρημος, ον");
+        assert_eq!(entry.part_of_speech, "Adj");
+        assert_eq!(entry.short_def, "deserted, desolate, a desert");
+        assert_eq!(entry.long_def, "deserted, desolate, a desert");
     }
 }

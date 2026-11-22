@@ -22,7 +22,7 @@ export default function RemotePanel({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   return (
-    <div ref={ref} role="dialog" aria-label="Phone remote" className="absolute right-0 top-full mt-1 z-50 glass rounded-xl w-[320px] p-4 space-y-4">
+    <div ref={ref} role="dialog" aria-label="Phone remote" className="absolute right-0 top-full mt-1 z-50 glass rounded-xl w-[320px] max-w-[calc(100vw-1rem)] p-4 space-y-4">
       <label className="flex items-start gap-3 font-body-ui text-[13px] text-on-surface">
         <input type="checkbox" checked={status.enabled} disabled={busy} onChange={(e) => void setEnabled(e.target.checked)} className="accent-primary mt-0.5" />
         <span>

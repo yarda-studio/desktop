@@ -158,34 +158,50 @@ impl ModuleRegistry {
 
         if cache_path.exists() {
             if let Ok(file) = std::fs::File::open(&cache_path) {
-                if let Ok(modules) = serde_json::from_reader(file) {
+                if let Ok(modules) = serde_json::from_reader::<_, Vec<ModuleInfo>>(file) {
                     initial_modules = Some(modules);
                 }
             }
         }
 
-        if initial_modules.is_none() {
-            if let Some(seed) = load_seed_catalog() {
-                initial_modules = Some(seed);
+        let seed = load_seed_catalog().unwrap_or_default();
+
+        let initial_modules: Vec<ModuleInfo> = match initial_modules {
+            Some(mut cached) => {
+                // If disk cache is missing any configured repo (e.g. from an earlier failed
+                // partial refresh), supplement it from the seed catalog so users never open
+                // to a library missing CrossWire lexicons/commentaries.
+                let mut seen_ids: std::collections::HashSet<String> =
+                    cached.iter().map(|m| m.id.clone()).collect();
+                for r in REPOS {
+                    let has_repo = cached.iter().any(|m| m.source == r.name);
+                    if !has_repo {
+                        for s in &seed {
+                            if s.source == r.name && seen_ids.insert(s.id.clone()) {
+                                cached.push(s.clone());
+                            }
+                        }
+                    }
+                }
+                cached
+            }
+            None => {
                 // Mark seed as aged past CATALOG_TTL so it triggers background refresh when requested
                 fetched_at = fetched_at.checked_sub(CATALOG_TTL).unwrap_or(fetched_at);
+                seed
             }
-        }
+        };
 
         let mut module_repo = HashMap::new();
-        let catalog_cache = if let Some(ref modules) = initial_modules {
-            for m in modules {
-                if let Some(idx) = REPOS.iter().position(|r| r.name == m.source) {
-                    module_repo.insert(m.id.clone(), idx);
-                }
+        for m in &initial_modules {
+            if let Some(idx) = REPOS.iter().position(|r| r.name == m.source) {
+                module_repo.insert(m.id.clone(), idx);
             }
-            Some(CatalogCache {
-                modules: modules.clone(),
-                fetched_at,
-            })
-        } else {
-            None
-        };
+        }
+        let catalog_cache = Some(CatalogCache {
+            modules: initial_modules,
+            fetched_at,
+        });
 
         Self {
             modules_dir,
@@ -203,7 +219,12 @@ impl ModuleRegistry {
 
     pub fn conf_for(&self, module_id: &str) -> Option<Arc<ModuleConf>> {
         let loaded = self.loaded.lock().unwrap();
-        loaded.get(module_id).cloned()
+        loaded.get(module_id).cloned().or_else(|| {
+            loaded
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(module_id))
+                .map(|(_, v)| v.clone())
+        })
     }
 
     pub fn module_path(&self, module_id: &str) -> PathBuf {
@@ -248,8 +269,8 @@ impl ModuleRegistry {
     /// Returns None on any error so callers can fall back gracefully.
     fn fetch_live_catalog(repo: &Repo) -> Option<Vec<ModuleInfo>> {
         let client = Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(5))
-            .timeout(std::time::Duration::from_secs(15))
+            .connect_timeout(std::time::Duration::from_secs(15))
+            .timeout(std::time::Duration::from_secs(30))
             .user_agent("Yarda/0.1 (Desktop; https://github.com/yarda-studio/desktop)")
             .build()
             .ok()?;
@@ -315,7 +336,12 @@ impl ModuleRegistry {
     }
 
     /// Fetches all configured module repositories in parallel and merges the result.
-    fn fetch_all_repos_parallel() -> (Vec<ModuleInfo>, HashMap<String, usize>) {
+    /// If a repository fails to fetch, existing modules for that repo from `existing_modules`
+    /// (or the embedded seed catalog) are retained so a transient network error never wipes
+    /// CrossWire's lexicons, dictionaries and commentaries from the catalog.
+    fn fetch_all_repos_parallel(
+        existing_modules: &[ModuleInfo],
+    ) -> (Vec<ModuleInfo>, HashMap<String, usize>) {
         let results: Vec<Option<Vec<ModuleInfo>>> = std::thread::scope(|s| {
             let handles: Vec<_> = REPOS
                 .iter()
@@ -327,12 +353,35 @@ impl ModuleRegistry {
                 .collect()
         });
 
+        let seed = load_seed_catalog().unwrap_or_default();
         let mut merged: Vec<ModuleInfo> = Vec::new();
         let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut module_repo = HashMap::new();
 
-        for (repo_idx, modules_opt) in results.into_iter().enumerate() {
-            let Some(modules) = modules_opt else { continue };
+        for (repo_idx, repo) in REPOS.iter().enumerate() {
+            let modules = match results.get(repo_idx).and_then(|r| r.as_ref()) {
+                Some(live) => live.clone(),
+                None => {
+                    log::warn!(
+                        "[modules] {} refresh failed; retaining cached/seed modules",
+                        repo.name
+                    );
+                    let from_cache: Vec<ModuleInfo> = existing_modules
+                        .iter()
+                        .filter(|m| m.source == repo.name)
+                        .cloned()
+                        .collect();
+                    if !from_cache.is_empty() {
+                        from_cache
+                    } else {
+                        seed.iter()
+                            .filter(|m| m.source == repo.name)
+                            .cloned()
+                            .collect()
+                    }
+                }
+            };
+
             for m in modules {
                 if seen_ids.insert(m.id.clone()) {
                     module_repo.insert(m.id.clone(), repo_idx);
@@ -373,7 +422,14 @@ impl ModuleRegistry {
 
         let registry = Arc::clone(self);
         std::thread::spawn(move || {
-            let (merged, module_repo) = Self::fetch_all_repos_parallel();
+            let existing = {
+                let cache = registry.catalog_cache.lock().unwrap();
+                cache
+                    .as_ref()
+                    .map(|c| c.modules.clone())
+                    .unwrap_or_default()
+            };
+            let (merged, module_repo) = Self::fetch_all_repos_parallel(&existing);
             registry
                 .is_refreshing
                 .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -432,6 +488,11 @@ impl ModuleRegistry {
                     has_strongs: matches!(*cat, "Lexicon"),
                     size_bytes: None,
                     source: REPOS[0].name.to_string(),
+                    features: if matches!(*cat, "Lexicon") {
+                        vec!["greekdef".to_string()]
+                    } else {
+                        Vec::new()
+                    },
                 })
                 .collect()
         };
@@ -694,6 +755,7 @@ fn parse_sword_conf(content: &str, source: &str) -> Option<ModuleInfo> {
     let mut mod_drv = String::new();
     let mut category_str = String::new();
     let mut cipher_key = String::new();
+    let mut features: Vec<String> = Vec::new();
 
     for line in content.lines() {
         let line = line.trim();
@@ -723,6 +785,14 @@ fn parse_sword_conf(content: &str, source: &str) -> Option<ModuleInfo> {
             "moddrv" => mod_drv = val.to_lowercase(),
             "category" => category_str = val.to_string(),
             "cipherkey" => cipher_key = val.to_string(),
+            "feature" => {
+                for f in val.split(',') {
+                    let f = f.trim().to_lowercase();
+                    if !f.is_empty() && !features.contains(&f) {
+                        features.push(f);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -733,22 +803,66 @@ fn parse_sword_conf(content: &str, source: &str) -> Option<ModuleInfo> {
 
     let requires_key = !cipher_key.is_empty();
 
-    let category = if !category_str.is_empty() {
-        match category_str.as_str() {
-            "Biblical Texts" | "Texts" => ModuleCategory::Bible,
-            "Commentaries" => ModuleCategory::Commentary,
-            "Lexicons / Dictionaries" | "Lexicons" | "Dictionaries" => ModuleCategory::Lexicon,
-            "Daily Devotional" | "Devotionals" => ModuleCategory::Devotional,
-            _ => ModuleCategory::Other,
+    let cat_lower = category_str.to_lowercase();
+    let drv_lower = mod_drv.to_lowercase();
+    let mid_lower = module_id.to_lowercase();
+    let name_lower = description.to_lowercase();
+
+    let is_devotional = cat_lower.contains("devotional")
+        || features.iter().any(|f| f.contains("dailydevotion"));
+
+    let category = if is_devotional {
+        ModuleCategory::Devotional
+    } else if matches!(cat_lower.as_str(), "commentaries" | "commentary")
+        || (category_str.is_empty()
+            && matches!(
+                drv_lower.as_str(),
+                "rawcom" | "rawcom4" | "zcom" | "zcom4" | "rawfiles" | "hrefcom" | "commentary"
+            ))
+    {
+        ModuleCategory::Commentary
+    } else if matches!(cat_lower.as_str(), "biblical texts" | "texts" | "bible")
+        || (category_str.is_empty()
+            && matches!(
+                drv_lower.as_str(),
+                "rawtext" | "rawtext4" | "ztext" | "ztext4"
+            ))
+    {
+        ModuleCategory::Bible
+    } else if matches!(
+        cat_lower.as_str(),
+        "lexicons / dictionaries" | "lexicons" | "dictionaries" | "glossaries"
+    ) || matches!(drv_lower.as_str(), "rawld" | "rawld4" | "zld" | "lexdict")
+    {
+        let is_lex = features.iter().any(|f| {
+            matches!(
+                f.as_str(),
+                "greekdef" | "hebrewdef" | "greekparse" | "hebrewparse"
+            )
+        }) || cat_lower == "lexicons"
+            || mid_lower.contains("lexicon")
+            || mid_lower.contains("strong")
+            || mid_lower.contains("morph")
+            || mid_lower.contains("parse")
+            || mid_lower.contains("septuagint")
+            || name_lower.contains("lexicon")
+            || name_lower.contains("strong")
+            || name_lower.contains("morpholog");
+        if is_lex {
+            ModuleCategory::Lexicon
+        } else {
+            ModuleCategory::Dictionary
         }
     } else {
-        match mod_drv.as_str() {
-            "rawtext" | "rawtext4" | "ztext" | "ztext4" | "hrefcom" => ModuleCategory::Bible,
-            "rawcom" | "rawcom4" | "zcom" | "rawfiles" => ModuleCategory::Commentary,
-            "rawld" | "rawld4" | "zld" => ModuleCategory::Lexicon,
-            _ => ModuleCategory::Other,
-        }
+        ModuleCategory::Other
     };
+
+    let has_strongs = features.iter().any(|f| {
+        matches!(
+            f.as_str(),
+            "strongsnumbers" | "greekdef" | "hebrewdef"
+        )
+    }) || mid_lower.contains("strong");
 
     // Build a readable description from the About field (unescape \n, take first ~200 chars).
     // Byte-slicing (trimmed[..200]) panics whenever byte 200 lands inside a multi-byte
@@ -786,9 +900,10 @@ fn parse_sword_conf(content: &str, source: &str) -> Option<ModuleInfo> {
         category,
         installed: false,
         requires_key,
-        has_strongs: false,
+        has_strongs,
         size_bytes: None,
         source: source.to_string(),
+        features: features.clone(),
     })
 }
 
@@ -944,6 +1059,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(lexicon.category, ModuleCategory::Lexicon);
+        assert!(lexicon.has_strongs);
+
+        let dictionary = parse_sword_conf(
+            "[Easton]\nDescription=Easton's Bible Dictionary\nModDrv=zLD\n",
+            "CrossWire",
+        )
+        .unwrap();
+        assert_eq!(dictionary.category, ModuleCategory::Dictionary);
+
+        let devotional = parse_sword_conf(
+            "[Daily]\nDescription=Daily Light\nModDrv=RawLD\nFeature=DailyDevotion\n",
+            "CrossWire",
+        )
+        .unwrap();
+        assert_eq!(devotional.category, ModuleCategory::Devotional);
     }
 
     #[test]

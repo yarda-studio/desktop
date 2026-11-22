@@ -55,12 +55,20 @@ export default function SearchHistoryMenu({ entries, onPick, onClear }: Props) {
         <span className="material-symbols-outlined text-[18px]">history</span>
       </button>
 
-      {open && anchor && (
+      {open && anchor && (() => {
+        const width = Math.min(340, window.innerWidth - 16);
+        const left = Math.min(anchor.left, Math.max(8, window.innerWidth - width - 8));
+        const spaceBelow = window.innerHeight - anchor.bottom - 16;
+        const spaceAbove = anchor.top - 16;
+        const openUp = spaceBelow < 220 && spaceAbove > spaceBelow;
+        return (
         <div
           role="menu"
           aria-label="Recent searches"
           className="fixed z-[200] glass rounded-xl overflow-y-auto py-1"
-          style={{ left: anchor.left, top: anchor.bottom + 4, width: 340, maxHeight: Math.max(160, window.innerHeight - anchor.bottom - 24) }}
+          style={openUp
+            ? { left, bottom: window.innerHeight - anchor.top + 4, width, maxHeight: Math.min(360, Math.max(140, spaceAbove)) }
+            : { left, top: anchor.bottom + 4, width, maxHeight: Math.min(360, Math.max(140, spaceBelow)) }}
         >
           {recent.length === 0 ? (
             <p className="px-3 py-2 font-body-ui text-[12px] text-on-surface-variant leading-relaxed">
@@ -104,7 +112,8 @@ export default function SearchHistoryMenu({ entries, onPick, onClear }: Props) {
             </>
           )}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

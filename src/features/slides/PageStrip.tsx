@@ -19,7 +19,7 @@ interface Props {
 }
 
 /** The editor's page rail: thumbnails of every page, plus add / duplicate / reorder / delete for the selected one. */
-export default function PageStrip({ pages, title, index, theme, onSelect, onAdd, onDuplicate, onRemove, onMove }: Props) {
+export default function PageStrip({ pages, title, index, theme, onSelect, onAdd, onDuplicate, onRemove, onMove, className = "flex" }: Props & { className?: string }) {
   // Thumbnails don't play the theme's background video; one video per page would be heavy.
   const stillTheme = useMemo(() => (theme ? { ...theme, background_video: null } : null), [theme]);
   const selectedRef = useRef<HTMLLIElement>(null);
@@ -29,7 +29,7 @@ export default function PageStrip({ pages, title, index, theme, onSelect, onAdd,
   const tool = "flex h-8 items-center justify-center rounded ghost text-on-surface disabled:pointer-events-none disabled:opacity-30";
 
   return (
-    <nav aria-label="Pages" className="flex w-[148px] shrink-0 flex-col border-r border-outline-variant">
+    <nav aria-label="Pages" className={`${className} w-full lg:w-[148px] shrink-0 flex-col lg:border-r border-outline-variant`}>
       <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
         {pages.map((page, i) => {
           const selected = i === index;

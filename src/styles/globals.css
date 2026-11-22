@@ -348,7 +348,7 @@ html, body {
   /* Settings rows: one title/description pair and one control language. */
   .set-title { @apply font-body-ui text-[14px] font-semibold text-on-surface; letter-spacing: -0.01em; }
   .set-desc  { @apply font-body-ui text-[13px] leading-snug text-on-surface-variant mt-1; }
-  .set-row   { @apply flex items-center justify-between gap-x-6 gap-y-3 flex-wrap px-8 py-4 min-h-[64px]; }
+  .set-row   { @apply flex items-center justify-between gap-x-6 gap-y-3 flex-wrap px-4 sm:px-6 lg:px-8 py-4 min-h-[64px]; }
   .set-ctl   { @apply inline-flex items-center justify-center h-8 px-3 rounded-lg font-body-ui text-[13px] font-medium whitespace-nowrap transition-colors; }
 
   .field-label { @apply block mb-1.5 font-body-ui font-medium text-[12px] text-on-surface-variant; }

@@ -15,6 +15,13 @@ pub fn list_installed_modules(
     // Reload from disk to catch any newly installed modules
     registry.load_installed();
 
+    let disabled_installed: Vec<String> = db
+        .get_meta("disabled_installed_lexicons")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+
     let records = db.list_installed_module_records()?;
     let modules = records
         .into_iter()
@@ -28,23 +35,44 @@ pub fn list_installed_modules(
                 crate::sword::conf::ModuleType::Commentary => ModuleCategory::Commentary,
                 crate::sword::conf::ModuleType::Lexicon => ModuleCategory::Lexicon,
                 crate::sword::conf::ModuleType::Dictionary => ModuleCategory::Dictionary,
+                crate::sword::conf::ModuleType::Devotional => ModuleCategory::Devotional,
                 crate::sword::conf::ModuleType::Bible => ModuleCategory::Bible,
             };
+            let has_strongs = conf.feature.iter().any(|f| {
+                f.eq_ignore_ascii_case("strongsnumbers")
+                    || f.eq_ignore_ascii_case("greekdef")
+                    || f.eq_ignore_ascii_case("hebrewdef")
+            }) || id.to_lowercase().contains("strong");
+            let mut features = conf.feature.clone();
+            let name_desc_lower = format!("{} {} {}", id, name, conf.description).to_lowercase();
+            if !features.iter().any(|f| f.contains("greek") || f.contains("hebrew")) {
+                if name_desc_lower.contains("greek") {
+                    features.push("greekdef".to_string());
+                } else if name_desc_lower.contains("hebrew") {
+                    features.push("hebrewdef".to_string());
+                }
+            }
+            let enabled = !disabled_installed.iter().any(|d| d.eq_ignore_ascii_case(&id));
             Some(InstalledModule {
                 id: id.clone(),
                 name,
-                description: String::new(),
-                language: String::new(),
+                description: conf.description.clone(),
+                language: if conf.language.is_empty() {
+                    "eng".to_string()
+                } else {
+                    conf.language.clone()
+                },
                 version,
                 category,
                 installed: true,
                 requires_key: false,
-                has_strongs: false,
+                has_strongs,
                 size_bytes: None,
                 install_path: path,
                 index_built,
                 built_in: false,
-                enabled: true,
+                enabled,
+                features,
             })
         })
         .collect();
@@ -124,6 +152,7 @@ async fn run_install(
         crate::sword::conf::ModuleType::Commentary => "Commentary",
         crate::sword::conf::ModuleType::Lexicon => "Lexicon",
         crate::sword::conf::ModuleType::Dictionary => "Dictionary",
+        crate::sword::conf::ModuleType::Devotional => "Devotional",
         crate::sword::conf::ModuleType::Bible => "Bible",
     };
     let module_name = if conf.name.is_empty() {

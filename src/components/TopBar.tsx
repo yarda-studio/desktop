@@ -78,25 +78,25 @@ export default function TopBar() {
 
   return (
     <header
-      className="relative flex justify-between items-center h-11 px-content-margin w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0"
+      className="relative flex justify-between items-center gap-1.5 h-11 px-2 md:px-content-margin w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0"
       style={IS_MAC ? { paddingLeft: MAC_WINDOW_BUTTONS_WIDTH } : undefined}
     >
       {/* The bar is also the window's title bar (there is no separate one), so its empty parts drag the window. */}
       <div data-tauri-drag-region aria-hidden="true" className="absolute inset-0 -z-10" />
       {/* Left: logo + current reading position */}
-      <div data-tauri-drag-region className="flex items-center gap-2.5">
+      <div data-tauri-drag-region className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink-0">
         <button
           onClick={() => setView("reading")}
-          className="flex items-center gap-2 rounded-lg py-1 px-1.5 hover:bg-surface-variant/30 transition-colors group"
+          className="flex items-center gap-2 rounded-lg py-1 px-1.5 hover:bg-surface-variant/30 transition-colors group shrink-0"
           title="Yarda Library"
           aria-label="Yarda Library"
         >
           <img src={logoUrl} alt="Yarda" className="w-5 h-5 object-contain" />
-          <span className="font-semibold text-primary font-body-ui text-[13px] tracking-tight">Yarda</span>
+          <span className="hidden sm:inline font-semibold text-primary font-body-ui text-[13px] tracking-tight">Yarda</span>
         </button>
-        <div className="h-4 w-px bg-outline-variant/60" aria-hidden="true" />
+        <div className="h-4 w-px bg-outline-variant/60 shrink-0" aria-hidden="true" />
         <button
-          className="ctl rounded-lg px-2.5 py-1 text-on-surface font-semibold font-body-ui text-[13px]"
+          className="ctl rounded-lg px-2 sm:px-2.5 py-1 text-on-surface font-semibold font-body-ui text-[12px] sm:text-[13px] truncate max-w-[140px] sm:max-w-none"
           onClick={() => setView("reading")}
         >
           {refLabel}
@@ -104,7 +104,7 @@ export default function TopBar() {
       </div>
 
       {/* Center: dual-mode search */}
-      <div data-tauri-drag-region className="flex-1 flex justify-center px-8 max-w-xl mx-auto">
+      <div data-tauri-drag-region className="flex-1 min-w-0 flex justify-center px-2 lg:px-8 max-w-xl mx-auto">
         <div data-tauri-drag-region data-tour="topbar-search" className="w-full max-w-sm hidden lg:flex items-center gap-1.5">
 
           {/* Mode-switch icon button */}
@@ -140,24 +140,24 @@ export default function TopBar() {
       </div>
 
       {/* Right: toolbar actions */}
-      <div data-tauri-drag-region className="flex items-center gap-1.5">
+      <div data-tauri-drag-region className="flex items-center gap-1 md:gap-1.5 shrink-0">
         {/* Team scripture share target selector and instant send */}
-        <div data-tauri-drag-region className="flex items-center gap-1 bg-surface-variant/25 p-0.5 rounded-lg border border-outline-variant/30">
-          <TeamShareTargetSelector />
+        <div data-tauri-drag-region className="flex items-center gap-0.5 md:gap-1 bg-surface-variant/25 p-0.5 rounded-lg border border-outline-variant/30">
+          <TeamShareTargetSelector compact />
           <button
             onClick={() => void useTeamShareStore.getState().sendVerse()}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-primary hover:bg-primary/10 transition-colors shrink-0"
+            className="w-6 h-6 md:w-7 md:h-7 flex items-center justify-center rounded-md text-primary hover:bg-primary/10 transition-colors shrink-0"
             title={forPlatform("Send active verse to team (Ctrl+Shift+T)")}
             aria-label="Send active verse to team"
           >
-            <span className="material-symbols-outlined !text-[16px] leading-none">send</span>
+            <span className="material-symbols-outlined !text-[15px] md:!text-[16px] leading-none">send</span>
           </button>
         </div>
         {workspace === "presentation" && (
           <button
             aria-label="Service queue"
             onClick={() => setServiceOrderOpen(!serviceOrderOpen)}
-            className={`relative w-8 h-8 flex items-center justify-center rounded-lg shrink-0 ${
+            className={`relative w-7 h-7 md:w-8 md:h-8 flex items-center justify-center rounded-lg shrink-0 ${
               serviceOrderOpen ? "ctl-active" : "ghost text-secondary hover:text-on-surface"
             }`}
             title="Service queue (Ctrl+Q)"
@@ -174,14 +174,14 @@ export default function TopBar() {
           aria-label="Toggle parallel view"
           data-tour="parallel"
           onClick={() => setParallelMode(!parallelMode)}
-          className={`w-8 h-8 flex items-center justify-center rounded-lg shrink-0 ${parallelMode ? "ctl-active" : "ghost text-secondary hover:text-on-surface"}`}
+          className={`w-7 h-7 md:w-8 md:h-8 flex items-center justify-center rounded-lg shrink-0 ${parallelMode ? "ctl-active" : "ghost text-secondary hover:text-on-surface"}`}
         >
           <span className="material-symbols-outlined !text-[18px] leading-none select-none">splitscreen</span>
         </button>
         <button
           aria-label="Font size"
           data-tour="font-size"
-          className="w-8 h-8 flex items-center justify-center rounded-lg shrink-0 ghost text-secondary hover:text-on-surface"
+          className="hidden sm:flex w-7 h-7 md:w-8 md:h-8 items-center justify-center rounded-lg shrink-0 ghost text-secondary hover:text-on-surface"
         >
           <span className="material-symbols-outlined !text-[18px] leading-none select-none">format_size</span>
         </button>
@@ -189,7 +189,7 @@ export default function TopBar() {
           aria-label="Toggle theme"
           data-tour="theme"
           onClick={cycleTheme}
-          className="w-8 h-8 flex items-center justify-center rounded-lg shrink-0 ghost text-secondary hover:text-on-surface"
+          className="w-7 h-7 md:w-8 md:h-8 flex items-center justify-center rounded-lg shrink-0 ghost text-secondary hover:text-on-surface"
         >
           <span className="material-symbols-outlined !text-[18px] leading-none select-none">{themeIcon}</span>
         </button>
@@ -198,7 +198,7 @@ export default function TopBar() {
           aria-label="Settings"
           data-tour="settings"
           onClick={() => setSettingsOpen(true)}
-          className={`w-8 h-8 flex items-center justify-center rounded-lg shrink-0 ${settingsOpen ? "ctl-active" : "ghost text-secondary hover:text-on-surface"}`}
+          className={`w-7 h-7 md:w-8 md:h-8 flex items-center justify-center rounded-lg shrink-0 ${settingsOpen ? "ctl-active" : "ghost text-secondary hover:text-on-surface"}`}
         >
           <span className="material-symbols-outlined !text-[18px] leading-none select-none">settings</span>
         </button>

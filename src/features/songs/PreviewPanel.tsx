@@ -4,7 +4,7 @@ import { useSongsLive, previewSlides } from "./liveStore";
 import OutputStrip from "./OutputStrip";
 import { useSongPresentState } from "./useSongOutput";
 
-export default function PreviewPanel({ stage }: { stage: { w: number; h: number } }) {
+export default function PreviewPanel({ stage, className = "flex" }: { stage: { w: number; h: number }; className?: string }) {
   const { previewSong, previewIndex, setPreviewIndex, goLive, live } = useSongsLive();
   const slides = useMemo(() => previewSlides(previewSong), [previewSong]);
   const index = Math.min(previewIndex, Math.max(0, slides.length - 1));
@@ -17,7 +17,7 @@ export default function PreviewPanel({ stage }: { stage: { w: number; h: number 
     && live.slides[index]?.text === slide?.text;
 
   return (
-    <section className="flex-1 min-w-0 flex flex-col overflow-hidden panel rounded-3xl">
+    <section className={`${className} flex-1 min-w-0 flex-col overflow-hidden panel rounded-3xl`}>
       <div className="shrink-0 flex items-center gap-3 px-3.5 py-2 border-b border-outline-variant">
         <h2 className="min-w-0 flex-1 font-body-ui text-[13px] font-bold text-on-surface truncate">
           Preview{" "}
@@ -26,12 +26,12 @@ export default function PreviewPanel({ stage }: { stage: { w: number; h: number 
         <button
           onClick={() => goLive()}
           disabled={!slide || alreadyLive}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md btn-primary font-body-ui text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+          className="flex items-center gap-1.5 px-2.5 py-1 min-[880px]:px-3 min-[880px]:py-1.5 rounded-md btn-primary font-body-ui text-[13px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity shrink-0"
           title="Send the previewed slide live (or double-click it)"
           aria-label="Go Live"
         >
           <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-          <span className="hidden min-[900px]:inline">Go Live</span>
+          <span className="hidden sm:inline min-[880px]:hidden min-[960px]:inline">Go Live</span>
         </button>
       </div>
 

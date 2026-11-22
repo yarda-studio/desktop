@@ -42,8 +42,8 @@ export default function App() {
   const [firstRun, setFirstRun] = useState<{ required: string[]; installed: string[] } | null>(null);
   const finishFirstRun = useRef<() => void>(() => {});
   const queueDrawerW = useResizable({
-    storageKey: "scriptura.queueDrawerWidth", initial: 324, min: 280, axis: "x", invert: true,
-    max: () => Math.round(window.innerWidth * 0.7),
+    storageKey: "scriptura.queueDrawerWidth", initial: 324, min: 260, axis: "x", invert: true,
+    max: () => Math.max(260, Math.round(window.innerWidth * 0.7)),
   });
 
   // Presentation-only views can't be *reached* in Study mode any more (no nav
@@ -287,7 +287,7 @@ export default function App() {
             onClick={() => setServiceOrderOpen(false)}
           >
             <div
-              style={{ width: queueDrawerW.size }}
+              style={{ width: queueDrawerW.size, maxWidth: "calc(100vw - 1.5rem)" }}
               className={`relative p-3 h-full ${queueDrawerW.dragging ? "" : "transition-transform duration-200 ease-in-out"} ${serviceOrderOpen ? "translate-x-0" : "translate-x-full"}`}
               onClick={(e) => e.stopPropagation()}
             >

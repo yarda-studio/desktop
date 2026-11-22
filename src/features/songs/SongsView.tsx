@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ConsolePaneTabs, { type ConsolePane } from "../../components/ConsolePaneTabs";
 import ErrorBoundary from "../../components/ErrorBoundary";
 import { ResizeHandle, useResizable } from "../../hooks/useResizable";
 import { usePresentationStage } from "../../hooks/usePresentationStage";
@@ -24,21 +25,23 @@ export default function SongsView() {
   const draftKey = useSongsStore((s) => s.draftKey);
   const cancel = useSongsStore((s) => s.cancel);
   const songs = useSongsStore((s) => s.songs);
+  const scheduleCount = useSongsLive((s) => s.schedule.length);
   const presentationActive = useAppStore((s) => s.presentationActive);
   const [importing, setImporting] = useState(false);
+  const [pane, setPane] = useState<ConsolePane>("preview");
   const stage = usePresentationStage(presentationActive);
 
   const queueW = useResizable({
     storageKey: "scriptura.songs.queueWidth", initial: Math.round(window.innerWidth * 0.24), min: 180, axis: "x",
-    max: () => Math.round(window.innerWidth * 0.4),
+    max: () => Math.max(180, Math.round(window.innerWidth * 0.36)),
   });
   const liveW = useResizable({
-    storageKey: "scriptura.songs.liveWidth", initial: Math.round(window.innerWidth * 0.3), min: 240, axis: "x", invert: true,
-    max: () => Math.round(window.innerWidth * 0.5),
+    storageKey: "scriptura.songs.liveWidth", initial: Math.round(window.innerWidth * 0.3), min: 220, axis: "x", invert: true,
+    max: () => Math.max(220, Math.round(window.innerWidth * 0.44)),
   });
   const bottomH = useResizable({
-    storageKey: "scriptura.songs.bottomHeight", initial: Math.round(window.innerHeight * 0.4), min: 220, axis: "y", invert: true,
-    max: () => window.innerHeight - 260,
+    storageKey: "scriptura.songs.bottomHeight", initial: Math.round(window.innerHeight * 0.38), min: 140, axis: "y", invert: true,
+    max: () => Math.max(160, window.innerHeight - 240),
   });
 
   useSongOutput();
@@ -60,18 +63,24 @@ export default function SongsView() {
   }, []);
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-2.5 gap-2.5">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-2 sm:p-2.5 gap-2 sm:gap-2.5">
+      <ConsolePaneTabs pane={pane} onChange={setPane} scheduleCount={scheduleCount} liveActive={presentationActive} />
+
       <div className="flex-1 min-h-0 flex overflow-hidden">
-        <ErrorBoundary compact label="Schedule"><SchedulePanel width={queueW.size} /></ErrorBoundary>
-        <ResizeHandle spaced axis="x" label="schedule" dragging={queueW.dragging} handleProps={queueW.handleProps} />
-        <ErrorBoundary compact label="Preview"><PreviewPanel stage={stage} /></ErrorBoundary>
-        <ResizeHandle spaced axis="x" label="live" dragging={liveW.dragging} handleProps={liveW.handleProps} />
-        <ErrorBoundary compact label="Live"><LivePanel width={liveW.size} stage={stage} /></ErrorBoundary>
+        <ErrorBoundary compact label="Schedule"><SchedulePanel width={queueW.size} className={`${pane === "schedule" ? "flex" : "hidden"} min-[880px]:flex`} /></ErrorBoundary>
+        <div className="hidden min-[880px]:contents">
+          <ResizeHandle spaced axis="x" label="schedule" dragging={queueW.dragging} handleProps={queueW.handleProps} />
+        </div>
+        <ErrorBoundary compact label="Preview"><PreviewPanel stage={stage} className={`${pane === "preview" ? "flex" : "hidden"} min-[880px]:flex`} /></ErrorBoundary>
+        <div className="hidden min-[880px]:contents">
+          <ResizeHandle spaced axis="x" label="live" dragging={liveW.dragging} handleProps={liveW.handleProps} />
+        </div>
+        <ErrorBoundary compact label="Live"><LivePanel width={liveW.size} stage={stage} className={`${pane === "live" ? "flex" : "hidden"} min-[880px]:flex`} /></ErrorBoundary>
       </div>
 
       <ResizeHandle axis="y" label="library" dragging={bottomH.dragging} handleProps={bottomH.handleProps} />
 
-      <div style={{ height: bottomH.size, maxHeight: "55%" }} className="shrink-0 panel rounded-3xl flex overflow-hidden">
+      <div style={{ height: bottomH.size, maxHeight: "52%" }} className="shrink-0 panel rounded-3xl flex overflow-hidden">
         <ErrorBoundary compact label="Song library"><SongList onImport={() => setImporting(true)} /></ErrorBoundary>
       </div>
 

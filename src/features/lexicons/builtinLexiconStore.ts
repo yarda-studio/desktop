@@ -28,8 +28,19 @@ export const useBuiltinLexicons = create<BuiltinLexiconState>((set, get) => ({
 
   load: async () => {
     try {
-      const entries = await api.listBuiltinLexicons();
-      set({ entries, loaded: true });
+      const [builtin, installed] = await Promise.all([
+        api.listBuiltinLexicons(),
+        api.listInstalledModules().catch(() => []),
+      ]);
+      const builtinIds = new Set(builtin.map((b) => b.id.toUpperCase()));
+      const extraLexicons = installed.filter(
+        (m) =>
+          m.category === "Lexicon" &&
+          !builtinIds.has(m.id.toUpperCase()) &&
+          m.id.toUpperCase() !== "STRONGSGREEK" &&
+          m.id.toUpperCase() !== "STRONGSHEBREW"
+      );
+      set({ entries: [...builtin, ...extraLexicons], loaded: true });
     } catch {
       // No backend (browser preview) or a read error: leave everything on.
       set({ loaded: true });
@@ -38,7 +49,7 @@ export const useBuiltinLexicons = create<BuiltinLexiconState>((set, get) => ({
 
   setEnabled: async (id, enabled) => {
     const before = get().entries;
-    set({ entries: before.map((e) => (e.id === id ? { ...e, enabled } : e)) });
+    set({ entries: before.map((e) => (e.id.toUpperCase() === id.toUpperCase() ? { ...e, enabled } : e)) });
     try {
       await api.setBuiltinLexiconEnabled(id, enabled);
     } catch {

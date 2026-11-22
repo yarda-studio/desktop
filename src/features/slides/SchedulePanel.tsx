@@ -5,11 +5,14 @@ import SlideThumb from "./SlideThumb";
 
 const KIND_ICON = { announcement: "campaign", freeform: "dashboard_customize" } as const;
 
-export default function SchedulePanel({ width }: { width: number }) {
+export default function SchedulePanel({ width, className = "flex" }: { width: number; className?: string }) {
   const { schedule, previewId, live, preview, goLive, removeFromSchedule, moveInSchedule, clearSchedule } = useSlidesLive();
 
   return (
-    <section style={{ width }} className="shrink-0 flex flex-col overflow-hidden panel rounded-3xl">
+    <section
+      style={{ "--pane-w": `${width}px` } as React.CSSProperties}
+      className={`${className} w-full min-[880px]:w-[var(--pane-w)] shrink min-w-0 min-[880px]:max-w-[32%] flex-col overflow-hidden panel rounded-3xl`}
+    >
       <ErrorBoundary compact label="Plan and schedule">
       <PlanSection scheduleCount={schedule.length}>
       <div className="shrink-0 flex items-center justify-between gap-3 px-3 py-2 border-b border-outline-variant">

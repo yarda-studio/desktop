@@ -20,8 +20,8 @@ export default function AiSearchDock({ onNavigate, activeRef }: Props) {
   const setOpen = useAiSearchStore((s) => s.setOpen);
 
   const width = useResizable({
-    storageKey: "scriptura.live.aiWidth", initial: 340, min: 260, axis: "x", invert: true,
-    max: () => Math.round(window.innerWidth * 0.5),
+    storageKey: "scriptura.live.aiWidth", initial: 340, min: 240, axis: "x", invert: true,
+    max: () => Math.max(240, Math.round(window.innerWidth * 0.5)),
   });
 
   // Ctrl/Cmd+Shift+K: open Ask Scripture (or close it, if it's open).
@@ -40,11 +40,13 @@ export default function AiSearchDock({ onNavigate, activeRef }: Props) {
 
   return (
     <>
-      <ResizeHandle axis="x" label="Ask Scripture" dragging={width.dragging} handleProps={width.handleProps} />
+      <div className="hidden md:contents">
+        <ResizeHandle axis="x" label="Ask Scripture" dragging={width.dragging} handleProps={width.handleProps} />
+      </div>
       <aside
         data-tour="ai-panel"
-        style={{ width: width.size }}
-        className="shrink-0 h-full min-h-0 flex flex-col border-l border-outline-variant bg-surface-container-lowest/60 overflow-hidden"
+        style={{ "--ai-w": `${width.size}px` } as React.CSSProperties}
+        className="absolute inset-0 z-20 md:static md:inset-auto w-full md:w-[var(--ai-w)] md:max-w-[55%] shrink-0 h-full min-h-0 flex flex-col md:border-l border-outline-variant bg-surface md:bg-surface-container-lowest/60 overflow-hidden"
       >
         <ErrorBoundary compact label="Ask Scripture">
           <AiSearchPanel onNavigate={onNavigate} activeRef={activeRef} onClose={() => setOpen(false)} />

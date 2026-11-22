@@ -66,6 +66,11 @@ pub(crate) fn builtin_lexicon_entries(
                 index_built: true,
                 built_in: true,
                 enabled: !disabled.iter().any(|d| d.eq_ignore_ascii_case(l.id)),
+                features: if l.language.eq_ignore_ascii_case("Hebrew") {
+                    vec!["hebrewdef".to_string()]
+                } else {
+                    vec!["greekdef".to_string()]
+                },
             }
         })
         .collect()
@@ -81,20 +86,35 @@ pub fn list_builtin_lexicons(
     Ok(builtin_lexicon_entries(&db, &registry))
 }
 
-/// Switch a built-in lexicon on or off. Off hides it from the Strong's panel and the default-source
+/// Switch a built-in or installed lexicon on or off. Off hides it from the Strong's panel and the default-source
 /// choice; nothing is deleted, so turning it back on is instant.
 #[tauri::command]
 pub fn set_builtin_lexicon_enabled(
     id: String,
     enabled: bool,
     db: State<'_, Arc<Database>>,
+    registry: State<'_, Arc<ModuleRegistry>>,
 ) -> std::result::Result<(), AppError> {
-    let lexicon = builtin::find(&id)
-        .ok_or_else(|| AppError::Sword(format!("unknown built-in lexicon: {id}")))?;
-    let current = builtin::parse_disabled(db.get_meta(builtin::DISABLED_META_KEY)?.as_deref());
-    let next = builtin::with_enabled(current, lexicon.id, enabled);
-    let json = serde_json::to_string(&next).unwrap_or_else(|_| "[]".to_string());
-    db.set_meta(builtin::DISABLED_META_KEY, &json)
+    if let Some(lexicon) = builtin::find(&id) {
+        let current = builtin::parse_disabled(db.get_meta(builtin::DISABLED_META_KEY)?.as_deref());
+        let next = builtin::with_enabled(current, lexicon.id, enabled);
+        let json = serde_json::to_string(&next).unwrap_or_else(|_| "[]".to_string());
+        db.set_meta(builtin::DISABLED_META_KEY, &json)?;
+    } else if registry.conf_for(&id).is_some() {
+        let raw = db.get_meta("disabled_installed_lexicons")?.unwrap_or_default();
+        let mut current: Vec<String> = serde_json::from_str(&raw).unwrap_or_default();
+        current.retain(|existing| !existing.eq_ignore_ascii_case(&id));
+        if !enabled {
+            current.push(id);
+        }
+        current.sort();
+        current.dedup();
+        let json = serde_json::to_string(&current).unwrap_or_else(|_| "[]".to_string());
+        db.set_meta("disabled_installed_lexicons", &json)?;
+    } else {
+        return Err(AppError::Sword(format!("unknown lexicon: {id}")));
+    }
+    Ok(())
 }
 
 /// Every Strong's number that is a grammatical marker rather than a real word
@@ -149,6 +169,26 @@ fn bundled_marker_flag(registry: &ModuleRegistry, strongs_number: &str) -> Optio
         .map(|e| e.is_untranslated_marker)
 }
 
+fn fill_fallback_transliteration(registry: &ModuleRegistry, entry: &mut StrongsEntry) {
+    if !entry.transliteration.is_empty() {
+        return;
+    }
+    let module_id = if entry.number.starts_with('G') {
+        "StrongsGreek"
+    } else {
+        "StrongsHebrew"
+    };
+    if let Some(conf) = registry.conf_for(module_id) {
+        if let Ok(reader) = LexiconReader::open(&registry.module_path(&conf.module_id), &conf) {
+            if let Ok(bundled) = reader.get_strongs_entry(&entry.number) {
+                if !bundled.transliteration.is_empty() {
+                    entry.transliteration = bundled.transliteration;
+                }
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub fn get_strongs_entry(
     module_id: String, // lexicon module, e.g. "StrongsGreek", or a STEPBible source id like "TBESG"
@@ -181,9 +221,14 @@ pub fn get_strongs_entry(
         let conf = registry
             .conf_for(&module_id)
             .ok_or_else(|| AppError::ModuleNotFound(module_id.clone()))?;
-        let module_path = registry.module_path(&module_id);
+        let module_path = registry.module_path(&conf.module_id);
         let reader = LexiconReader::open(&module_path, &conf)?;
-        reader.get_strongs_entry(&strongs_number)?
+        let mut entry = reader.get_strongs_entry(&strongs_number)?;
+        if bundled_marker_flag(&registry, &strongs_number).unwrap_or(false) {
+            entry.is_untranslated_marker = true;
+        }
+        fill_fallback_transliteration(&registry, &mut entry);
+        entry
     };
 
     let (total, by_book) = db.get_strongs_counts(&bible_module_id, &strongs_number)?;

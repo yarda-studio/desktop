@@ -114,8 +114,7 @@ export default function SearchScopeBar({ compact }: Props) {
       {popoverOpen && (
         <div
           ref={popoverRef}
-          className="absolute top-full mt-2 left-0 z-50 w-[480px] max-h-[60vh] overflow-y-auto p-4 flex gap-6 glass rounded-2xl"
-          style={{ minWidth: 320 }}
+          className="absolute top-full mt-2 left-0 z-50 w-[min(480px,calc(100vw-2rem))] max-h-[60vh] overflow-y-auto p-4 flex flex-col sm:flex-row gap-4 sm:gap-6 glass rounded-2xl"
         >
           {/* OT column */}
           <div className="flex-1 min-w-0">

@@ -24,6 +24,7 @@ import TranslationBar from "../components/TranslationBar";
 import PresentationSearchBar, { type PresentationSearchBarHandle } from "../components/PresentationSearchBar";
 import { ResizeHandle, useResizable } from "../hooks/useResizable";
 import AiSearchDock from "../components/aiSearch/AiSearchDock";
+import ConsolePaneTabs, { type ConsolePane } from "../components/ConsolePaneTabs";
 
 function verseText(chapterVerses: { verse: number; spans: { text: string }[] }[] | undefined, verse: number): string {
   return chapterVerses?.find((v) => v.verse === verse)?.spans.map((s) => s.text).join("") ?? "";
@@ -85,8 +86,14 @@ export default function LiveShowRunner() {
   const [previewPart, setPreviewPart] = useState(0);
   // Which split verse (book|chapter|verse) has its parts unfolded in the list.
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [centerTick, setCenterTick] = useState(0);
+  const skipNextCenterRef = useRef(false);
+  const clickSettleTimerRef = useRef<number | null>(null);
   const verseListRef = useRef<HTMLDivElement>(null);
   useEffect(() => setPreviewPart(0), [previewRef.book, previewRef.chapter, previewRef.verse]);
+  useEffect(() => () => {
+    if (clickSettleTimerRef.current !== null) window.clearTimeout(clickSettleTimerRef.current);
+  }, []);
 
   // Anchor verse for shift-click range selection.
   const [selectionAnchor, setSelectionAnchor] = useState<number>(
@@ -125,16 +132,23 @@ export default function LiveShowRunner() {
   // double-clicking a divider restores its default.
   const queueW = useResizable({
     storageKey: "scriptura.live.queueWidth", initial: Math.round(window.innerWidth * 0.24), min: 180, axis: "x",
-    max: () => Math.round(window.innerWidth * 0.4),
+    max: () => Math.max(180, Math.round(window.innerWidth * 0.36)),
   });
   const liveW = useResizable({
-    storageKey: "scriptura.live.liveWidth", initial: Math.round(window.innerWidth * 0.3), min: 240, axis: "x", invert: true,
-    max: () => Math.round(window.innerWidth * 0.5),
+    storageKey: "scriptura.live.liveWidth", initial: Math.round(window.innerWidth * 0.3), min: 220, axis: "x", invert: true,
+    max: () => Math.max(220, Math.round(window.innerWidth * 0.44)),
   });
   const bottomH = useResizable({
-    storageKey: "scriptura.live.bottomHeight", initial: Math.round(window.innerHeight * 0.38), min: 200, axis: "y", invert: true,
-    max: () => window.innerHeight - 260,
+    storageKey: "scriptura.live.bottomHeight", initial: Math.round(window.innerHeight * 0.36), min: 140, axis: "y", invert: true,
+    max: () => Math.max(160, window.innerHeight - 240),
   });
+  const [pane, setPane] = useState<ConsolePane>("preview");
+
+  // On narrow screens where only one upper column is visible, opening a
+  // Strong's lookup from the verse list jumps straight to Preview so the user sees it.
+  useEffect(() => {
+    if (selectedStrongs) setPane("preview");
+  }, [selectedStrongs]);
 
 
   const { chapter: previewChapter, parallelChapter: previewParallelChapter } = useChapterData(primaryModule, previewRef.book, previewRef.chapter, parallelMode, parallelModule);
@@ -201,8 +215,14 @@ export default function LiveShowRunner() {
   // Keep the selected verse in view however it was chosen (jump, word search,
   // arrow keys, queue item). Waits for the right chapter to be loaded, since
   // the preview ref changes a moment before its chapter's verses arrive.
+  // Pointer clicks defer centering until after the double-click window so the
+  // row doesn't scroll out from under the cursor before the second click lands.
   const loadedChapterMatches = previewChapter?.book === previewRef.book && previewChapter?.chapter === previewRef.chapter;
   useEffect(() => {
+    if (skipNextCenterRef.current) {
+      skipNextCenterRef.current = false;
+      return;
+    }
     const list = verseListRef.current;
     if (!list || !loadedChapterMatches) return;
     const el = list.querySelector<HTMLElement>(`[data-verse="${previewRef.verse}"]`);
@@ -211,7 +231,7 @@ export default function LiveShowRunner() {
     const rect = el.getBoundingClientRect();
     const delta = rect.top - listRect.top - (list.clientHeight - rect.height) / 2;
     return animateScrollBy(list, delta);
-  }, [previewRef.book, previewRef.chapter, previewRef.verse, loadedChapterMatches]);
+  }, [previewRef.book, previewRef.chapter, previewRef.verse, loadedChapterMatches, centerTick]);
 
   // Unfolding a split verse can push its parts below the fold.
   useEffect(() => {
@@ -245,7 +265,16 @@ export default function LiveShowRunner() {
     setVersePart(part);
   }, [currentRef, versePart, pushLiveHistory, setCurrentRef, setVersePart]);
 
+  const cancelPendingClickSettle = useCallback(() => {
+    if (clickSettleTimerRef.current !== null) {
+      window.clearTimeout(clickSettleTimerRef.current);
+      clickSettleTimerRef.current = null;
+    }
+  }, []);
+
   const selectQueueItem = useCallback((item: ServiceItem) => {
+    cancelPendingClickSettle();
+    skipNextCenterRef.current = false;
     setActiveQueueItemId(item.id);
     const end = itemEndVerse(item);
     setPreviewRef({ book: item.book, chapter: item.chapter, verse: item.verse });
@@ -427,6 +456,8 @@ export default function LiveShowRunner() {
   // last verse.
   const stepVerse = useCallback(async (delta: number) => {
     if (!previewChapter || !primaryModule) return;
+    cancelPendingClickSettle();
+    skipNextCenterRef.current = false;
     const idx = previewChapter.verses.findIndex((v) => v.verse === previewRef.verse);
     const nextIdx = idx + delta;
     if (idx >= 0 && nextIdx >= 0 && nextIdx < previewChapter.verses.length) {
@@ -457,6 +488,8 @@ export default function LiveShowRunner() {
   // Extends or shrinks the range selection when holding Shift + arrows
   const stepVerseRange = useCallback((delta: number) => {
     if (!previewChapter?.verses || previewChapter.verses.length === 0) return;
+    cancelPendingClickSettle();
+    skipNextCenterRef.current = false;
     const currentTarget = previewRef.verse;
     const idx = previewChapter.verses.findIndex((v) => v.verse === currentTarget);
     const nextIdx = Math.min(Math.max(idx + delta, 0), previewChapter.verses.length - 1);
@@ -474,6 +507,8 @@ export default function LiveShowRunner() {
   // Ctrl+P / Ctrl+N: previous/next chapter, same as the reading view.
   const stepChapter = useCallback(async (delta: number) => {
     if (!primaryModule) return;
+    cancelPendingClickSettle();
+    skipNextCenterRef.current = false;
     const chapter = previewRef.chapter + delta;
     if (chapter < 1) return;
     try {
@@ -493,16 +528,30 @@ export default function LiveShowRunner() {
   // Loads a verse into the Preview and selects it — shared by the search bar and
   // the Ask Scripture panel so both land on a verse the same way.
   const navigatePreview = useCallback((ref: VerseRef) => {
+    cancelPendingClickSettle();
+    skipNextCenterRef.current = false;
     setActiveQueueItemId(null);
     setPreviewRef(ref);
     setSelectionAnchor(ref.verse);
     setSelectedRange({ start: ref.verse, end: ref.verse });
     setActiveSlideIndex(0);
-  }, []);
+  }, [cancelPendingClickSettle]);
 
-  const handleVerseClick = useCallback((verseNum: number, shiftKey: boolean) => {
+  const applySplitExpand = useCallback((verseNum: number, book: string, chapter: number) => {
+    const parts = previewPartsMap.get(verseNum) ?? [];
+    if (parts.length > 1) {
+      const key = `${book}|${chapter}|${verseNum}`;
+      setExpandedKey((prev) => (prev === key ? null : key));
+    } else {
+      setExpandedKey(null);
+    }
+  }, [previewPartsMap]);
+
+  const handleVerseClick = useCallback((verseNum: number, shiftKey: boolean, fromPointer = false) => {
+    cancelPendingClickSettle();
     setActiveQueueItemId(null);
     if (shiftKey) {
+      skipNextCenterRef.current = false;
       const anchor = selectionAnchor ?? previewRef.verse;
       const start = Math.min(anchor, verseNum);
       const end = Math.max(anchor, verseNum);
@@ -512,22 +561,31 @@ export default function LiveShowRunner() {
       setExpandedKey(null);
       const idx = verseNum >= start && verseNum <= end ? verseNum - start : 0;
       setActiveSlideIndex(idx);
-    } else {
-      setSelectionAnchor(verseNum);
-      setSelectedRange({ start: verseNum, end: verseNum });
-      setPreviewRef((prev) => ({ ...prev, verse: verseNum }));
-      setPreviewPart(0);
-      setActiveSlideIndex(0);
-      const parts = previewPartsMap.get(verseNum) ?? [];
-      const split = parts.length > 1;
-      if (split) {
-        const key = `${previewRef.book}|${previewRef.chapter}|${verseNum}`;
-        setExpandedKey((prev) => (prev === key ? null : key));
-      } else {
-        setExpandedKey(null);
-      }
+      return;
     }
-  }, [selectionAnchor, previewRef, previewPartsMap]);
+
+    setSelectionAnchor(verseNum);
+    setSelectedRange({ start: verseNum, end: verseNum });
+    setPreviewRef((prev) => ({ ...prev, verse: verseNum }));
+    setPreviewPart(0);
+    setActiveSlideIndex(0);
+
+    if (fromPointer) {
+      // Hold off centering and split-row collapse/expand until the double-click
+      // window passes so a second click always hits the same verse row.
+      skipNextCenterRef.current = true;
+      const { book, chapter } = previewRef;
+      clickSettleTimerRef.current = window.setTimeout(() => {
+        clickSettleTimerRef.current = null;
+        applySplitExpand(verseNum, book, chapter);
+        skipNextCenterRef.current = false;
+        setCenterTick((t) => t + 1);
+      }, 360);
+    } else {
+      skipNextCenterRef.current = false;
+      applySplitExpand(verseNum, previewRef.book, previewRef.chapter);
+    }
+  }, [cancelPendingClickSettle, selectionAnchor, previewRef, applySplitExpand]);
 
   // Keyboard shortcuts, scoped to this console only (not the global reading
   // shortcuts) — an operator running a live show wants Up/Down/Left/Right/
@@ -733,11 +791,17 @@ export default function LiveShowRunner() {
   const strongsOnAir = strongsLive && !!selectedStrongs && !!strongsDoc && strongsDoc.pages.length > 0;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-2.5 gap-2.5">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-2 sm:p-2.5 gap-2 sm:gap-2.5">
+      <ConsolePaneTabs pane={pane} onChange={setPane} scheduleCount={serviceOrder.length} liveActive={presentationActive} />
+
       {/* Schedule | Preview | Live — each column ends in an output strip */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* ── Schedule (queue) ── */}
-        <section data-tour="live-schedule" style={{ width: queueW.size }} className="shrink min-w-0 max-w-[32%] flex flex-col overflow-hidden panel rounded-3xl">
+        <section
+          data-tour="live-schedule"
+          style={{ "--pane-w": `${queueW.size}px` } as React.CSSProperties}
+          className={`${pane === "schedule" ? "flex" : "hidden"} min-[880px]:flex w-full min-[880px]:w-[var(--pane-w)] shrink min-w-0 min-[880px]:max-w-[32%] flex-col overflow-hidden panel rounded-3xl`}
+        >
           <ErrorBoundary compact label="Plan and schedule">
           <PlanSection scheduleCount={serviceOrder.length}>
           <div className="shrink-0 flex items-center justify-between gap-3 px-3 py-2 border-b border-outline-variant">
@@ -812,15 +876,17 @@ export default function LiveShowRunner() {
           </ErrorBoundary>
         </section>
 
-        <ResizeHandle spaced axis="x" label="schedule" dragging={queueW.dragging} handleProps={queueW.handleProps} />
+        <div className="hidden min-[880px]:contents">
+          <ResizeHandle spaced axis="x" label="schedule" dragging={queueW.dragging} handleProps={queueW.handleProps} />
+        </div>
 
         {/* ── Preview ── */}
-        <section data-tour="live-preview" className="flex-1 min-w-0 flex flex-col overflow-hidden panel rounded-3xl">
-          <div className="shrink-0 flex items-center gap-3 px-3.5 py-2 border-b border-outline-variant">
+        <section data-tour="live-preview" className={`${pane === "preview" ? "flex" : "hidden"} min-[880px]:flex flex-1 min-w-0 flex-col overflow-hidden panel rounded-3xl`}>
+          <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 min-[880px]:py-2 border-b border-outline-variant">
             <h2 className="min-w-0 flex-1 font-body-ui text-[13px] font-bold text-on-surface truncate">
               Preview <span className="font-normal normal-case tracking-normal text-on-surface-variant">— {rangeCitation}{primaryModule ? ` (${primaryModule})` : ""}</span>
             </h2>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1 min-[960px]:gap-1.5 shrink-0">
               <button
                 data-tour="live-queue-add"
                 onClick={addSelectedToQueue}
@@ -885,12 +951,12 @@ export default function LiveShowRunner() {
                 data-tour="live-golive"
                 onClick={goLive}
                 disabled={currentPreviewSlide ? (sameRef(currentPreviewSlide.ref, currentRef) && currentPreviewSlide.part === versePart) : (sameRef(previewRef, currentRef) && previewPart === versePart)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md btn-primary font-body-ui text-[13px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                className="flex items-center gap-1.5 px-2.5 py-1 min-[880px]:px-3 min-[880px]:py-1.5 rounded-md btn-primary font-body-ui text-[13px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 title="Send the previewed verse live (Enter, or double-click it)"
                 aria-label="Go Live"
               >
                 <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                <span className="hidden min-[900px]:inline">Go Live</span>
+                <span className="hidden sm:inline min-[880px]:hidden min-[960px]:inline">Go Live</span>
               </button>
             </div>
           </div>
@@ -982,11 +1048,17 @@ export default function LiveShowRunner() {
           </OutputStrip>
         </section>
 
-        <ResizeHandle spaced axis="x" label="live" dragging={liveW.dragging} handleProps={liveW.handleProps} />
+        <div className="hidden min-[880px]:contents">
+          <ResizeHandle spaced axis="x" label="live" dragging={liveW.dragging} handleProps={liveW.handleProps} />
+        </div>
 
         {/* ── Live ── */}
-        <section data-tour="live-output" style={{ width: liveW.size }} className="shrink min-w-0 max-w-[38%] flex flex-col overflow-hidden panel rounded-3xl">
-          <div className="shrink-0 flex items-center gap-3 px-3.5 py-2.5 border-b border-outline-variant">
+        <section
+          data-tour="live-output"
+          style={{ "--pane-w": `${liveW.size}px` } as React.CSSProperties}
+          className={`${pane === "live" ? "flex" : "hidden"} min-[880px]:flex w-full min-[880px]:w-[var(--pane-w)] shrink min-w-0 min-[880px]:max-w-[38%] flex-col overflow-hidden panel rounded-3xl`}
+        >
+          <div className="shrink-0 flex items-center gap-3 px-3.5 py-2 border-b border-outline-variant">
             <h2 className="font-body-ui text-[13px] font-bold text-on-surface ">Live</h2>
             {presentationActive && (
               <span className="flex items-center gap-1 font-body-ui font-medium text-[12px] text-error">
@@ -1089,13 +1161,13 @@ export default function LiveShowRunner() {
       <ResizeHandle axis="y" label="library" dragging={bottomH.dragging} handleProps={bottomH.handleProps} />
 
       {/* ── Library: reference bar + verse list + Ask Scripture ── */}
-      <div style={{ height: bottomH.size, maxHeight: "55%" }} className="shrink-0 panel rounded-3xl flex overflow-hidden">
+      <div style={{ height: bottomH.size, maxHeight: "52%" }} className="relative shrink-0 panel rounded-3xl flex overflow-hidden">
         {/* Left column: reference bar + verses list */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          <div className="shrink-0 h-[49px] flex items-center gap-3 px-3.5 py-2 border-b border-outline-variant/40">
+          <div className="shrink-0 min-h-[45px] flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-3 py-1.5 border-b border-outline-variant/40">
             <TranslationBar />
             <span className="hidden min-[900px]:inline font-body-ui text-[13px] font-semibold text-on-surface shrink-0">{rangeCitation}</span>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <button onClick={() => stepChapter(-1)} className="p-1 rounded-md ctl text-on-surface-variant" title={forPlatform("Previous chapter (Ctrl+P)")}>
                 <span className="material-symbols-outlined text-[16px]">chevron_left</span>
               </button>
@@ -1103,8 +1175,8 @@ export default function LiveShowRunner() {
                 <span className="material-symbols-outlined text-[16px]">chevron_right</span>
               </button>
             </div>
-            <div className="w-px h-4 bg-outline-variant shrink-0" />
-            <div data-tour="live-search" className="flex-1 min-w-[140px] max-w-xl">
+            <div className="hidden sm:block w-px h-4 bg-outline-variant shrink-0" />
+            <div data-tour="live-search" className="flex-1 min-w-[180px] max-w-3xl">
               <PresentationSearchBar
                 ref={searchBarRef}
                 baseRef={previewRef}
@@ -1149,21 +1221,27 @@ export default function LiveShowRunner() {
                       // The second click of a double-click (which sends the verse
                       // live) must not also toggle the dropdown back shut.
                       if (e.detail > 1) return;
-                      handleVerseClick(v.verse, e.shiftKey);
+                      handleVerseClick(v.verse, e.shiftKey, true);
                     }}
                     onDoubleClick={() => {
+                      cancelPendingClickSettle();
                       const ref = { ...previewRef, verse: v.verse };
+                      skipNextCenterRef.current = false;
                       setActiveQueueItemId(null);
+                      setSelectionAnchor(v.verse);
+                      setSelectedRange({ start: v.verse, end: v.verse });
                       setPreviewRef(ref);
                       setPreviewPart(0);
                       setActiveSlideIndex(0);
+                      setExpandedKey(split ? `${ref.book}|${ref.chapter}|${v.verse}` : null);
                       sendLive(ref, 0);
+                      setCenterTick((t) => t + 1);
                     }}
                     title="Double-click to send live"
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        handleVerseClick(v.verse, e.shiftKey);
+                        handleVerseClick(v.verse, e.shiftKey, false);
                       }
                     }}
                     className={`w-full text-left flex items-start gap-2.5 px-3 py-2 rounded-md border border-transparent transition-colors cursor-pointer select-none ${
@@ -1217,8 +1295,8 @@ export default function LiveShowRunner() {
                               <div
                                 role="button"
                                 tabIndex={open ? 0 : -1}
-                                onClick={() => select(i)}
-                                onDoubleClick={() => { select(i); sendLive({ ...previewRef, verse: v.verse }, i); }}
+                                onClick={(e) => { if (e.detail > 1) return; select(i); }}
+                                onDoubleClick={() => { cancelPendingClickSettle(); select(i); sendLive({ ...previewRef, verse: v.verse }, i); }}
                                 title="Double-click to send live"
                                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(i); } }}
                                 className={`w-full text-left flex items-start gap-2.5 px-3 py-2 rounded-md border transition-colors cursor-pointer select-none ${

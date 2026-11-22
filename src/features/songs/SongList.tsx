@@ -61,8 +61,8 @@ export default function SongList({ onImport }: { onImport: () => void }) {
   return (
     <div className="flex flex-1 min-w-0 min-h-0 flex-col">
       <div className="flex flex-1 min-h-0">
-        {/* Sources */}
-        <nav className="w-56 shrink-0 border-r border-outline-variant bg-surface-container-lowest/40 overflow-y-auto py-2">
+        {/* Sources (sidebar on md+, horizontal strip below md) */}
+        <nav className="hidden md:block w-48 lg:w-56 shrink-0 border-r border-outline-variant bg-surface-container-lowest/40 overflow-y-auto py-2">
           <SourceHeading>Songs</SourceHeading>
           <SourceRow icon="library_music" active={source.kind === "all"} onClick={() => setSource({ kind: "all" })}>All Songs</SourceRow>
           <SourceRow icon="star" active={source.kind === "favourites"} onClick={() => setSource({ kind: "favourites" })}>Favourites</SourceRow>
@@ -91,7 +91,31 @@ export default function SongList({ onImport }: { onImport: () => void }) {
 
         {/* Table */}
         <div className="flex flex-1 min-w-0 flex-col">
-          <label className="field flex items-center gap-2 mx-3 mt-3 mb-2 rounded-md px-2.5 h-9 shrink-0">
+          <div className="md:hidden flex items-center gap-1.5 overflow-x-auto px-3 pt-2.5 shrink-0">
+            <button
+              onClick={() => setSource({ kind: "all" })}
+              className={`px-2.5 py-1 rounded-full text-[12px] font-body-ui font-medium whitespace-nowrap ${source.kind === "all" ? "btn-primary" : "ctl text-on-surface-variant"}`}
+            >
+              All Songs
+            </button>
+            <button
+              onClick={() => setSource({ kind: "favourites" })}
+              className={`px-2.5 py-1 rounded-full text-[12px] font-body-ui font-medium whitespace-nowrap ${source.kind === "favourites" ? "btn-primary" : "ctl text-on-surface-variant"}`}
+            >
+              Favourites
+            </button>
+            {tags.map(([tag, n]) => (
+              <button
+                key={tag}
+                onClick={() => setSource({ kind: "tag", tag })}
+                className={`px-2.5 py-1 rounded-full text-[12px] font-body-ui font-medium whitespace-nowrap ${source.kind === "tag" && source.tag === tag ? "btn-primary" : "ctl text-on-surface-variant"}`}
+              >
+                {tag} ({n})
+              </button>
+            ))}
+          </div>
+
+          <label className="field flex items-center gap-2 mx-3 mt-2.5 md:mt-3 mb-2 rounded-md px-2.5 h-8 sm:h-9 shrink-0">
             <span className="material-symbols-outlined text-[18px] text-secondary">search</span>
             <input
               value={query}

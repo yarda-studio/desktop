@@ -165,7 +165,7 @@ export default function PresentationTopBar() {
 
   return (
     <header
-      className="relative flex items-center justify-between gap-2 h-11 px-2 md:px-content-margin w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0"
+      className="relative flex items-center justify-between gap-1 sm:gap-1.5 lg:gap-2 h-11 px-1.5 sm:px-2 md:px-content-margin w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0"
       style={IS_MAC ? { paddingLeft: MAC_WINDOW_BUTTONS_WIDTH } : undefined}
     >
       {/* The bar is also the window's title bar (there is no separate one), so its empty parts drag the window. */}
@@ -193,7 +193,7 @@ export default function PresentationTopBar() {
       >
         <button
           onClick={output.toggle}
-          className={`flex items-center justify-center gap-2 px-3 py-1 rounded-md font-body-ui text-[11px] font-bold tracking-wide transition-all ${
+          className={`flex items-center justify-center gap-1.5 min-[860px]:gap-2 px-2 min-[860px]:px-3 py-1 rounded-md font-body-ui text-[10.5px] min-[860px]:text-[11px] font-bold tracking-wide transition-all ${
             output.presentationActive ? "btn-live shadow-md" : "text-on-surface hover:bg-surface/60"
           }`}
           title={output.presentationActive ? "Stop the presentation output" : "Send output live"}
@@ -202,11 +202,11 @@ export default function PresentationTopBar() {
           <span className="leading-none">LIVE</span>
         </button>
 
-        <div className="w-px h-4 bg-outline-variant/60 mx-1" />
+        <div className="w-px h-4 bg-outline-variant/60 mx-0.5 min-[860px]:mx-1" />
 
         <button
           onClick={() => setLiveBlack(!liveBlack)}
-          className={`px-2.5 py-1 rounded-md font-body-ui text-[11px] font-bold tracking-wide transition-all flex items-center justify-center leading-none ${
+          className={`px-1.5 min-[860px]:px-2.5 py-1 rounded-md font-body-ui text-[10.5px] min-[860px]:text-[11px] font-bold tracking-wide transition-all flex items-center justify-center leading-none ${
             liveBlack ? "bg-on-surface text-surface shadow-xs" : "text-on-surface-variant hover:text-on-surface hover:bg-surface/60"
           }`}
           title="Cut the live output to black (C)"
@@ -217,7 +217,7 @@ export default function PresentationTopBar() {
         <button
           onClick={clearOverrides}
           disabled={cleared}
-          className={`px-2.5 py-1 rounded-md font-body-ui text-[11px] font-bold tracking-wide transition-all flex items-center justify-center leading-none disabled:opacity-30 disabled:cursor-not-allowed ${
+          className={`px-1.5 min-[860px]:px-2.5 py-1 rounded-md font-body-ui text-[10.5px] min-[860px]:text-[11px] font-bold tracking-wide transition-all flex items-center justify-center leading-none disabled:opacity-30 disabled:cursor-not-allowed ${
             cleared ? "text-on-surface-variant/50" : "text-primary hover:bg-surface/60 font-black"
           }`}
           title="Clear black/emergency overrides and resume normal output"
@@ -228,7 +228,7 @@ export default function PresentationTopBar() {
       </div>
 
       {/* Right: Tools & Utilities */}
-      <div data-tauri-drag-region className="flex items-center gap-1.5 shrink-0">
+      <div data-tauri-drag-region className="flex items-center gap-1 min-[900px]:gap-1.5 shrink-0">
         {/* Hardware & Peripherals */}
         <div className="flex items-center gap-0.5">
           <div className="relative" data-tour="outputs">
@@ -261,27 +261,27 @@ export default function PresentationTopBar() {
         </div>
 
         {/* Team Scripture Sharing */}
-        <div className="flex items-center gap-1 bg-surface-variant/25 p-0.5 rounded-lg border border-outline-variant/30">
-          <TeamShareTargetSelector />
+        <div className="flex items-center gap-0.5 min-[900px]:gap-1 bg-surface-variant/25 p-0.5 rounded-lg border border-outline-variant/30">
+          <TeamShareTargetSelector compact />
           <button
             onClick={() => void useTeamShareStore.getState().sendVerse()}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-primary hover:bg-primary/10 transition-colors shrink-0"
+            className="w-6 h-6 min-[900px]:w-7 min-[900px]:h-7 flex items-center justify-center rounded-md text-primary hover:bg-primary/10 transition-colors shrink-0"
             title="Send active verse to team (Ctrl+Shift+T)"
             aria-label="Send active verse to team"
           >
-            <span className="material-symbols-outlined !text-[16px] leading-none">send</span>
+            <span className="material-symbols-outlined !text-[15px] min-[900px]:!text-[16px] leading-none">send</span>
           </button>
         </div>
 
-        <div className="hidden md:block w-px h-4 bg-outline-variant/60 mx-1" />
+        <div className="hidden md:block w-px h-4 bg-outline-variant/60 mx-0.5 min-[900px]:mx-1" />
 
         {/* System & Account */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 min-[900px]:gap-1">
           <IconButton
             icon={isDark ? "light_mode" : "dark_mode"}
             label={isDark ? "Switch to light mode" : "Switch to dark mode"}
             onClick={toggleTheme}
-            className="hidden md:flex"
+            className="hidden min-[860px]:flex"
           />
           <IconButton
             icon="settings"
@@ -307,7 +307,7 @@ function TabButton({ label, active, disabled, onClick, className = "", tour }: {
       disabled={disabled}
       title={disabled ? "Coming soon" : undefined}
       data-active={active ? "true" : undefined}
-      className={`relative z-10 px-2.5 py-0.5 rounded-md font-body-ui text-[12px] font-semibold transition-colors duration-200 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed ${
+      className={`relative z-10 px-1.5 min-[860px]:px-2.5 py-0.5 rounded-md font-body-ui text-[11px] min-[860px]:text-[12px] font-semibold whitespace-nowrap transition-colors duration-200 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed ${
         active ? "text-on-primary" : "text-on-surface-variant hover:text-on-surface hover:bg-surface/50"
       } ${className}`}
     >
@@ -333,11 +333,11 @@ function IconButton({ icon, label, active, disabled, title, onClick, className =
       title={title ?? label}
       onClick={onClick}
       disabled={disabled}
-      className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors shrink-0 disabled:opacity-30 disabled:cursor-not-allowed ${
+      className={`w-7 h-7 min-[900px]:w-8 min-[900px]:h-8 flex items-center justify-center rounded-lg transition-colors shrink-0 disabled:opacity-30 disabled:cursor-not-allowed ${
         active ? "ctl-active" : "ghost text-secondary hover:text-on-surface"
       } ${className}`}
     >
-      <span className="material-symbols-outlined !text-[18px] leading-none select-none">{icon}</span>
+      <span className="material-symbols-outlined !text-[17px] min-[900px]:!text-[18px] leading-none select-none">{icon}</span>
     </button>
   );
 }

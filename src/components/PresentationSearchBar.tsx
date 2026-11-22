@@ -210,8 +210,19 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
     ? nav.matchedBook
     : null;
 
+  const openUp = rect ? (window.innerHeight - rect.bottom < 220 && rect.top > window.innerHeight - rect.bottom) : false;
+  const wordMenuStyle = rect ? (() => {
+    const width = Math.min(Math.max(rect.width, 360), window.innerWidth - 16);
+    const left = Math.min(rect.left, Math.max(8, window.innerWidth - width - 8));
+    const spaceBelow = window.innerHeight - rect.bottom - 16;
+    const spaceAbove = rect.top - 16;
+    return openUp
+      ? { left, bottom: window.innerHeight - rect.top + 4, width, maxHeight: Math.min(420, Math.max(140, spaceAbove)) }
+      : { left, top: rect.bottom + 4, width, maxHeight: Math.min(420, Math.max(140, spaceBelow)) };
+  })() : undefined;
+
   return (
-    <div className="flex items-center gap-2 min-w-0">
+    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
       <button
         data-tour="live-strongs"
         onClick={toggleStrongs}
@@ -238,14 +249,14 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
 
       <SearchHistoryMenu entries={searchHistory} onPick={runHistory} onClear={clearSearchHistory} />
 
-      <div className="relative flex-1 min-w-[220px]">
+      <div className="relative flex-1 min-w-[110px]">
         <span className={`material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-[18px] pointer-events-none select-none ${route.kind === "ask" ? "text-primary" : "text-on-surface-variant"}`}>
           {ui.icon}
         </span>
         <input
           ref={inputRef}
-          className="w-full pl-8 pr-24 py-1 focus:outline-none text-body-ui font-body-ui transition-colors placeholder:text-on-surface-variant field rounded-lg"
-          placeholder={forPlatform(`Verse (jn 3:16), a word, or ${ASK_PREFIX} to ask  (Ctrl+K)`)}
+          className={`w-full pl-8 ${ui.label ? "pr-24" : "pr-8"} py-1 focus:outline-none text-body-ui font-body-ui transition-colors placeholder:text-on-surface-variant field rounded-lg`}
+          placeholder={forPlatform(`Verse (jn 3:16), word, or ${ASK_PREFIX} ask (Ctrl+K)`)}
           value={value}
           onChange={(e) => {
             // "ot/" or "john,romans/" typed: lift the scope out of the text into a filter.
@@ -284,7 +295,7 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
         />
 
         {showCandidates && (
-          <div className="absolute top-full left-0 right-0 mt-1 z-[200] glass rounded-2xl py-1 font-body-ui text-body-ui">
+          <div className={`absolute ${openUp ? "bottom-full mb-1" : "top-full mt-1"} left-0 right-0 z-[200] glass rounded-2xl py-1 font-body-ui text-body-ui`}>
             <p className="px-3 pt-1 pb-0.5 font-metadata-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
               Filter search to…{filters.length > 0 ? " (adds to current filters)" : ""}
             </p>
@@ -310,19 +321,20 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
             previewText={nav.previewText}
             showDropdown={nav.showDropdown}
             spaceAccepts={nav.spaceAccepts}
+            openUp={openUp}
             onPick={nav.applyBook}
           />
         )}
 
         {open && bookOnly && (
-          <Hint icon="arrow_forward" kbd="Enter">
+          <Hint icon="arrow_forward" kbd="Enter" openUp={openUp}>
             <span className="text-primary">{bookOnly} 1</span>
             <span className="text-on-surface-variant ml-2">· {WORD_PREFIX}{value.trim().toLowerCase()} searches the text</span>
           </Hint>
         )}
 
         {open && route.kind === "ask" && (
-          <Hint icon="auto_awesome" kbd="Enter">
+          <Hint icon="auto_awesome" kbd="Enter" openUp={openUp}>
             {route.text
               ? <span className="text-primary truncate">Ask: “{route.text}”</span>
               : <span className="text-on-surface-variant">Describe what you're looking for, e.g. {ASK_PREFIX} verses about hope</span>}
@@ -330,17 +342,17 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
         )}
 
         {open && !showCandidates && route.kind === "word" && !wordText && route.scope && (
-          <Hint icon="filter_list" kbd="Type">
+          <Hint icon="filter_list" kbd="Type" openUp={openUp}>
             <span className="text-primary">{scopeLabel(route.scope)}</span>
             <span className="text-on-surface-variant ml-2">· type a word to search only here</span>
           </Hint>
         )}
 
-        {open && !showCandidates && route.kind === "word" && wordText && rect && (
+        {open && !showCandidates && route.kind === "word" && wordText && wordMenuStyle && (
           <div
             data-tour="live-search-results"
             className="fixed z-[200] glass rounded-xl overflow-y-auto"
-            style={{ left: rect.left, top: rect.bottom + 4, width: Math.max(rect.width, 420), maxHeight: Math.max(160, window.innerHeight - rect.bottom - 24) }}
+            style={wordMenuStyle}
           >
             {settled !== wordText && results.length === 0 ? (
               <p className="px-3 py-2 font-body-ui text-[12px] text-on-surface-variant">Searching…</p>
@@ -383,9 +395,9 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
   );
 });
 
-function Hint({ icon, kbd, children }: { icon: string; kbd: string; children: React.ReactNode }) {
+function Hint({ icon, kbd, openUp = false, children }: { icon: string; kbd: string; openUp?: boolean; children: React.ReactNode }) {
   return (
-    <div className="absolute top-full left-0 right-0 mt-1 z-[200] px-3 py-1.5 flex items-center gap-2 glass rounded-2xl font-body-ui text-body-ui">
+    <div className={`absolute ${openUp ? "bottom-full mb-1" : "top-full mt-1"} left-0 right-0 z-[200] px-3 py-1.5 flex items-center gap-2 glass rounded-2xl font-body-ui text-body-ui`}>
       <span className="material-symbols-outlined text-[14px] text-primary shrink-0">{icon}</span>
       <span className="min-w-0 truncate">{children}</span>
       <kbd className="font-metadata-mono text-[12px] text-secondary ml-auto shrink-0 bg-surface-container px-1.5 py-0.5 rounded">{kbd}</kbd>

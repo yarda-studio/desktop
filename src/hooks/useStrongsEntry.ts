@@ -14,7 +14,8 @@ export function defaultLexiconSourceFor(pref: LexiconPreference, lang: "H" | "G"
   if (pref === "ours") return "ours";
   if (pref === "thayer") return lang === "G" ? "THAYER" : "TBESH";
   if (pref === "lsj") return lang === "G" ? "TFLSJ" : "TBESH";
-  return lang === "G" ? "TBESG" : "TBESH";
+  if (pref === "rich") return lang === "G" ? "TBESG" : "TBESH";
+  return pref;
 }
 
 /** "ours" is the bundled bare Strong's data; anything else is already a module id. */

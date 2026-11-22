@@ -49,6 +49,7 @@ export default function ReadingView() {
   const [compareVerse, setCompareVerse] = useState<VerseRefLocal | null>(null);
   const [commentaryVerse, setCommentaryVerse] = useState<VerseRefLocal | null>(null);
   const [notesVerse, setNotesVerse] = useState<VerseRefLocal | null>(null);
+  const [bookNavOpen, setBookNavOpen] = useState(false);
   const [fsSearchOpen, setFsSearchOpen] = useState(false);
   const fsSearchOpenRef = useRef(false);
   fsSearchOpenRef.current = fsSearchOpen;
@@ -295,7 +296,7 @@ export default function ReadingView() {
               buttons (the normal top bar does the same), and its empty space drags the window like the normal bar. */}
           <div
             data-tauri-drag-region
-            className="flex items-center gap-3 px-6 py-2 border-b border-outline-variant/40 shrink-0"
+            className="flex flex-wrap items-center gap-2 sm:gap-3 px-3 md:px-6 py-2 border-b border-outline-variant/40 shrink-0"
             style={IS_MAC ? { paddingLeft: MAC_WINDOW_BUTTONS_WIDTH } : undefined}
           >
             {/* Scripture nav */}
@@ -393,8 +394,8 @@ export default function ReadingView() {
               className="flex items-center gap-1.5 px-3 py-1.5 transition-colors text-on-surface-variant ctl rounded-xl"
             >
               <span className="material-symbols-outlined text-[16px]">search</span>
-              <span className="font-body-ui text-[13px]">Search</span>
-              <kbd className="font-metadata-mono text-[12px] px-1 py-0.5 ml-1 field rounded-md">{forPlatform("Ctrl+K")}</kbd>
+              <span className="font-body-ui text-[13px] hidden sm:inline">Search</span>
+              <kbd className="hidden md:inline font-metadata-mono text-[12px] px-1 py-0.5 ml-1 field rounded-md">{forPlatform("Ctrl+K")}</kbd>
             </button>
 
             {/* All presenting UI is Presentation-workspace only — see
@@ -531,7 +532,7 @@ export default function ReadingView() {
                 onClick={() => setServiceOrderOpen(false)}
               >
                 <div
-                  className={`w-[324px] p-3 h-full transition-transform duration-200 ease-in-out ${serviceOrderOpen ? "translate-x-0" : "translate-x-full"}`}
+                  className={`w-[min(324px,calc(100vw-1.5rem))] p-3 h-full transition-transform duration-200 ease-in-out ${serviceOrderOpen ? "translate-x-0" : "translate-x-full"}`}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <ServiceOrderPanel />
@@ -557,16 +558,27 @@ export default function ReadingView() {
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      <main className="flex flex-1 overflow-hidden">
-        <BookNavigator />
+      <main className="flex flex-1 min-w-0 overflow-hidden">
+        <BookNavigator open={bookNavOpen} onClose={() => setBookNavOpen(false)} />
 
         {/* Center reading pane(s) */}
-        <section data-tour="reading-text" className="flex-1 bg-surface flex flex-col h-full overflow-hidden">
+        <section data-tour="reading-text" className="flex-1 min-w-0 bg-surface flex flex-col h-full overflow-hidden">
           {/* Reading toolbar */}
-          <div className="sticky top-0 px-content-margin pt-4 pb-2 flex items-center justify-between z-10 shrink-0">
-            <h1 className="font-display-lg text-display-lg text-on-surface">
-              {currentRef.book} {currentRef.chapter}
-            </h1>
+          <div className="sticky top-0 px-4 md:px-content-margin pt-4 pb-2 flex items-center justify-between gap-2 z-10 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <button
+                type="button"
+                onClick={() => setBookNavOpen(true)}
+                className="md:hidden p-1.5 rounded-md ctl text-on-surface-variant hover:text-on-surface shrink-0"
+                aria-label="Open books"
+                title="Books & translations"
+              >
+                <span className="material-symbols-outlined text-[18px]">menu_book</span>
+              </button>
+              <h1 className="font-display-lg text-[22px] sm:text-[26px] md:text-display-lg text-on-surface truncate">
+                {currentRef.book} {currentRef.chapter}
+              </h1>
+            </div>
             <div data-tour="chapter-nav" className="flex items-center gap-2.5">
               <button
                 title={forPlatform("Previous chapter (Ctrl+P)")}

@@ -37,14 +37,14 @@ export default function TeamShareTargetSelector({ compact = false }: { compact?:
         onClick={() => setOpen((v) => !v)}
         title={`Default recipient: ${targetLabel} (Click to change)`}
         aria-label={`Default recipient: ${targetLabel}`}
-        className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-variant/40 border border-outline-variant/40 text-[12px] font-body-ui font-medium transition-colors select-none ${
+        className={`flex items-center gap-1 min-[960px]:gap-1.5 px-1.5 min-[960px]:px-2 py-1 rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-variant/40 border border-outline-variant/40 text-[12px] font-body-ui font-medium transition-colors select-none ${
           open ? "bg-surface-variant/50 border-primary/40 text-primary" : ""
         }`}
       >
         <span className="material-symbols-outlined !text-[15px] text-primary/80">
           {isAll ? "groups" : "person"}
         </span>
-        <span className={`truncate ${compact ? "max-w-[70px]" : "max-w-[110px]"}`}>
+        <span className={`hidden min-[960px]:inline truncate ${compact ? "max-w-[70px]" : "max-w-[110px]"}`}>
           {targetLabel}
         </span>
         <span className="material-symbols-outlined !text-[14px] text-on-surface-variant/70">

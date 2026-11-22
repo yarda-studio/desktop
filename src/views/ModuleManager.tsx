@@ -1,5 +1,6 @@
 import SegmentedControl from "../components/SegmentedControl";
 import { useBuiltinLexicons } from "../features/lexicons/builtinLexiconStore";
+import { getLexiconLanguage } from "../features/lexicons/lexiconUtils";
 import { useEffect, useRef, useState } from "react";
 import { useDialogA11y } from "../hooks/useDialogA11y";
 import { listen } from "@tauri-apps/api/event";
@@ -47,7 +48,7 @@ function Badge({ children, tone }: { children: React.ReactNode; tone?: "gold" | 
 }
 
 export default function ModuleManager() {
-  const { setHasModules, setPrimaryModule } = useAppStore();
+  const { setHasModules, setPrimaryModule, setStrongsSource, setSelectedStrongs, setView } = useAppStore();
   const [available, setAvailable] = useState<ModuleInfo[]>([]);
   const [installed, setInstalled] = useState<ModuleInfo[]>([]);
   const [tab, setTab] = useState<"available" | "installed">("available");
@@ -64,6 +65,16 @@ export default function ModuleManager() {
   const builtinEntries = useBuiltinLexicons((s) => s.entries);
   const loadBuiltin = useBuiltinLexicons((s) => s.load);
   const setBuiltinEnabled = useBuiltinLexicons((s) => s.setEnabled);
+
+  function openLexicon(moduleId: string) {
+    setStrongsSource(moduleId);
+    if (!useAppStore.getState().selectedStrongs) {
+      const match = builtinEntries.find((e) => e.id.toUpperCase() === moduleId.toUpperCase()) || { id: moduleId, name: moduleId };
+      const lang = getLexiconLanguage(match);
+      setSelectedStrongs(lang === "H" ? "H7225" : "G2048");
+    }
+    setView("reading");
+  }
 
   useEffect(() => {
     void loadBuiltin();
@@ -110,7 +121,8 @@ export default function ModuleManager() {
           },
         }));
         if (progress === 100) {
-          // Refresh installed list
+          // Refresh installed list and lexicon catalog
+          void loadBuiltin();
           api.listInstalledModules().then((inst) => {
             setInstalled(inst);
             // Lexicon installs (including the silent ones at startup) finish
@@ -168,8 +180,13 @@ export default function ModuleManager() {
     setCipherKey("");
   }
 
-  // Built-ins whose data is not on disk yet are offered alongside the repository modules.
-  const availableAll = [...available, ...builtinEntries.filter((e) => !e.installed)];
+  // Built-in lexicons (Thayer, Abbott-Smith, BDB, LSJ) appear in both Browse and Installed.
+  // In Browse, if already installed, they show with their on/off switch and installed status.
+  const builtinIds = new Set(builtinEntries.map((e) => e.id));
+  const availableAll = [
+    ...available.filter((m) => !builtinIds.has(m.id)),
+    ...builtinEntries,
+  ];
   const modules = (tab === "available" ? availableAll : installed).filter((m) => {
     const matchCat = category === "All" || m.category === category;
     const q = query.trim().toLowerCase();
@@ -310,11 +327,11 @@ export default function ModuleManager() {
                   const isInstalling = state?.status === "downloading" || state?.status === "indexing";
                   const isDone = state?.status === "done" || m.installed;
                   const hasError = state?.status === "error";
-                  // Built-in lexicons are never "uninstalled": they have an on/off switch instead.
-                  const isBuiltInReady = !!m.built_in && m.installed;
-                  const isOn = (builtinEntries.find((e) => e.id === m.id)?.enabled ?? m.enabled) !== false;
+                  // Lexicons (built-in and installed repository lexicons like Dodson) have an on/off switch.
+                  const isLexiconReady = m.category === "Lexicon" && isDone;
+                  const isOn = (builtinEntries.find((e) => e.id.toUpperCase() === m.id.toUpperCase())?.enabled ?? m.enabled) !== false;
                   return (
-                    <article key={m.id} className={`ctl rounded-xl p-4 flex flex-col gap-3 min-w-0 transition-opacity duration-200 ${isBuiltInReady && !isOn ? "opacity-60" : ""}`}>
+                    <article key={m.id} className={`ctl rounded-xl p-4 flex flex-col gap-3 min-w-0 transition-opacity duration-200 ${isLexiconReady && !isOn ? "opacity-60" : ""}`}>
                       <div className="flex items-start gap-3">
                         <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
                           <span className="material-symbols-outlined text-[22px]">{CATEGORY_ICON[m.category] ?? "extension"}</span>
@@ -360,8 +377,8 @@ export default function ModuleManager() {
 
                       <div className="flex items-center justify-between gap-3 pt-3 border-t border-outline-variant/50">
                         <span className="font-metadata-mono text-[11px] text-on-surface-variant/80 truncate">{m.version ? `v${m.version}` : ""}</span>
-                        {isBuiltInReady ? (
-                          <div className="shrink-0 inline-flex items-center gap-2.5">
+                        {isLexiconReady ? (
+                          <div className="shrink-0 inline-flex items-center gap-2">
                             <span className="font-body-ui text-[13px] font-medium text-on-surface-variant" aria-hidden="true">{isOn ? "On" : "Off"}</span>
                             <button
                               type="button"
@@ -374,7 +391,26 @@ export default function ModuleManager() {
                             >
                               <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.4,0.05,0.15,1)] motion-reduce:transition-none ${isOn ? "translate-x-5" : "translate-x-0"}`} />
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => openLexicon(m.id)}
+                              className="ctl ml-1 px-3 py-1.5 rounded-md font-body-ui text-[13px] font-medium text-primary hover:bg-primary/10 transition-colors inline-flex items-center gap-1.5"
+                              title="Open and read this lexicon in the Strong's panel"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">menu_book</span>
+                              Open
+                            </button>
                           </div>
+                        ) : isDone && m.category === "Bible" ? (
+                          <button
+                            type="button"
+                            onClick={() => { setPrimaryModule(m.id); setView("reading"); }}
+                            className="ctl px-3 py-1.5 rounded-md font-body-ui text-[13px] font-medium text-primary hover:bg-primary/10 transition-colors inline-flex items-center gap-1.5"
+                            title={`Open ${m.name} in reader`}
+                          >
+                            <span className="material-symbols-outlined text-[16px]">menu_book</span>
+                            Read
+                          </button>
                         ) : (
                         <button
                           disabled={isDone || isInstalling}

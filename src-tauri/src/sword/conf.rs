@@ -9,6 +9,7 @@ pub enum ModuleType {
     Commentary,
     Lexicon,
     Dictionary,
+    Devotional,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,6 +81,7 @@ impl ModuleConf {
         })?;
 
         let mut raw: HashMap<String, String> = HashMap::new();
+        let mut feature: Vec<String> = Vec::new();
         for line in content.lines() {
             let line = line.trim();
             if line.starts_with('[') && line.ends_with(']') {
@@ -88,22 +90,68 @@ impl ModuleConf {
             if let Some(eq) = line.find('=') {
                 let key = line[..eq].trim().to_lowercase();
                 let value = line[eq + 1..].trim().to_string();
+                if key == "feature" {
+                    for f in value.split(',') {
+                        let f = f.trim().to_lowercase();
+                        if !f.is_empty() && !feature.contains(&f) {
+                            feature.push(f);
+                        }
+                    }
+                }
                 raw.insert(key, value);
             }
         }
 
         let get = |k: &str| raw.get(k).cloned().unwrap_or_default();
 
-        let module_type = match get("moddrv").to_lowercase().as_str() {
-            "rawcom" | "zcom" | "commentary" => ModuleType::Commentary,
-            "rawld" | "zld" | "lexdict" => ModuleType::Lexicon,
-            "dictionary" => ModuleType::Dictionary,
-            _ => ModuleType::Bible,
+        let cat_str = get("category").to_lowercase();
+        let drv_str = get("moddrv").to_lowercase();
+        let mid_lower = module_id.to_lowercase();
+        let name_lower = get("description").to_lowercase();
+
+        let is_devotional = cat_str.contains("devotional")
+            || feature.iter().any(|f| f.contains("dailydevotion"));
+
+        let module_type = if is_devotional {
+            ModuleType::Devotional
+        } else if matches!(cat_str.as_str(), "commentaries" | "commentary")
+            || matches!(
+                drv_str.as_str(),
+                "rawcom" | "rawcom4" | "zcom" | "zcom4" | "rawfiles" | "hrefcom" | "commentary"
+            )
+        {
+            ModuleType::Commentary
+        } else if matches!(
+            cat_str.as_str(),
+            "lexicons / dictionaries" | "lexicons" | "dictionaries" | "glossaries"
+        ) || matches!(drv_str.as_str(), "rawld" | "rawld4" | "zld" | "lexdict")
+        {
+            let is_lex = feature.iter().any(|f| {
+                matches!(
+                    f.as_str(),
+                    "greekdef" | "hebrewdef" | "greekparse" | "hebrewparse"
+                )
+            }) || cat_str == "lexicons"
+                || mid_lower.contains("lexicon")
+                || mid_lower.contains("strong")
+                || mid_lower.contains("morph")
+                || mid_lower.contains("parse")
+                || mid_lower.contains("septuagint")
+                || name_lower.contains("lexicon")
+                || name_lower.contains("strong")
+                || name_lower.contains("morpholog");
+            if is_lex {
+                ModuleType::Lexicon
+            } else {
+                ModuleType::Dictionary
+            }
+        } else {
+            ModuleType::Bible
         };
 
         let compression = if matches!(
-            get("moddrv").to_lowercase().as_str(),
-            "ztext" | "zcom" | "zld"
+            drv_str.as_str(),
+            "ztext" | "ztext4" | "zcom" | "zcom4" | "zld"
         ) {
             Compression::Zip
         } else {
@@ -132,12 +180,6 @@ impl ModuleConf {
             "catholic" => Versification::Catholic,
             other => Versification::Other(other.to_string()),
         };
-
-        let feature: Vec<String> = get("feature")
-            .split(',')
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| !s.is_empty())
-            .collect();
 
         let strongs_zero_pad = feature.contains(&"strongsnumbers".to_string())
             && !raw.contains_key("strongsnozeropad");
@@ -232,6 +274,34 @@ mod tests {
         // RawLD uses 6-byte idx entries (u32 offset + u16 size); RawLD4/zLD use 8.
         assert_eq!(conf.idx_entry_size, 6);
 
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn parses_dictionary_and_devotional_and_zcom4() {
+        let path = write_conf(
+            "easton",
+            "[Easton]\nDescription=Easton's Bible Dictionary\nModDrv=zLD\n",
+        );
+        let conf = ModuleConf::parse("Easton", &path).unwrap();
+        assert_eq!(conf.module_type, ModuleType::Dictionary);
+        let _ = fs::remove_file(&path);
+
+        let path = write_conf(
+            "mhc",
+            "[MHC]\nDescription=Matthew Henry Complete\nModDrv=zCom4\n",
+        );
+        let conf = ModuleConf::parse("MHC", &path).unwrap();
+        assert_eq!(conf.module_type, ModuleType::Commentary);
+        assert_eq!(conf.compression, Compression::Zip);
+        let _ = fs::remove_file(&path);
+
+        let path = write_conf(
+            "daily",
+            "[Daily]\nDescription=Daily Light\nModDrv=RawLD\nCategory=Daily Devotional\n",
+        );
+        let conf = ModuleConf::parse("Daily", &path).unwrap();
+        assert_eq!(conf.module_type, ModuleType::Devotional);
         let _ = fs::remove_file(&path);
     }
 

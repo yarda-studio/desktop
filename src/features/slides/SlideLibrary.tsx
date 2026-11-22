@@ -30,8 +30,8 @@ export default function SlideLibrary() {
 
   return (
     <div className="flex flex-1 min-w-0 min-h-0 flex-col">
-      <div className="flex items-center gap-2 px-3 pt-3 pb-2 shrink-0">
-        <label className="field flex flex-1 items-center gap-2 rounded-md px-2.5 h-9">
+      <div className="flex flex-wrap items-center gap-2 px-3 pt-2.5 pb-2 shrink-0">
+        <label className="field flex flex-1 min-w-[160px] items-center gap-2 rounded-md px-2.5 h-8 sm:h-9">
           <span className="material-symbols-outlined text-[18px] text-secondary" aria-hidden="true">search</span>
           <input
             value={query}
@@ -41,11 +41,15 @@ export default function SlideLibrary() {
             className="flex-1 min-w-0 bg-transparent outline-none text-[13px] font-body-ui text-on-surface"
           />
         </label>
-        <button onClick={() => newSlide("announcement")} className="flex items-center gap-1.5 h-9 px-3 rounded-md ctl font-body-ui text-[13px] text-on-surface shrink-0">
-          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">campaign</span>New announcement
+        <button onClick={() => newSlide("announcement")} className="flex items-center gap-1.5 h-8 sm:h-9 px-2.5 sm:px-3 rounded-md ctl font-body-ui text-[12px] sm:text-[13px] text-on-surface shrink-0">
+          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">campaign</span>
+          <span className="hidden sm:inline">New announcement</span>
+          <span className="sm:hidden">Announce</span>
         </button>
-        <button onClick={() => newSlide("freeform")} className="flex items-center gap-1.5 h-9 px-3 rounded-md ctl font-body-ui text-[13px] text-on-surface shrink-0">
-          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">dashboard_customize</span>New free-form
+        <button onClick={() => newSlide("freeform")} className="flex items-center gap-1.5 h-8 sm:h-9 px-2.5 sm:px-3 rounded-md ctl font-body-ui text-[12px] sm:text-[13px] text-on-surface shrink-0">
+          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">dashboard_customize</span>
+          <span className="hidden sm:inline">New free-form</span>
+          <span className="sm:hidden">Free-form</span>
         </button>
       </div>
 
@@ -67,15 +71,15 @@ export default function SlideLibrary() {
         ))}
       </div>
 
-      <div className="h-11 shrink-0 flex items-center gap-1 px-3 border-t border-outline-variant bg-surface-container-lowest/40">
-        <button onClick={() => selected && void openEditor(selected.id)} disabled={!selected} className="flex items-center gap-1 px-2 py-1 rounded-md ghost font-body-ui text-[13px] text-on-surface disabled:opacity-30 disabled:pointer-events-none">
-          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">edit</span>Edit
+      <div className="min-h-10 sm:h-11 shrink-0 flex flex-wrap items-center gap-1 px-3 py-1 border-t border-outline-variant bg-surface-container-lowest/40">
+        <button onClick={() => selected && void openEditor(selected.id)} disabled={!selected} title="Edit" className="flex items-center gap-1 px-2 py-1 rounded-md ghost font-body-ui text-[13px] text-on-surface disabled:opacity-30 disabled:pointer-events-none">
+          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">edit</span><span className="hidden sm:inline">Edit</span>
         </button>
-        <button onClick={() => selected && void useSlidesLive.getState().addToSchedule(selected.id)} disabled={!selected} className="flex items-center gap-1 px-2 py-1 rounded-md ghost font-body-ui text-[13px] text-on-surface disabled:opacity-30 disabled:pointer-events-none">
-          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">playlist_add</span>Add to schedule
+        <button onClick={() => selected && void useSlidesLive.getState().addToSchedule(selected.id)} disabled={!selected} title="Add to schedule" className="flex items-center gap-1 px-2 py-1 rounded-md ghost font-body-ui text-[13px] text-on-surface disabled:opacity-30 disabled:pointer-events-none">
+          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">playlist_add</span><span className="hidden md:inline">Add to schedule</span>
         </button>
         <button onClick={() => selected && void addSlideToPlan(selected)} disabled={!selected} className="flex items-center gap-1 px-2 py-1 rounded-md ghost font-body-ui text-[13px] text-on-surface disabled:opacity-30 disabled:pointer-events-none" title="Add to the service plan">
-          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">playlist_add_check</span>Add to plan
+          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">playlist_add_check</span><span className="hidden md:inline">Add to plan</span>
         </button>
         {confirmDelete ? (
           <>
@@ -83,11 +87,11 @@ export default function SlideLibrary() {
             <button onClick={() => setConfirmDelete(false)} className="px-2 py-1 rounded-md ghost font-body-ui text-[13px] text-on-surface">Keep</button>
           </>
         ) : (
-          <button onClick={() => setConfirmDelete(true)} disabled={!selected} className="flex items-center gap-1 px-2 py-1 rounded-md ghost font-body-ui text-[13px] text-on-surface disabled:opacity-30 disabled:pointer-events-none">
-            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">delete</span>Delete
+          <button onClick={() => setConfirmDelete(true)} disabled={!selected} title="Delete" className="flex items-center gap-1 px-2 py-1 rounded-md ghost font-body-ui text-[13px] text-on-surface disabled:opacity-30 disabled:pointer-events-none">
+            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">delete</span><span className="hidden sm:inline">Delete</span>
           </button>
         )}
-        <span className="flex-1 text-center font-body-ui text-[13px] text-on-surface-variant">
+        <span className="ml-auto sm:flex-1 text-right sm:text-center font-body-ui text-[12px] sm:text-[13px] text-on-surface-variant whitespace-nowrap">
           {slides.length} {slides.length === 1 ? "slide" : "slides"}
         </span>
       </div>

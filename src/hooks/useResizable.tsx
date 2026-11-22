@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Axis = "x" | "y";
 
@@ -6,12 +6,22 @@ interface Options {
   /** localStorage key; the chosen size survives restarts. */
   storageKey: string;
   initial: number;
-  min: number;
+  min: number | (() => number);
   /** Upper bound, evaluated at drag time so it can depend on the window size. */
   max: number | (() => number);
   axis: Axis;
   /** Handle sits on the far side of the panel (dragging toward the start grows it). */
   invert?: boolean;
+}
+
+function resolveBound(b: number | (() => number)): number {
+  return typeof b === "function" ? b() : b;
+}
+
+function clampSize(value: number, min: number | (() => number), max: number | (() => number)): number {
+  const lower = resolveBound(min);
+  const upper = Math.max(lower, resolveBound(max));
+  return Math.min(Math.max(value, lower), upper);
 }
 
 function readStored(key: string, fallback: number): number {
@@ -27,11 +37,10 @@ function readStored(key: string, fallback: number): number {
 export function useResizable({ storageKey, initial, min, max, axis, invert }: Options) {
   // Clamp on the way in: a stored or initial size from a differently sized
   // (or not yet laid out) window must never leave a panel collapsed.
-  const [size, setSize] = useState(() => {
-    const upper = typeof max === "function" ? max() : max;
-    return Math.min(Math.max(readStored(storageKey, initial), min), Math.max(min, upper));
-  });
+  const [size, setSize] = useState(() => clampSize(readStored(storageKey, initial), min, max));
   const sizeRef = useRef(size);
+  const boundsRef = useRef({ min, max });
+  boundsRef.current = { min, max };
   const drag = useRef<{ start: number; startSize: number } | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -39,6 +48,17 @@ export function useResizable({ storageKey, initial, min, max, axis, invert }: Op
     sizeRef.current = next;
     setSize(next);
   }, []);
+
+  // Re-clamp against the new viewport bounds when the window resizes so a panel
+  // sized on a large monitor never overflows or crushes siblings on a smaller one.
+  useEffect(() => {
+    const onResize = () => {
+      const clamped = clampSize(sizeRef.current, boundsRef.current.min, boundsRef.current.max);
+      if (clamped !== sizeRef.current) commit(clamped);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [commit]);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -51,8 +71,7 @@ export function useResizable({ storageKey, initial, min, max, axis, invert }: Op
     if (!drag.current) return;
     const pos = axis === "x" ? e.clientX : e.clientY;
     const delta = (pos - drag.current.start) * (invert ? -1 : 1);
-    const upper = typeof max === "function" ? max() : max;
-    commit(Math.min(Math.max(drag.current.startSize + delta, min), Math.max(min, upper)));
+    commit(clampSize(drag.current.startSize + delta, min, max));
   }, [axis, invert, max, min, commit]);
 
   const onPointerUp = useCallback(() => {
@@ -69,19 +88,18 @@ export function useResizable({ storageKey, initial, min, max, axis, invert }: Op
   /** Grows the panel to at least `px` (within its limits) without saving it, so a
    *  temporary need for room doesn't overwrite the size the user chose. */
   const growTo = useCallback((px: number) => {
-    const upper = typeof max === "function" ? max() : max;
-    const target = Math.min(px, Math.max(min, upper));
+    const target = clampSize(px, min, max);
     if (target > sizeRef.current) commit(target);
   }, [max, min, commit]);
 
   const reset = useCallback(() => {
-    commit(initial);
+    commit(clampSize(initial, min, max));
     try {
       localStorage.removeItem(storageKey);
     } catch {
       // ignore
     }
-  }, [initial, storageKey, commit]);
+  }, [initial, min, max, storageKey, commit]);
 
   return { size, dragging, growTo, handleProps: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onDoubleClick: reset } };
 }

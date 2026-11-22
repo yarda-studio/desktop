@@ -14,7 +14,7 @@ const CANON: { section: string; books: string[] }[] = [
   { section: "Revelation", books: ["Revelation"] },
 ];
 
-export default function BookNavigator() {
+export default function BookNavigator({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const {
     currentRef, setCurrentRef,
     primaryModule, setPrimaryModule,
@@ -47,9 +47,34 @@ export default function BookNavigator() {
   }, []);
 
   return (
-    <aside data-tour="book-nav" className="w-[220px] bg-surface-container-lowest border-r border-outline-variant flex flex-col h-full overflow-y-auto shrink-0">
-      <div className="p-5 pb-3">
-        <h2 className="font-headline-md text-headline-md font-bold text-on-surface">Study Library</h2>
+    <>
+      {open && (
+        <div
+          className="md:hidden fixed inset-0 z-30 bg-black/40"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        data-tour="book-nav"
+        className={`${
+          open ? "flex fixed inset-y-0 left-16 z-30 shadow-2xl" : "hidden"
+        } md:static md:flex md:shadow-none w-[220px] md:w-[190px] lg:w-[220px] bg-surface-container-lowest border-r border-outline-variant flex-col h-full overflow-y-auto shrink-0`}
+      >
+      <div className="p-4 lg:p-5 pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-headline-md text-headline-md font-bold text-on-surface">Study Library</h2>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="md:hidden p-1 rounded-md text-on-surface-variant hover:text-on-surface"
+              aria-label="Close library navigation"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          )}
+        </div>
 
         {/* Primary translation picker */}
         <div ref={primaryPickerRef} className="relative mt-1.5">
@@ -142,7 +167,7 @@ export default function BookNavigator() {
               {group.books.map((book) => (
                 <button
                   key={book}
-                  onClick={() => setCurrentRef({ book, chapter: 1, verse: 1 })}
+                  onClick={() => { setCurrentRef({ book, chapter: 1, verse: 1 }); onClose?.(); }}
                   className={`w-full text-left py-1 px-2 rounded-md transition-colors ${
                     currentRef.book === book
                       ? "ctl-active font-medium"
@@ -156,6 +181,7 @@ export default function BookNavigator() {
           </details>
         ))}
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

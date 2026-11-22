@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import SegmentedControl from "../../components/SegmentedControl";
 import { useDialogA11y } from "../../hooks/useDialogA11y";
 import { fileToBackgroundDataUrl } from "../../lib/imageToDataUrl";
 import { useAppStore } from "../../store/app";
@@ -21,6 +22,7 @@ export default function SlideEditorDialog() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [pane, setPane] = useState<"pages" | "canvas" | "inspector">("canvas");
 
   // A selection belongs to one page; switching pages starts with nothing selected.
   useEffect(() => { setSelectedId(null); }, [pageIndex]);
@@ -47,19 +49,19 @@ export default function SlideEditorDialog() {
   const page = draft.pages[Math.min(pageIndex, draft.pages.length - 1)];
 
   return (
-    <div className="motion-backdrop fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onMouseDown={(e) => e.target === e.currentTarget && requestCancel()}>
+    <div className="motion-backdrop fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-2 sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && requestCancel()}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Slide Editor" onKeyDown={onUndoKeys} className="w-[min(1180px,96vw)] h-[min(780px,94vh)] flex flex-col glass glass-strong rounded-3xl overflow-hidden">
-        <header className="flex items-center gap-3 px-4 py-3 border-b border-outline-variant shrink-0">
+        <header className="flex flex-wrap items-center gap-2 sm:gap-3 px-4 py-2.5 sm:py-3 border-b border-outline-variant shrink-0">
           <input
             value={draft.title}
             onChange={(e) => update({ title: e.target.value })}
             placeholder="Slide title"
             autoFocus={draft.id === null}
             aria-label="Slide title"
-            className="field w-80 max-w-[50%] rounded-md h-9 px-3 font-body-ui text-[14px] text-on-surface outline-none"
+            className="field flex-1 min-w-[160px] lg:flex-none lg:w-80 lg:max-w-[50%] rounded-md h-9 px-3 font-body-ui text-[14px] text-on-surface outline-none"
           />
-          <span className="flex-1" />
-          <div role="group" aria-label="Undo and redo" className="flex ctl rounded-md overflow-hidden">
+          <span className="hidden lg:inline flex-1" />
+          <div role="group" aria-label="Undo and redo" className="flex ctl rounded-md overflow-hidden shrink-0">
             <button onClick={undo} disabled={!canUndo} title={forPlatform("Undo (Ctrl+Z)")} aria-label="Undo" className="px-2 py-1 hover:bg-on-surface/10 disabled:pointer-events-none disabled:opacity-30">
               <span className="material-symbols-outlined text-[18px]" aria-hidden="true">undo</span>
             </button>
@@ -67,10 +69,24 @@ export default function SlideEditorDialog() {
               <span className="material-symbols-outlined text-[18px]" aria-hidden="true">redo</span>
             </button>
           </div>
-          <h2 className="font-body-ui text-[13px] text-on-surface-variant">
-            {freeform ? `Free-form slide — page ${pageIndex + 1} of ${draft.pages.length}` : "Announcement"}{dirty ? " — unsaved" : ""}
+          <h2 className="font-body-ui text-[12px] sm:text-[13px] text-on-surface-variant truncate">
+            {freeform ? `Free-form — page ${pageIndex + 1}/${draft.pages.length}` : "Announcement"}{dirty ? " — unsaved" : ""}
           </h2>
         </header>
+
+        <div className="lg:hidden shrink-0 border-b border-outline-variant px-4 py-1.5">
+          <SegmentedControl
+            ariaLabel="Slide editor section"
+            value={pane}
+            onChange={setPane}
+            stretch
+            options={freeform
+              ? [{ value: "pages", label: "Pages" }, { value: "canvas", label: "Canvas" }, { value: "inspector", label: "Properties" }]
+              : [{ value: "canvas", label: "Canvas" }, { value: "inspector", label: "Properties" }]}
+            className="rounded-lg bg-surface-variant/35 p-0.5 gap-0.5"
+            itemClassName="py-1 rounded-md text-[12px] font-semibold"
+          />
+        </div>
 
         <div className="flex flex-1 min-h-0">
           {freeform && (
@@ -84,9 +100,10 @@ export default function SlideEditorDialog() {
               onDuplicate={duplicatePage}
               onRemove={removePage}
               onMove={movePage}
+              className={`${pane === "pages" ? "flex" : "hidden"} lg:flex`}
             />
           )}
-          <section className="flex-1 min-w-0 flex flex-col items-center justify-center gap-3 p-6 bg-surface-container-lowest/30">
+          <section className={`${pane === "canvas" ? "flex" : "hidden"} lg:flex flex-1 min-w-0 flex-col items-center justify-center gap-3 p-4 sm:p-6 bg-surface-container-lowest/30`}>
             <div className="w-full max-w-[860px]">
               <EditorCanvas
                 slide={toPayload(draft, pageIndex)}
@@ -97,12 +114,12 @@ export default function SlideEditorDialog() {
                 onChange={updateElement}
               />
             </div>
-            <p className="font-body-ui text-[12px] text-on-surface-variant">
+            <p className="font-body-ui text-[12px] text-on-surface-variant text-center">
               {freeform ? "Drag a box to move it, drag its corner to resize, or use the arrow keys." : "This is how the slide will look on the output."}
             </p>
           </section>
 
-          <aside className="w-[340px] shrink-0 border-l border-outline-variant overflow-y-auto p-4 space-y-5">
+          <aside className={`${pane === "inspector" ? "block" : "hidden"} lg:block w-full lg:w-[320px] xl:w-[340px] shrink-0 lg:border-l border-outline-variant overflow-y-auto p-4 space-y-5`}>
             {freeform
               ? <FreeformInspector page={page} selectedId={selectedId} onSelect={setSelectedId} />
               : <AnnouncementInspector page={page} />}

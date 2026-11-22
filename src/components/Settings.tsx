@@ -1,6 +1,7 @@
 import { forPlatform } from "../lib/platform";
 import SegmentedControl from "./SegmentedControl";
 import { useBuiltinLexicons, isLexiconOn } from "../features/lexicons/builtinLexiconStore";
+import { cleanLexiconLabel } from "../features/lexicons/lexiconUtils";
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useShortcutStore } from "../lib/shortcuts";
 import { useSearchFilterStore } from "../store/searchFilterStore";
@@ -157,7 +158,7 @@ export default function Settings() {
   return createPortal(
     <ActiveSectionContext.Provider value={current}>
     <div
-      className={`fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-6 transition-opacity ease-out motion-reduce:transition-none ${
+      className={`fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-2 sm:p-6 transition-opacity ease-out motion-reduce:transition-none ${
         visible ? "opacity-100 duration-200" : "opacity-0 duration-[180ms] pointer-events-none"
       }`}
       onClick={() => setSettingsOpen(false)}
@@ -166,7 +167,7 @@ export default function Settings() {
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
-        className={`w-full max-w-[1000px] h-[min(700px,88vh)] glass glass-strong rounded-3xl overflow-hidden flex will-change-transform transition-[opacity,transform] motion-reduce:transition-none ${
+        className={`w-full max-w-[1000px] h-[min(700px,92vh)] sm:h-[min(700px,88vh)] glass glass-strong rounded-3xl overflow-hidden flex flex-col md:flex-row will-change-transform transition-[opacity,transform] motion-reduce:transition-none ${
           visible
             ? "opacity-100 translate-y-0 scale-100 duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
             : "opacity-0 translate-y-2 scale-[0.97] duration-[180ms] ease-in"
@@ -174,25 +175,30 @@ export default function Settings() {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Section list */}
-        <nav className="w-[230px] shrink-0 flex flex-col border-r border-outline-variant bg-surface-container-lowest/40">
-          <h2 className="px-6 pt-6 pb-4 font-headline-sm text-headline-sm text-on-surface">Settings</h2>
-          <ul className="flex-1 min-h-0 overflow-y-auto px-3 space-y-0.5">
+        <nav className="md:w-[210px] lg:w-[230px] shrink-0 flex flex-col border-b md:border-b-0 md:border-r border-outline-variant bg-surface-container-lowest/40">
+          <div className="flex items-center justify-between px-4 sm:px-6 pt-3.5 pb-2 md:pt-6 md:pb-4">
+            <h2 className="font-headline-sm text-headline-sm text-on-surface">Settings</h2>
+            <button onClick={() => setSettingsOpen(false)} className="md:hidden text-secondary hover:text-primary transition-colors" aria-label="Close settings">
+              <span className="material-symbols-outlined text-[22px]">close</span>
+            </button>
+          </div>
+          <ul className="flex md:flex-col md:flex-1 md:min-h-0 overflow-x-auto md:overflow-x-visible md:overflow-y-auto px-3 pb-2.5 md:pb-0 gap-1 md:gap-0 md:space-y-0.5">
             {nav.map((n) => (
-              <li key={n.id}>
+              <li key={n.id} className="shrink-0">
                 <button
                   onClick={() => setActive(n.id)}
                   aria-current={current === n.id ? "page" : undefined}
-                  className={`w-full flex items-center gap-3 px-3 min-h-10 rounded-lg text-left font-body-ui text-[14px] transition-colors ${
+                  className={`w-full flex items-center gap-2 md:gap-3 px-3 min-h-9 md:min-h-10 rounded-lg text-left font-body-ui text-[13px] md:text-[14px] whitespace-nowrap transition-colors ${
                     current === n.id ? "bg-surface-container-high text-on-surface font-semibold" : "text-on-surface-variant font-medium hover:bg-surface-container-low hover:text-on-surface"
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[20px]" aria-hidden="true">{n.icon}</span>
+                  <span className="material-symbols-outlined text-[18px] md:text-[20px]" aria-hidden="true">{n.icon}</span>
                   {n.label}
                 </button>
               </li>
             ))}
           </ul>
-          <div className="p-4 space-y-2 border-t border-outline-variant">
+          <div className="hidden md:block p-4 space-y-2 border-t border-outline-variant">
             <button
               onClick={() => setActive("general")}
               className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-left font-body-ui text-[13px] font-medium text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors"
@@ -213,8 +219,8 @@ export default function Settings() {
         </nav>
 
         {/* Selected section */}
-        <section className="flex-1 min-w-0 flex flex-col">
-          <header className="flex items-center justify-between px-8 py-5 border-b border-outline-variant shrink-0">
+        <section className="flex-1 min-w-0 min-h-0 flex flex-col">
+          <header className="hidden md:flex items-center justify-between px-6 lg:px-8 py-5 border-b border-outline-variant shrink-0">
             <h3 className="font-headline-sm text-headline-sm text-on-surface">{currentLabel}</h3>
             <div className="flex items-center gap-3">
               {saving && <span className="font-body-ui tabular-nums text-[12px] text-secondary">Saving…</span>}
@@ -426,14 +432,21 @@ export default function Settings() {
               <Toggle value={showRedLetter} onChange={setShowRedLetter} />
             </SubRow>
             <SubRow label="Default Strong's source" description="The concordance sheet's own pill switcher can still change this per lookup">
-              <div className="flex gap-1.5">
-                {([
+              <div className="flex gap-1.5 flex-wrap">
+                {[
                   { id: "ours", label: "Yarda", on: true },
                   // "rich" is Abbott-Smith for Greek and BDB for Hebrew, so it stays while either is on.
                   { id: "rich", label: "BDB / Abbott-Smith", on: isLexiconOn(builtinLexicons, "TBESG") || isLexiconOn(builtinLexicons, "TBESH") },
                   { id: "thayer", label: "Thayer", on: isLexiconOn(builtinLexicons, "THAYER") },
                   { id: "lsj", label: "Full LSJ", on: isLexiconOn(builtinLexicons, "TFLSJ") },
-                ] as const).filter((opt) => opt.on).map((opt) => (
+                  ...builtinLexicons
+                    .filter((m) => !m.built_in && m.category === "Lexicon" && m.installed && m.id !== "StrongsGreek" && m.id !== "StrongsHebrew")
+                    .map((m) => ({
+                      id: m.id,
+                      label: cleanLexiconLabel(m),
+                      on: isLexiconOn(builtinLexicons, m.id),
+                    })),
+                ].filter((opt) => opt.on).map((opt) => (
                   <ChipButton
                     key={opt.id}
                     active={prefs.default_lexicon_source === opt.id}
@@ -636,15 +649,15 @@ function SliderRow({ label, value, min, max, step, format, onChange }: {
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="flex items-center gap-4 px-8 py-4 min-h-[64px]">
-      <span className="set-title shrink-0 w-28">{label}</span>
+    <div className="flex items-center gap-3 sm:gap-4 px-4 sm:px-6 lg:px-8 py-4 min-h-[64px]">
+      <span className="set-title shrink-0 w-20 sm:w-28">{label}</span>
       <input
         aria-label={label}
         type="range"
         min={min} max={max} step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="range flex-1 cursor-pointer"
+        className="range flex-1 min-w-0 cursor-pointer"
       />
       <span className="font-body-ui tabular-nums text-[13px] text-on-surface-variant w-10 text-right shrink-0">
         {format(value)}
@@ -742,7 +755,7 @@ function SubRow({ label, description, children }: { label: string; description?:
   return (
     <RowLabelContext.Provider value={labelId}>
       <div className="set-row">
-        <div className="min-w-0 flex-1 basis-64">
+        <div className="min-w-0 flex-1 basis-48 sm:basis-64">
           <span id={labelId} className="set-title block">{label}</span>
           {description && <p className="set-desc">{description}</p>}
         </div>
