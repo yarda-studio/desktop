@@ -12,6 +12,7 @@ import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { checkForUpdate, downloadAndInstall, getVersion } from "../lib/updater";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { ACCENTS, isAccentId } from "../lib/accents";
+import { CONSOLE_PRESET_OPTIONS, compactnessLabel, presetForCompactness } from "../lib/consoleDensity";
 import { useDialogA11y } from "../hooks/useDialogA11y";
 import AccountPanel from "./account/AccountPanel";
 import TransferPanel from "../features/transfer/TransferPanel";
@@ -70,6 +71,8 @@ export default function Settings() {
     showRedLetter, setShowRedLetter,
     displayPrefs, setDisplayPrefs,
     workspace, setWorkspace, setView,
+    consoleCompactness, setConsoleCompactness,
+    splitConsoleColumns, setSplitConsoleColumns,
   } = useAppStore();
 
   const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
@@ -81,7 +84,9 @@ export default function Settings() {
   const [visible, setVisible] = useState(false);
   const [openSections, setOpenSections] = useState<Set<string>>(new Set());
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [peekingApp, setPeekingApp] = useState(false);
   const rafRef = useRef<number | null>(null);
+  const backdropDownRef = useRef(false);
 
   useEffect(() => { getVersion().then(setAppVersion).catch(() => {}); }, []);
 
@@ -100,10 +105,25 @@ export default function Settings() {
       return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
     }
     setVisible(false);
+    setPeekingApp(false);
     setOpenSections(new Set());
     const t = window.setTimeout(() => setMounted(false), EXIT_MS);
     return () => window.clearTimeout(t);
   }, [settingsOpen]);
+
+  // Restore Settings automatically whenever the user releases the compactness slider.
+  useEffect(() => {
+    if (!peekingApp) return;
+    const stop = () => setPeekingApp(false);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
+    return () => {
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
+    };
+  }, [peekingApp]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -158,16 +178,29 @@ export default function Settings() {
   return createPortal(
     <ActiveSectionContext.Provider value={current}>
     <div
-      className={`fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-2 sm:p-6 transition-opacity ease-out motion-reduce:transition-none ${
+      className={`fixed inset-0 z-[60] flex items-center justify-center p-2 sm:p-6 transition-[opacity,background-color] ease-out motion-reduce:transition-none ${
+        peekingApp ? "bg-transparent" : "bg-black/50"
+      } ${
         visible ? "opacity-100 duration-200" : "opacity-0 duration-[180ms] pointer-events-none"
       }`}
-      onClick={() => setSettingsOpen(false)}
+      onMouseDown={(e) => { backdropDownRef.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        // Only close when the press began on the backdrop too, so releasing a
+        // slider drag outside the dialog doesn't dismiss Settings.
+        const startedOnBackdrop = backdropDownRef.current;
+        backdropDownRef.current = false;
+        if (startedOnBackdrop && e.target === e.currentTarget) setSettingsOpen(false);
+      }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
-        className={`w-full max-w-[1000px] h-[min(700px,92vh)] sm:h-[min(700px,88vh)] glass glass-strong rounded-3xl overflow-hidden flex flex-col md:flex-row will-change-transform transition-[opacity,transform] motion-reduce:transition-none ${
+        className={`w-full max-w-[1000px] h-[min(700px,92vh)] sm:h-[min(700px,88vh)] rounded-3xl overflow-hidden flex flex-col md:flex-row will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] motion-reduce:transition-none ${
+          peekingApp
+            ? "!bg-transparent !border-transparent !shadow-none !backdrop-blur-none"
+            : "glass glass-strong"
+        } ${
           visible
             ? "opacity-100 translate-y-0 scale-100 duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
             : "opacity-0 translate-y-2 scale-[0.97] duration-[180ms] ease-in"
@@ -175,7 +208,7 @@ export default function Settings() {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Section list */}
-        <nav className="md:w-[210px] lg:w-[230px] shrink-0 flex flex-col border-b md:border-b-0 md:border-r border-outline-variant bg-surface-container-lowest/40">
+        <nav className={`md:w-[210px] lg:w-[230px] shrink-0 flex flex-col border-b md:border-b-0 md:border-r border-outline-variant bg-surface-container-lowest/40 transition-opacity duration-150 ${peekingApp ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
           <div className="flex items-center justify-between px-4 sm:px-6 pt-3.5 pb-2 md:pt-6 md:pb-4">
             <h2 className="font-headline-sm text-headline-sm text-on-surface">Settings</h2>
             <button onClick={() => setSettingsOpen(false)} className="md:hidden text-secondary hover:text-primary transition-colors" aria-label="Close settings">
@@ -220,7 +253,7 @@ export default function Settings() {
 
         {/* Selected section */}
         <section className="flex-1 min-w-0 min-h-0 flex flex-col">
-          <header className="hidden md:flex items-center justify-between px-6 lg:px-8 py-5 border-b border-outline-variant shrink-0">
+          <header className={`hidden md:flex items-center justify-between px-6 lg:px-8 py-5 border-b border-outline-variant shrink-0 transition-opacity duration-150 ${peekingApp ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
             <h3 className="font-headline-sm text-headline-sm text-on-surface">{currentLabel}</h3>
             <div className="flex items-center gap-3">
               {saving && <span className="font-body-ui tabular-nums text-[12px] text-secondary">Saving…</span>}
@@ -461,6 +494,85 @@ export default function Settings() {
 
           {/* ── Presentation ─────────────────────────────────────────── */}
           <Pane id="presentation">
+            <div className={`transition-opacity duration-150 ${peekingApp ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
+              <SubRow
+                label="Console density"
+                description={
+                  presetForCompactness(consoleCompactness) === "custom"
+                    ? `Custom compactness (${consoleCompactness}%) — drag the slider below to fine-tune.`
+                    : CONSOLE_PRESET_OPTIONS.find((o) => o.id === presetForCompactness(consoleCompactness))?.description
+                }
+              >
+                <div className="flex gap-1.5 flex-wrap items-center">
+                  {CONSOLE_PRESET_OPTIONS.map((opt) => (
+                    <ChipButton
+                      key={opt.id}
+                      active={consoleCompactness === opt.value}
+                      onClick={() => setConsoleCompactness(opt.value)}
+                    >
+                      {opt.label}
+                    </ChipButton>
+                  ))}
+                  {presetForCompactness(consoleCompactness) === "custom" && (
+                    <span className="px-2.5 py-1 rounded-md text-[12px] font-body-ui font-semibold ctl-active">
+                      Custom ({consoleCompactness}%)
+                    </span>
+                  )}
+                </div>
+              </SubRow>
+            </div>
+
+            <div
+              className={`flex items-center gap-3 sm:gap-4 px-4 sm:px-6 lg:px-8 py-4 min-h-[64px] transition-all duration-150 ${
+                peekingApp
+                  ? "glass glass-strong rounded-2xl shadow-xl border border-outline-variant/80 mx-2"
+                  : ""
+              }`}
+            >
+              <div className="shrink-0 w-24 sm:w-32">
+                <span className="set-title block">Custom compactness</span>
+                <span className="font-body-ui text-[11px] text-on-surface-variant block">
+                  {peekingApp ? "Release to return" : "Hold & drag to preview"}
+                </span>
+              </div>
+              <input
+                aria-label="Custom compactness"
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={consoleCompactness}
+                onPointerDown={() => setPeekingApp(true)}
+                onChange={(e) => setConsoleCompactness(parseInt(e.target.value, 10))}
+                className="range flex-1 min-w-0 cursor-pointer"
+              />
+              <span className="font-body-ui tabular-nums text-[12px] font-medium text-on-surface-variant w-24 text-right shrink-0">
+                {compactnessLabel(consoleCompactness)}
+              </span>
+            </div>
+
+            <div className={`divide-y divide-outline-variant transition-opacity duration-150 ${peekingApp ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
+            <SubRow
+              label="Narrow-screen layout"
+              description={splitConsoleColumns
+                ? "Keeps Schedule, Preview and Live side-by-side down to 660px (great for split-screen)."
+                : "Switches Schedule, Preview and Live into tabs below 880px so each pane has more width."}
+            >
+              <div className="flex gap-1.5 flex-wrap">
+                <ChipButton
+                  active={splitConsoleColumns}
+                  onClick={() => setSplitConsoleColumns(true)}
+                >
+                  Side-by-side
+                </ChipButton>
+                <ChipButton
+                  active={!splitConsoleColumns}
+                  onClick={() => setSplitConsoleColumns(false)}
+                >
+                  Tabbed when narrow
+                </ChipButton>
+              </div>
+            </SubRow>
             <SubRow label="Verse context" description={forPlatform("Ctrl+1–4 to switch live. Controls how many verses appear on screen.")}>
               <div className="flex gap-1.5 flex-wrap">
                 {([
@@ -485,6 +597,7 @@ export default function Settings() {
             >
               <Toggle value={displayPrefs.splitLongVerses} onChange={(v) => setDisplayPrefs({ splitLongVerses: v })} />
             </SubRow>
+            </div>
           </Pane>
 
           {/* ── Account ──────────────────────────────────────────────── */}

@@ -45,14 +45,19 @@ pub fn list_installed_modules(
             }) || id.to_lowercase().contains("strong");
             let mut features = conf.feature.clone();
             let name_desc_lower = format!("{} {} {}", id, name, conf.description).to_lowercase();
-            if !features.iter().any(|f| f.contains("greek") || f.contains("hebrew")) {
+            if !features
+                .iter()
+                .any(|f| f.contains("greek") || f.contains("hebrew"))
+            {
                 if name_desc_lower.contains("greek") {
                     features.push("greekdef".to_string());
                 } else if name_desc_lower.contains("hebrew") {
                     features.push("hebrewdef".to_string());
                 }
             }
-            let enabled = !disabled_installed.iter().any(|d| d.eq_ignore_ascii_case(&id));
+            let enabled = !disabled_installed
+                .iter()
+                .any(|d| d.eq_ignore_ascii_case(&id));
             Some(InstalledModule {
                 id: id.clone(),
                 name,

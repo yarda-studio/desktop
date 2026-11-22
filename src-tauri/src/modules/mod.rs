@@ -218,7 +218,7 @@ impl ModuleRegistry {
     }
 
     pub fn conf_for(&self, module_id: &str) -> Option<Arc<ModuleConf>> {
-        let loaded = self.loaded.lock().unwrap();
+        let loaded = crate::lock_unpoisoned(&self.loaded);
         loaded.get(module_id).cloned().or_else(|| {
             loaded
                 .iter()
@@ -232,7 +232,7 @@ impl ModuleRegistry {
     }
 
     pub fn register(&self, conf: ModuleConf) {
-        let mut loaded = self.loaded.lock().unwrap();
+        let mut loaded = crate::lock_unpoisoned(&self.loaded);
         loaded.insert(conf.module_id.clone(), Arc::new(conf));
     }
 
@@ -396,7 +396,7 @@ impl ModuleRegistry {
     /// If an app handle is provided and new modules are discovered, emits "available-modules-updated".
     pub fn trigger_background_refresh_if_stale(self: &Arc<Self>, app: Option<tauri::AppHandle>) {
         let should_refresh = {
-            let cache = self.catalog_cache.lock().unwrap();
+            let cache = crate::lock_unpoisoned(&self.catalog_cache);
             match &*cache {
                 Some(c) => c.fetched_at.elapsed() >= CATALOG_TTL,
                 None => true,
@@ -423,7 +423,7 @@ impl ModuleRegistry {
         let registry = Arc::clone(self);
         std::thread::spawn(move || {
             let existing = {
-                let cache = registry.catalog_cache.lock().unwrap();
+                let cache = crate::lock_unpoisoned(&registry.catalog_cache);
                 cache
                     .as_ref()
                     .map(|c| c.modules.clone())
@@ -443,9 +443,9 @@ impl ModuleRegistry {
                     }
                 }
 
-                *registry.module_repo.lock().unwrap() = module_repo;
+                *crate::lock_unpoisoned(&registry.module_repo) = module_repo;
                 {
-                    let mut cache = registry.catalog_cache.lock().unwrap();
+                    let mut cache = crate::lock_unpoisoned(&registry.catalog_cache);
                     *cache = Some(CatalogCache {
                         modules: merged,
                         fetched_at: std::time::Instant::now(),
@@ -465,7 +465,7 @@ impl ModuleRegistry {
     /// Always returns immediately using the in-memory/disk/seed cache (0–2ms).
     pub fn fetch_available(&self) -> Vec<ModuleInfo> {
         let cached = {
-            let cache = self.catalog_cache.lock().unwrap();
+            let cache = crate::lock_unpoisoned(&self.catalog_cache);
             cache.as_ref().map(|c| c.modules.clone())
         };
 
@@ -498,7 +498,7 @@ impl ModuleRegistry {
         };
 
         // Apply current installed status
-        let loaded = self.loaded.lock().unwrap();
+        let loaded = crate::lock_unpoisoned(&self.loaded);
         raw_modules
             .into_iter()
             .map(|mut m| {
@@ -808,8 +808,8 @@ fn parse_sword_conf(content: &str, source: &str) -> Option<ModuleInfo> {
     let mid_lower = module_id.to_lowercase();
     let name_lower = description.to_lowercase();
 
-    let is_devotional = cat_lower.contains("devotional")
-        || features.iter().any(|f| f.contains("dailydevotion"));
+    let is_devotional =
+        cat_lower.contains("devotional") || features.iter().any(|f| f.contains("dailydevotion"));
 
     let category = if is_devotional {
         ModuleCategory::Devotional
@@ -857,12 +857,10 @@ fn parse_sword_conf(content: &str, source: &str) -> Option<ModuleInfo> {
         ModuleCategory::Other
     };
 
-    let has_strongs = features.iter().any(|f| {
-        matches!(
-            f.as_str(),
-            "strongsnumbers" | "greekdef" | "hebrewdef"
-        )
-    }) || mid_lower.contains("strong");
+    let has_strongs = features
+        .iter()
+        .any(|f| matches!(f.as_str(), "strongsnumbers" | "greekdef" | "hebrewdef"))
+        || mid_lower.contains("strong");
 
     // Build a readable description from the About field (unescape \n, take first ~200 chars).
     // Byte-slicing (trimmed[..200]) panics whenever byte 200 lands inside a multi-byte

@@ -11,6 +11,7 @@ import {
   formatScriptureRefLabel,
   isTargetForUser,
   resolveSenderName,
+  teamVerseChannelTopic,
 } from "./teamShareLogic.ts";
 import { sendScriptureShare } from "./api.ts";
 
@@ -169,6 +170,7 @@ export const useTeamShareStore = create<TeamShareState>()((set, get) => ({
         module,
         text,
         note: options?.note,
+        existingChannel: currentSubscribedOrgId === orgId ? activeChannel : undefined,
       });
 
       // Mark sender's own copy as processed so we don't notify ourselves if broadcast loops back
@@ -241,7 +243,11 @@ export const useTeamShareStore = create<TeamShareState>()((set, get) => ({
     const supabase = getSupabase();
     if (!supabase) return () => {};
 
-    function setupSubscription() {
+    let disposed = false;
+    let subscriptionSeq = 0;
+
+    async function setupSubscription() {
+      const seq = ++subscriptionSeq;
       const orgId = useOrgStore.getState().currentOrgId;
       if (!orgId) {
         if (activeChannel) {
@@ -261,8 +267,15 @@ export const useTeamShareStore = create<TeamShareState>()((set, get) => ({
         activeChannel = null;
       }
 
+      await supabase!.realtime.setAuth().catch((err: unknown) => {
+        console.warn("[teamShare] could not refresh realtime auth; the private channel may fail to join:", err);
+      });
+      if (disposed || seq !== subscriptionSeq || useOrgStore.getState().currentOrgId !== orgId) {
+        return;
+      }
+
       currentSubscribedOrgId = orgId;
-      const channelName = `org:${orgId}:team_verses`;
+      const channelName = teamVerseChannelTopic(orgId);
 
       async function handleIncoming(payload: TeamScripturePayload) {
         if (!payload || !payload.id) return;
@@ -287,17 +300,24 @@ export const useTeamShareStore = create<TeamShareState>()((set, get) => ({
         // Check if intended for current user or all members
         if (!isTargetForUser(payload, currentUserId)) return;
 
+        const members = useOrgStore.getState().members;
+        const resolved = resolveSenderName(payload.senderId, currentUserId, members);
+        const normalized: TeamScripturePayload = {
+          ...payload,
+          senderName: resolved !== "Team Member" ? resolved : (payload.senderName || "Team Member"),
+        };
+
         // Add to active notifications
         set((s) => {
           // Avoid duplicate notifications in array
-          if (s.notifications.some((n) => n.id === payload.id)) return s;
-          return { notifications: [payload, ...s.notifications] };
+          if (s.notifications.some((n) => n.id === normalized.id)) return s;
+          return { notifications: [normalized, ...s.notifications] };
         });
       }
 
-      if (!supabase) return;
+      if (!supabase || disposed || seq !== subscriptionSeq) return;
       activeChannel = supabase
-        .channel(channelName)
+        .channel(channelName, { config: { private: true } })
         .on("broadcast", { event: "scripture_share" }, ({ payload }) => {
           handleIncoming(payload as TeamScripturePayload);
         })
@@ -312,11 +332,12 @@ export const useTeamShareStore = create<TeamShareState>()((set, get) => ({
           (change) => {
             const row = change.new as any;
             if (!row) return;
+            const members = useOrgStore.getState().members;
             handleIncoming({
               id: row.id,
               orgId: row.org_id,
               senderId: row.sender_id,
-              senderName: "Team Member",
+              senderName: resolveSenderName(row.sender_id, null, members),
               recipientId: row.recipient_id,
               book: row.book,
               chapter: row.chapter,
@@ -332,16 +353,18 @@ export const useTeamShareStore = create<TeamShareState>()((set, get) => ({
         .subscribe();
     }
 
-    setupSubscription();
+    void setupSubscription();
 
     // Re-check subscription when active org changes
     const unsubOrg = useOrgStore.subscribe((state, prevState) => {
       if (state.currentOrgId !== prevState.currentOrgId) {
-        setupSubscription();
+        void setupSubscription();
       }
     });
 
     return () => {
+      disposed = true;
+      subscriptionSeq++;
       unsubOrg();
       if (activeChannel && supabase) {
         supabase.removeChannel(activeChannel);

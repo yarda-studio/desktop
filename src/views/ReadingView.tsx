@@ -21,7 +21,7 @@ import { usePresentationSync } from "../hooks/usePresentationSync";
 import { usePresentationCloseSync } from "../hooks/usePresentationCloseSync";
 import { useReadingPositionPersistence } from "../hooks/useReadingPositionPersistence";
 import { measureVersePartsDOM } from "../lib/verseSplit";
-import { liveDisplayPrefs, liveFontSize, liveSafeMargin } from "../lib/liveText";
+import { liveDisplayPrefs, liveFontSize, liveSafeMargin, relativeReferenceReservedHeight } from "../lib/liveText";
 import { usePresentationStage } from "../hooks/usePresentationStage";
 
 export default function ReadingView() {
@@ -151,8 +151,9 @@ export default function ReadingView() {
     let boxW: number;
     let boxH: number;
     if (ctx === 1 && theme) {
-      boxW = (theme.verse_box_width / 100) * screenW;
-      boxH = (theme.verse_box_height / 100) * screenH;
+      boxW = (theme.verse_box_width / 100) * screenW * (theme.verse_box_fill ? 0.976 : 1);
+      const rawH = (theme.verse_box_height / 100) * screenH;
+      boxH = rawH - relativeReferenceReservedHeight(theme, rawH);
     } else if (ctx === 2 || ctx === 3) {
       boxW = ((100 - 2 * hPadPct) / 100) * screenW;
       boxH = screenH * (ctx === 3 ? 0.5 : 0.6);

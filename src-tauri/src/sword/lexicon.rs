@@ -667,7 +667,11 @@ fn parse_strongs_tei(number: &str, raw: &str) -> Result<StrongsEntry> {
             if let (Some(f_end), Some(def_start)) = (raw.find("</foreign>"), raw.find("<def")) {
                 if f_end < def_start {
                     let mid = &raw[f_end + 10..def_start];
-                    let clean = mid.replace("<lb/>", " ").replace("<lb>", " ").trim().to_string();
+                    let clean = mid
+                        .replace("<lb/>", " ")
+                        .replace("<lb>", " ")
+                        .trim()
+                        .to_string();
                     if !clean.is_empty() && clean.len() < 30 {
                         return Some(clean);
                     }

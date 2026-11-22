@@ -109,8 +109,8 @@ impl ModuleConf {
         let mid_lower = module_id.to_lowercase();
         let name_lower = get("description").to_lowercase();
 
-        let is_devotional = cat_str.contains("devotional")
-            || feature.iter().any(|f| f.contains("dailydevotion"));
+        let is_devotional =
+            cat_str.contains("devotional") || feature.iter().any(|f| f.contains("dailydevotion"));
 
         let module_type = if is_devotional {
             ModuleType::Devotional

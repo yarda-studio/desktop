@@ -40,6 +40,8 @@ export const STARTER_THEME: PresentationThemeInput = {
   background_image_dim: 0.35,
   background_video: null,
   verse_box_fill: null,
+  reference_follow_verse: false,
+  reference_verse_ratio: 0.35,
 };
 
 export function toInput(theme: PresentationTheme): PresentationThemeInput {
@@ -95,7 +97,7 @@ export function readabilityWarnings(theme: PresentationThemeInput): string[] {
   if (theme.background_image) warnings.push("A picture background is in use; contrast is checked against the base colour only, so check the text is legible over the photo.");
   if (theme.background_gradient) warnings.push("Gradient is enabled; contrast is checked against the base background colour only.");
   if (theme.safe_margin < 4) warnings.push("Safe margin is below 4%; edge-mounted projectors may crop content.");
-  if (boxesOverlap(theme)) warnings.push("Verse and reference text boxes overlap.");
+  if (!theme.reference_follow_verse && boxesOverlap(theme)) warnings.push("Verse and reference text boxes overlap.");
   if (theme.auto_layout && theme.min_font_scale < 0.6) warnings.push("Auto-layout can shrink below 60%, which may be hard to read from the back of a room.");
   if (theme.transition_duration > 800) warnings.push("A transition over 800ms may make fast verse changes feel sluggish.");
   return warnings;

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useAppStore } from "../../store/app";
 import { addSlideToPlan } from "../plan/addToPlan";
 import type { SlideKind, SlideSummary } from "./api";
 import { useSlidesLive } from "./liveStore";
@@ -13,6 +14,8 @@ const GRID = "grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]";
 
 export default function SlideLibrary() {
   const { slides, query, setQuery, loading, libraryError, selectedId, select, openEditor, newSlide, refresh, remove } = useSlidesStore();
+  const compactness = useAppStore((s) => s.consoleCompactness);
+  const thumbWidth = Math.round(70 - (compactness / 100) * 18);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -30,24 +33,24 @@ export default function SlideLibrary() {
 
   return (
     <div className="flex flex-1 min-w-0 min-h-0 flex-col">
-      <div className="flex flex-wrap items-center gap-2 px-3 pt-2.5 pb-2 shrink-0">
-        <label className="field flex flex-1 min-w-[160px] items-center gap-2 rounded-md px-2.5 h-8 sm:h-9">
-          <span className="material-symbols-outlined text-[18px] text-secondary" aria-hidden="true">search</span>
+      <div className="flex flex-wrap items-center gap-1.5 px-[var(--c-search-mx,12px)] pt-[var(--c-search-mt,10px)] pb-[var(--c-search-mb,8px)] shrink-0">
+        <label className="field flex flex-1 min-w-[160px] items-center gap-2 rounded-md px-2.5 h-[var(--c-search-h,34px)]">
+          <span className="material-symbols-outlined text-[17px] text-secondary" aria-hidden="true">search</span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search slide titles"
             aria-label="Search slide titles"
-            className="flex-1 min-w-0 bg-transparent outline-none text-[13px] font-body-ui text-on-surface"
+            className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] font-body-ui text-on-surface"
           />
         </label>
-        <button onClick={() => newSlide("announcement")} className="flex items-center gap-1.5 h-8 sm:h-9 px-2.5 sm:px-3 rounded-md ctl font-body-ui text-[12px] sm:text-[13px] text-on-surface shrink-0">
-          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">campaign</span>
+        <button onClick={() => newSlide("announcement")} className="flex items-center gap-1.5 h-[var(--c-search-h,34px)] px-2.5 rounded-md ctl font-body-ui text-[12px] text-on-surface shrink-0">
+          <span className="material-symbols-outlined text-[17px]" aria-hidden="true">campaign</span>
           <span className="hidden sm:inline">New announcement</span>
           <span className="sm:hidden">Announce</span>
         </button>
-        <button onClick={() => newSlide("freeform")} className="flex items-center gap-1.5 h-8 sm:h-9 px-2.5 sm:px-3 rounded-md ctl font-body-ui text-[12px] sm:text-[13px] text-on-surface shrink-0">
-          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">dashboard_customize</span>
+        <button onClick={() => newSlide("freeform")} className="flex items-center gap-1.5 h-[var(--c-search-h,34px)] px-2.5 rounded-md ctl font-body-ui text-[12px] text-on-surface shrink-0">
+          <span className="material-symbols-outlined text-[17px]" aria-hidden="true">dashboard_customize</span>
           <span className="hidden sm:inline">New free-form</span>
           <span className="sm:hidden">Free-form</span>
         </button>
@@ -55,7 +58,7 @@ export default function SlideLibrary() {
 
       <div role="row" className={`${GRID} border-y border-outline-variant bg-surface-container-low/60 shrink-0`}>
         {["Title", "Type", "Modified"].map((h) => (
-          <span key={h} className="px-3 py-2 font-body-ui text-[13px] text-on-surface border-r border-outline-variant last:border-r-0">{h}</span>
+          <span key={h} className="px-[var(--c-table-px,12px)] py-[var(--c-table-py,8px)] text-[length:var(--c-table-text,13px)] font-body-ui text-on-surface border-r border-outline-variant last:border-r-0">{h}</span>
         ))}
       </div>
 
@@ -67,11 +70,11 @@ export default function SlideLibrary() {
           </p>
         )}
         {slides.map((s) => (
-          <Row key={s.id} slide={s} selected={s.id === selectedId} onSelect={() => select(s.id)} onOpen={() => void useSlidesLive.getState().addToSchedule(s.id)} />
+          <Row key={s.id} slide={s} selected={s.id === selectedId} thumbWidth={thumbWidth} onSelect={() => select(s.id)} onOpen={() => void useSlidesLive.getState().addToSchedule(s.id)} />
         ))}
       </div>
 
-      <div className="min-h-10 sm:h-11 shrink-0 flex flex-wrap items-center gap-1 px-3 py-1 border-t border-outline-variant bg-surface-container-lowest/40">
+      <div className="min-h-[var(--c-footer-h,44px)] px-[var(--c-footer-px,12px)] shrink-0 flex flex-wrap items-center gap-1 py-1 border-t border-outline-variant bg-surface-container-lowest/40">
         <button onClick={() => selected && void openEditor(selected.id)} disabled={!selected} title="Edit" className="flex items-center gap-1 px-2 py-1 rounded-md ghost font-body-ui text-[13px] text-on-surface disabled:opacity-30 disabled:pointer-events-none">
           <span className="material-symbols-outlined text-[18px]" aria-hidden="true">edit</span><span className="hidden sm:inline">Edit</span>
         </button>
@@ -99,7 +102,7 @@ export default function SlideLibrary() {
   );
 }
 
-function Row({ slide, selected, onSelect, onOpen }: { slide: SlideSummary; selected: boolean; onSelect: () => void; onOpen: () => void }) {
+function Row({ slide, selected, thumbWidth, onSelect, onOpen }: { slide: SlideSummary; selected: boolean; thumbWidth: number; onSelect: () => void; onOpen: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => { if (selected) ref.current?.scrollIntoView({ block: "nearest" }); }, [selected]);
   const kind = KINDS[slide.kind];
@@ -113,14 +116,14 @@ function Row({ slide, selected, onSelect, onOpen }: { slide: SlideSummary; selec
       title="Double-click to add to the schedule"
       className={`${GRID} cursor-default select-none ${selected ? "row-selected" : "hover:bg-surface-container-low"}`}
     >
-      <span className="px-3 py-1.5 flex items-center gap-2.5 min-w-0">
-        <SlideThumb id={slide.id} updatedAt={slide.updated_at} width={64} />
-        <span className="font-body-ui text-[13px] text-on-surface truncate">{slide.title}</span>
+      <span className="px-[var(--c-table-px,12px)] py-[var(--c-table-py,8px)] text-[length:var(--c-table-text,13px)] flex items-center gap-2 min-w-0">
+        <SlideThumb id={slide.id} updatedAt={slide.updated_at} width={thumbWidth} />
+        <span className="font-body-ui text-on-surface truncate">{slide.title}</span>
       </span>
-      <span className="px-3 py-2 font-body-ui text-[13px] text-on-surface-variant truncate flex items-center gap-1.5">
+      <span className="px-[var(--c-table-px,12px)] py-[var(--c-table-py,8px)] text-[length:var(--c-table-text,13px)] font-body-ui text-on-surface-variant truncate flex items-center gap-1.5">
         <span className="material-symbols-outlined text-[16px]" aria-hidden="true">{kind.icon}</span>{kind.label}
       </span>
-      <span className="px-3 py-2 font-body-ui text-[13px] text-on-surface-variant truncate">{new Date(slide.updated_at).toLocaleDateString()}</span>
+      <span className="px-[var(--c-table-px,12px)] py-[var(--c-table-py,8px)] text-[length:var(--c-table-text,13px)] font-body-ui text-on-surface-variant truncate">{new Date(slide.updated_at).toLocaleDateString()}</span>
     </div>
   );
 }

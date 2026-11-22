@@ -4,6 +4,25 @@ All notable changes to Scriptura are listed here, newest first.
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-11-22
+
+### Added
+- **Reference label can follow the verse.** A theme option, "Relative to verse", makes the reference label scale with the displayed verse size (including auto-fit shrinking) and sit directly above or below the text. The size ratio is adjustable in the theme designer.
+- **Console density control.** Settings → Presentation has Balanced and Compact presets plus a custom compactness slider (hold and drag to preview the console behind Settings), and a choice of keeping Schedule, Preview and Live side by side down to 660px.
+- **Version tooling.** `npm run version:sync` keeps `VERSION`, `package.json`, `tauri.conf.json` and the Cargo files in step, and CI checks they match the release tag.
+
+### Changed
+- **Team scripture sharing uses private channels.** Broadcasts now go over private Realtime channels restricted to members of the organization (new database policies).
+- **Faster, steadier app.** Chapter, verse, commentary, cross-reference and search lookups run off the main thread, a panic in one call no longer locks a whole subsystem, and the main screens load on demand.
+- **Remote and web outputs handle several clients at once.** A pool of workers serves requests, so a slow connection can no longer freeze the phone remote or the video outputs.
+- **Stricter security headers** on the admin portal and the website.
+
+### Fixed
+- **Admin license metrics** no longer count exhausted or expired keys as active.
+- **Background videos** that are no longer used by any theme are cleaned up, and rapid imports get unique file names.
+- **Dependency advisories:** updated `url`; the remaining `zip` advisories (inside the updater) are documented in `docs/TODO.md`.
+- **The admin API refuses browser origins** unless `ADMIN_ALLOWED_ORIGINS` is set, and the billing webhook now requires a signed timestamp.
+
 ## [0.7.2] - 2026-11-15
 
 ### Changed

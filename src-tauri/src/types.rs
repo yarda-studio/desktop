@@ -330,6 +330,11 @@ pub struct PresentationTheme {
     pub verse_box_fill: Option<String>,
     /// File name (in the app media folder) of a looping video behind the text.
     pub background_video: Option<String>,
+    /// When true, the reference label scales with the verse's displayed font size
+    /// and sits directly above/below the rendered verse text instead of in a fixed box.
+    pub reference_follow_verse: bool,
+    /// Reference font size as a fraction of the displayed verse font size (e.g. 0.35 = 35%).
+    pub reference_verse_ratio: f64,
     /// Which theme is currently applied — a session preference, freely
     /// reassignable to any theme (including personal ones) and unrelated
     /// to whether it can be deleted. See `is_builtin` for that.
@@ -396,6 +401,13 @@ pub struct PresentationThemeInput {
     /// File name (in the app media folder) of a looping video behind the text.
     #[serde(default)]
     pub background_video: Option<String>,
+    /// When true, the reference label scales with the verse's displayed font size
+    /// and sits directly above/below the rendered verse text instead of in a fixed box.
+    #[serde(default)]
+    pub reference_follow_verse: bool,
+    /// Reference font size as a fraction of the displayed verse font size (e.g. 0.35 = 35%).
+    #[serde(default = "default_theme_reference_verse_ratio")]
+    pub reference_verse_ratio: f64,
 }
 
 fn default_theme_font_size() -> f64 {
@@ -405,6 +417,9 @@ fn default_theme_line_spacing() -> f64 {
     0.3
 }
 fn default_theme_image_dim() -> f64 {
+    0.35
+}
+fn default_theme_reference_verse_ratio() -> f64 {
     0.35
 }
 

@@ -26,7 +26,7 @@ impl FileCache {
     pub fn read(&self, path: &Path) -> Result<Arc<Vec<u8>>> {
         // Fast path: already cached — one lock, one Arc clone.
         {
-            let cache = self.0.lock().unwrap();
+            let cache = crate::lock_unpoisoned(&self.0);
             if let Some(data) = cache.get(path) {
                 return Ok(Arc::clone(data));
             }
@@ -37,11 +37,11 @@ impl FileCache {
             .map_err(|e| AppError::Sword(format!("read {}: {e}", path.display())))?;
         let shared = Arc::new(data);
 
-        let mut cache = self.0.lock().unwrap();
+        let mut cache = crate::lock_unpoisoned(&self.0);
         // Another thread may have raced us — that's fine, just use whichever entry is there.
-        cache
+        let entry = cache
             .entry(path.to_path_buf())
             .or_insert_with(|| Arc::clone(&shared));
-        Ok(Arc::clone(cache.get(path).unwrap()))
+        Ok(Arc::clone(entry))
     }
 }

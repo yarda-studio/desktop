@@ -75,7 +75,7 @@ pub async fn relay_presentation(
     payload: Value,
 ) -> std::result::Result<(), String> {
     // Persist so the window can pull it immediately on mount
-    *state.0.lock().unwrap() = Some(payload.clone());
+    *crate::lock_unpoisoned(&state.0) = Some(payload.clone());
     version.bump();
 
     let json = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
@@ -93,7 +93,7 @@ pub async fn relay_countdown(
     version: State<'_, OutputVersion>,
     payload: Value,
 ) -> std::result::Result<(), String> {
-    *state.0.lock().unwrap() = Some(payload.clone());
+    *crate::lock_unpoisoned(&state.0) = Some(payload.clone());
     version.bump();
     let json = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
     let script =
@@ -106,7 +106,7 @@ pub async fn relay_countdown(
 pub async fn get_countdown_state(
     state: State<'_, CountdownState>,
 ) -> std::result::Result<Option<Value>, String> {
-    Ok(state.0.lock().unwrap().clone())
+    Ok(crate::lock_unpoisoned(&state.0).clone())
 }
 
 /// Turn the background clock on or off. The frontend enables it only while it is needed.
@@ -121,7 +121,7 @@ pub fn set_clock_ticks(enabled: bool, ticks: State<'_, ClockTicks>) {
 pub async fn get_presentation_state(
     state: State<'_, PresentationState>,
 ) -> std::result::Result<Option<Value>, String> {
-    Ok(state.0.lock().unwrap().clone())
+    Ok(crate::lock_unpoisoned(&state.0).clone())
 }
 
 #[derive(serde::Serialize)]

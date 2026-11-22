@@ -4,7 +4,16 @@ import { api, type ChapterText, type PresentationTheme } from "../lib/tauri";
 import StrongsLive from "../features/strongs/StrongsLive";
 import { useShrinkToFit } from "../hooks/useShrinkToFit";
 import { useAppStore, type DisplayPrefs } from "../store/app";
-import { FONT_FAMILY_CSS, liveDisplayPrefs, liveFontSize, liveSafeMargin } from "../lib/liveText";
+import {
+  FONT_FAMILY_CSS,
+  liveDisplayPrefs,
+  liveFontSize,
+  liveSafeMargin,
+  referenceModuleFontSize,
+  relativeReferenceFontSize,
+  relativeReferenceGap,
+  relativeReferenceReservedHeight,
+} from "../lib/liveText";
 import SongSlideStage from "../features/songs/SongSlideStage";
 import ThemeBackdrop from "../components/ThemeBackdrop";
 import SlideStage from "../features/slides/SlideStage";
@@ -63,10 +72,10 @@ function measureStyle(prefs: DisplayPrefs, fontSize: number, theme: Presentation
   };
 }
 
-function referenceStyle(theme: PresentationTheme | null, fontSize: number): React.CSSProperties {
+function referenceStyle(theme: PresentationTheme | null, fontSize: number, followVerse = false): React.CSSProperties {
   return {
     color: theme?.reference_color ?? "#b8c4d8",
-    fontSize: `${fontSize * (theme?.reference_font_scale ?? 1)}px`,
+    fontSize: `${followVerse ? fontSize : fontSize * (theme?.reference_font_scale ?? 1)}px`,
     fontWeight: theme?.reference_font_weight ?? 500,
   };
 }
@@ -80,12 +89,34 @@ function referenceAlignment(theme: PresentationTheme | null) {
   return position.endsWith("-left") ? "justify-start" : position.endsWith("-right") ? "justify-end" : "justify-center";
 }
 
-function ReferenceLabel({ label, module, fontSize }: { label: string; module: string; fontSize: number }) {
+function ReferenceLabel({ label, module, fontSize, followVerse = false, rowRef, labelRef, badgeRef }: {
+  label: string;
+  module: string;
+  fontSize: number;
+  followVerse?: boolean;
+  rowRef?: React.Ref<HTMLDivElement>;
+  labelRef?: React.Ref<HTMLSpanElement>;
+  badgeRef?: React.Ref<HTMLSpanElement>;
+}) {
   const presentationTheme = useContext(PresentationThemeContext);
+  const badgeFontSize = referenceModuleFontSize(fontSize, followVerse);
   return (
-    <div className={`flex items-center gap-3 shrink-0 w-full ${referenceAlignment(presentationTheme)}`}>
-      <span className="font-metadata-mono text-white/60" style={referenceStyle(presentationTheme, fontSize)}>{label}</span>
-      <span className="font-metadata-mono text-white/30 border border-white/20 rounded px-2 py-0.5" style={referenceStyle(presentationTheme, Math.max(10, fontSize - 3))}>{module}</span>
+    <div
+      ref={rowRef}
+      className={`flex items-center shrink-0 w-full ${followVerse ? "" : "gap-3"} ${referenceAlignment(presentationTheme)}`}
+      style={followVerse ? { gap: "0.45em", fontSize: `${fontSize}px` } : undefined}
+    >
+      <span ref={labelRef} className="font-metadata-mono text-white/60" style={referenceStyle(presentationTheme, fontSize, followVerse)}>{label}</span>
+      <span
+        ref={badgeRef}
+        className={`font-metadata-mono text-white/30 border border-white/20 rounded ${followVerse ? "" : "px-2 py-0.5"}`}
+        style={{
+          ...referenceStyle(presentationTheme, badgeFontSize, followVerse),
+          ...(followVerse ? { padding: "0.1em 0.45em" } : undefined),
+        }}
+      >
+        {module}
+      </span>
     </div>
   );
 }
@@ -349,7 +380,8 @@ function ContextLayout({ ctx, state, chapter, parallelChapter, fontSize, prefs, 
     if (ctx === 1 && presentationTheme) {
       // Freeform layout: box is absolutely positioned at the theme percentages.
       const w = (presentationTheme.verse_box_width / 100) * stage.w * (presentationTheme.verse_box_fill ? 0.976 : 1);
-      const h = (presentationTheme.verse_box_height / 100) * stage.h;
+      const rawH = (presentationTheme.verse_box_height / 100) * stage.h;
+      const h = rawH - relativeReferenceReservedHeight(presentationTheme, rawH);
       return measureVersePartsDOM(rawActiveText.trim(), w, h, style);
     }
     // ctx 1 no-theme, ctx 2, ctx 3 — centred column or stacked rows.
@@ -451,6 +483,26 @@ function ContextVerseBlock({ text, label, module, prefs, maxFontSize, contextSty
     );
   }
 
+  if (presentationTheme?.reference_follow_verse) {
+    return (
+      <div className={`flex flex-col h-full ${dim ? "opacity-60" : ""}`}>
+        <ShrinkingVerseText
+          text={text}
+          maxFontSize={maxFontSize}
+          prefs={prefs}
+          noShrink={noShrink}
+          attachedReference={{
+            label,
+            module,
+            ratio: presentationTheme.reference_verse_ratio,
+            top: referenceIsTop(presentationTheme),
+            position: presentationTheme.reference_position,
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={`flex flex-col gap-3 h-full ${dim ? "opacity-60" : ""}`}>
       {referenceIsTop(presentationTheme) && <ReferenceLabel label={label} module={module} fontSize={refSize} />}
@@ -468,7 +520,15 @@ function ContextVerseBlock({ text, label, module, prefs, maxFontSize, contextSty
 // verse still reads as an intentional, narrower centered block.
 const SINGLE_VERSE_WIDTH_RANGE = { min: 55, max: 100 };
 
-function ShrinkingVerseText({ text, maxFontSize, prefs, centered, widen, maxHeightVh, noShrink }: {
+interface AttachedReferenceSpec {
+  label: string;
+  module: string;
+  ratio: number;
+  top: boolean;
+  position: string;
+}
+
+function ShrinkingVerseText({ text, maxFontSize, prefs, centered, widen, maxHeightVh, noShrink, attachedReference }: {
   text: string;
   maxFontSize: number;
   prefs: DisplayPrefs;
@@ -487,9 +547,17 @@ function ShrinkingVerseText({ text, maxFontSize, prefs, centered, widen, maxHeig
   /** When true the font stays locked at maxFontSize — used when split mode is
    *  on so each part renders at the user's configured size, not a shrunk one. */
   noShrink?: boolean;
+  /** When set, renders the reference label inside the same vertical stack and
+   *  updates its size & gap in lockstep with the shrunk verse font size. */
+  attachedReference?: AttachedReferenceSpec;
 }) {
   const presentationTheme = useContext(PresentationThemeContext);
   const stage = useStage();
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const refRowRef = useRef<HTMLDivElement | null>(null);
+  const refLabelRef = useRef<HTMLSpanElement | null>(null);
+  const refBadgeRef = useRef<HTMLSpanElement | null>(null);
+
   // The text is drawn at maxFontSize x font_scale, so the fit loop has to work in those same pixels.
   const scale = presentationTheme?.font_scale ?? 1;
   const maxPx = maxFontSize * scale;
@@ -500,17 +568,65 @@ function ShrinkingVerseText({ text, maxFontSize, prefs, centered, widen, maxHeig
     : presentationTheme
       ? (presentationTheme.auto_layout ? Math.max(14, maxPx * presentationTheme.min_font_scale) : maxPx)
       : 24;
+
+  const measureKey = attachedReference
+    ? `${attachedReference.label}|${attachedReference.module}|${attachedReference.ratio}|${attachedReference.top}|${attachedReference.position}`
+    : "";
+
   const { containerRef, textRef, fontSize, widthPct } = useShrinkToFit({
     text,
     maxSize: maxPx,
     minSize,
     widthRange: widen ? SINGLE_VERSE_WIDTH_RANGE : undefined,
+    measureKey,
+    onMeasureSize: attachedReference
+      ? (versePx) => {
+          const refPx = relativeReferenceFontSize(versePx, attachedReference.ratio);
+          const badgePx = referenceModuleFontSize(refPx, true);
+          const gapPx = relativeReferenceGap(versePx);
+          if (contentRef.current) contentRef.current.style.gap = `${gapPx}px`;
+          if (refRowRef.current) refRowRef.current.style.fontSize = `${refPx}px`;
+          if (refLabelRef.current) refLabelRef.current.style.fontSize = `${refPx}px`;
+          if (refBadgeRef.current) refBadgeRef.current.style.fontSize = `${badgePx}px`;
+        }
+      : undefined,
   });
   const style = { ...makeTextStyle(prefs, maxFontSize, presentationTheme), fontSize: `${fontSize}px` };
   const containerStyle: React.CSSProperties = {
     ...(widen ? { width: `${widthPct}%` } : undefined),
     ...(maxHeightVh ? { maxHeight: `${(stage.h * maxHeightVh) / 100}px` } : undefined),
   };
+
+  if (attachedReference) {
+    const refPx = relativeReferenceFontSize(fontSize, attachedReference.ratio);
+    const gapPx = relativeReferenceGap(fontSize);
+    const labelEl = (
+      <ReferenceLabel
+        label={attachedReference.label}
+        module={attachedReference.module}
+        fontSize={refPx}
+        followVerse
+        rowRef={refRowRef}
+        labelRef={refLabelRef}
+        badgeRef={refBadgeRef}
+      />
+    );
+    return (
+      <div
+        ref={containerRef}
+        className={maxHeightVh
+          ? "flex flex-col overflow-hidden"
+          : "flex-1 min-h-0 flex flex-col overflow-hidden"}
+        style={containerStyle}
+      >
+        <div ref={contentRef} className="my-auto shrink-0 flex flex-col w-full" style={{ gap: `${gapPx}px` }}>
+          {attachedReference.top && labelEl}
+          <p ref={textRef} className={`text-white ${centered ? "text-center" : ""}`} style={style}>{text}</p>
+          {!attachedReference.top && labelEl}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -546,6 +662,7 @@ function FreeformVerseLayout({ text, reference, module, prefs, maxFontSize, refS
     left: `${theme.reference_box_x}%`, top: `${theme.reference_box_y}%`,
     width: `${theme.reference_box_width}%`, height: `${theme.reference_box_height}%`,
   };
+  const followVerse = theme.reference_follow_verse;
   return (
     <div className="relative h-full overflow-hidden">
       {/* flex-col so ShrinkingVerseText's flex-1 gets a definite height equal
@@ -553,11 +670,29 @@ function FreeformVerseLayout({ text, reference, module, prefs, maxFontSize, refS
           content-determined, so scrollHeight never exceeds clientHeight and
           the shrink loop never fires. */}
       <div className="absolute flex flex-col overflow-hidden" style={{ ...verseBox, background: theme.verse_box_fill || undefined, padding: theme.verse_box_fill ? "0 1.2%" : undefined }}>
-        <ShrinkingVerseText text={text} maxFontSize={maxFontSize} prefs={prefs} centered={theme.text_align === "center"} widen={false} noShrink={noShrink} />
+        <ShrinkingVerseText
+          text={text}
+          maxFontSize={maxFontSize}
+          prefs={prefs}
+          centered={theme.text_align === "center"}
+          widen={false}
+          noShrink={noShrink}
+          attachedReference={followVerse
+            ? {
+                label: reference,
+                module,
+                ratio: theme.reference_verse_ratio,
+                top: referenceIsTop(theme),
+                position: theme.reference_position,
+              }
+            : undefined}
+        />
       </div>
-      <div className={`absolute flex items-center ${referenceAlignment(theme)}`} style={referenceBox}>
-        <ReferenceLabel label={reference} module={module} fontSize={refSize} />
-      </div>
+      {!followVerse && (
+        <div className={`absolute flex items-center ${referenceAlignment(theme)}`} style={referenceBox}>
+          <ReferenceLabel label={reference} module={module} fontSize={refSize} />
+        </div>
+      )}
     </div>
   );
 }
@@ -590,13 +725,16 @@ function ScrollLayout({ state, chapter, parallelChapter, fontSize, prefs, hPad, 
 
   const ref = `${state.book} ${state.chapter}`;
   const textStyle = makeTextStyle(prefs, fontSize, presentationTheme);
-  const verseNumSize = Math.max(10, Math.round(fontSize * 0.28));
+  const followVerse = presentationTheme?.reference_follow_verse ?? false;
+  const verseNumSize = followVerse && presentationTheme
+    ? relativeReferenceFontSize(fontSize * (presentationTheme.font_scale ?? 1), presentationTheme.reference_verse_ratio)
+    : Math.max(10, Math.round(fontSize * 0.28));
 
   return (
     <div className="h-full overflow-y-auto" style={{ paddingTop: presentationTheme?.scroll_v_padding ?? 32, paddingBottom: presentationTheme?.scroll_v_padding ?? 32, paddingLeft: hPad, paddingRight: hPad }}>
       <p
         className="font-metadata-mono text-white/40 mb-8 tracking-widest uppercase"
-        style={referenceStyle(presentationTheme, verseNumSize)}
+        style={referenceStyle(presentationTheme, verseNumSize, followVerse)}
       >
         {ref} · {state.primaryModule}
         {state.parallelMode && state.parallelModule && (
@@ -693,7 +831,7 @@ function ScrollVerseBlock({ verseLabel, text, active, textStyle, verseNumSize, d
     <div className={`flex items-start gap-4 ${dim ? "opacity-60" : ""}`}>
       <span
         className={`font-metadata-mono shrink-0 mt-1 ${active ? "text-white/60" : "text-white/20"}`}
-        style={referenceStyle(presentationTheme, verseNumSize)}
+        style={referenceStyle(presentationTheme, verseNumSize, presentationTheme?.reference_follow_verse ?? false)}
       >
         {verseLabel}
       </span>
@@ -719,6 +857,27 @@ function VerseColumn({ text, reference, module, prefs, maxFontSize, refSize, dim
   noShrink?: boolean;
 }) {
   const presentationTheme = useContext(PresentationThemeContext);
+  if (presentationTheme?.reference_follow_verse) {
+    return (
+      <div className={`flex flex-col h-full ${centered ? "items-center" : ""} ${dim ? "opacity-60" : ""}`}>
+        <ShrinkingVerseText
+          text={text}
+          maxFontSize={maxFontSize}
+          prefs={prefs}
+          centered={centered}
+          widen={widen}
+          noShrink={noShrink}
+          attachedReference={{
+            label: reference,
+            module,
+            ratio: presentationTheme.reference_verse_ratio,
+            top: referenceIsTop(presentationTheme),
+            position: presentationTheme.reference_position,
+          }}
+        />
+      </div>
+    );
+  }
   return (
     <div className={`flex flex-col gap-6 h-full ${centered ? "items-center" : ""} ${dim ? "opacity-60" : ""}`}>
       {referenceIsTop(presentationTheme) && <ReferenceLabel label={reference} module={module} fontSize={refSize} />}

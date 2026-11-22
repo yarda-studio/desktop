@@ -14,7 +14,7 @@ Certificate authorities now put new code-signing keys on hardware, so a plain `.
 
 | Crate | Advisories | Why it is not fixed yet | Real exposure |
 |---|---|---|---|
-| `zip` 4.6.1 (only via `tauri-plugin-updater`) | RUSTSEC-2026-0367, -0368, -0369, -0429 (up to critical) | The updater plugin still depends on zip 4; 2.12.0 does too, and 2.14.1 does not build with our current setup | None we can see: every one is in `ZipArchive::extract`, which our code never calls, and the updater only unpacks updates signed with our key |
+| `zip` 4.6.1 (only via `tauri-plugin-updater`) | RUSTSEC-2026-0367, -0368, -0369, -0429 (up to critical), plus -0548 and -0545 (added 2026-11-22) | The updater plugin still depends on zip 4; 2.12.0 does too, and 2.14.1 does not build with our current setup | None we can see: every one is in `ZipArchive::extract`, which our code never calls, and the updater only unpacks updates signed with our key |
 
 Re-check on each Dependabot update of `tauri-plugin-updater` (`cargo tree -i zip@4.6.1`); when zip 4 is gone, delete the four IDs from `.cargo/audit.toml` and this section.
 

@@ -13,6 +13,9 @@ const PAGE: &str = include_str!("remote.html");
 const PREFERRED_PORT: u16 = 8420;
 const MAX_BODY: u64 = 1024;
 const MAX_SNAPSHOT_BYTES: usize = 32 * 1024;
+// Long-lived output media streams each hold a worker, so leave headroom for the phone remote.
+const HTTP_WORKERS: usize = 16;
+const HTTP_QUEUE_CAP: usize = 32;
 
 /// Everything the phone is allowed to ask for. Anything else is rejected before
 /// it reaches the app.
@@ -49,7 +52,7 @@ struct Shared {
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|p| p.into_inner())
+    crate::lock_unpoisoned(m)
 }
 
 struct Running {
@@ -265,57 +268,105 @@ fn respond_output(request: tiny_http::Request, out: output::Out) {
     }
 }
 
+fn handle_request(
+    mut request: tiny_http::Request,
+    shared: &Shared,
+    app: &AppHandle,
+    backend: &AppBackend,
+) {
+    let method = request.method().as_str().to_owned();
+    let url = request.url().to_owned();
+    let (path, query) = url.split_once('?').unwrap_or((url.as_str(), ""));
+
+    if output::is_output_path(path) {
+        let range = request
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("Range"))
+            .map(|h| h.value.as_str().to_owned());
+        let token = if shared.output_on.load(Ordering::Relaxed) {
+            lock(&shared.output_token).clone()
+        } else {
+            String::new()
+        };
+        let out = output::handle(&method, path, query, range.as_deref(), &token, backend);
+        respond_output(request, out);
+        return;
+    }
+
+    let token = if shared.remote_on.load(Ordering::Relaxed) {
+        lock(&shared.remote_token).clone()
+    } else {
+        String::new()
+    };
+    // Only a request that already proved it has the secret gets its body read, so
+    // reading a stranger's body cannot stall a worker thread.
+    let mut body = String::new();
+    if method == "POST" && authorised(&url, &token) {
+        let _ = request.as_reader().take(MAX_BODY).read_to_string(&mut body);
+    }
+    let snap = lock(&shared.snapshot).clone();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let out = handle(&method, &url, &body, &token, &snap, now);
+    if let Some(action) = out.action {
+        let _ = app.emit("remote-command", action);
+    }
+    respond_remote(request, out);
+}
+
 fn serve(server: tiny_http::Server, stop: Arc<AtomicBool>, shared: Arc<Shared>, app: AppHandle) {
-    let backend = AppBackend { app: app.clone() };
+    let (tx, rx) = std::sync::mpsc::sync_channel::<tiny_http::Request>(HTTP_QUEUE_CAP);
+    let rx = Arc::new(Mutex::new(rx));
+    let mut started = 0usize;
+
+    for idx in 0..HTTP_WORKERS {
+        let rx = Arc::clone(&rx);
+        let shared = Arc::clone(&shared);
+        let app = app.clone();
+        let spawned = std::thread::Builder::new()
+            .name(format!("yarda-http-{idx}"))
+            .spawn(move || {
+                let backend = AppBackend { app: app.clone() };
+                loop {
+                    let req = {
+                        let guard = lock(&rx);
+                        guard.recv().ok()
+                    };
+                    let Some(request) = req else {
+                        break;
+                    };
+                    handle_request(request, &shared, &app, &backend);
+                }
+            });
+        match spawned {
+            Ok(_) => started += 1,
+            Err(e) => log::warn!("[remote] could not start HTTP worker {idx}: {e}"),
+        }
+    }
+    if started == 0 {
+        log::error!("[remote] no HTTP workers started; the remote and web outputs cannot serve");
+        return;
+    }
+
     while !stop.load(Ordering::Relaxed) {
-        let mut request = match server.recv_timeout(Duration::from_millis(250)) {
+        let request = match server.recv_timeout(Duration::from_millis(250)) {
             Ok(Some(r)) => r,
             Ok(None) => continue,
             Err(_) => break,
         };
-        let method = request.method().as_str().to_owned();
-        let url = request.url().to_owned();
-        let (path, query) = url.split_once('?').unwrap_or((url.as_str(), ""));
-
-        if output::is_output_path(path) {
-            let range = request
-                .headers()
-                .iter()
-                .find(|h| h.field.equiv("Range"))
-                .map(|h| h.value.as_str().to_owned());
-            let token = if shared.output_on.load(Ordering::Relaxed) {
-                lock(&shared.output_token).clone()
-            } else {
-                String::new()
-            };
-            let out = output::handle(&method, path, query, range.as_deref(), &token, &backend);
-            respond_output(request, out);
-            continue;
+        if let Err(std::sync::mpsc::TrySendError::Full(req)) = tx.try_send(request) {
+            let _ =
+                req.respond(tiny_http::Response::from_string("Server busy").with_status_code(503));
         }
-
-        let token = if shared.remote_on.load(Ordering::Relaxed) {
-            lock(&shared.remote_token).clone()
-        } else {
-            String::new()
-        };
-        // Only a request that already proved it has the secret gets its body read. This
-        // loop serves every client, so reading a stranger's body could let one stalled
-        // connection on the network freeze the remote and the web outputs.
-        let mut body = String::new();
-        if method == "POST" && authorised(&url, &token) {
-            let _ = request.as_reader().take(MAX_BODY).read_to_string(&mut body);
-        }
-        let snap = lock(&shared.snapshot).clone();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        let out = handle(&method, &url, &body, &token, &snap, now);
-        if let Some(action) = out.action {
-            let _ = app.emit("remote-command", action);
-        }
-        respond_remote(request, out);
     }
+
+    // Closing the channel lets idle workers exit. Workers still streaming a media
+    // file finish on their own; joining here would make stopping the server wait on
+    // a slow client.
+    drop(tx);
 }
 
 /// The running app, as the web outputs see it.
@@ -366,8 +417,8 @@ impl output::OutputBackend for AppBackend {
 
     fn chapter(&self, module: &str, book: &str, chapter: u32) -> Result<String, String> {
         let registry = self.app.state::<Arc<crate::modules::ModuleRegistry>>();
-        let chapters = self.app.state::<crate::commands::ChapterCache>();
-        let files = self.app.state::<crate::sword::file_cache::FileCache>();
+        let chapters = self.app.state::<Arc<crate::commands::ChapterCache>>();
+        let files = self.app.state::<Arc<crate::sword::file_cache::FileCache>>();
         let text =
             crate::commands::load_chapter(&registry, &chapters, &files, module, book, chapter)
                 .map_err(|e| e.to_string())?;

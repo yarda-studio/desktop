@@ -29,8 +29,40 @@ export function liveFontSize(theme: PresentationTheme | null | undefined): numbe
   return theme?.font_size ?? FALLBACK.fontSize;
 }
 
+export const DEFAULT_REFERENCE_VERSE_RATIO = 0.35;
+
 export function liveSafeMargin(theme: PresentationTheme | null | undefined): number {
   return theme?.safe_margin ?? FALLBACK.safeMargin;
+}
+
+/** Reference font size (px) when scaling proportionally to the displayed verse size. */
+export function relativeReferenceFontSize(displayedVersePx: number, ratio = DEFAULT_REFERENCE_VERSE_RATIO): number {
+  return Math.max(12, Math.round(displayedVersePx * ratio));
+}
+
+/** Translation badge font size (px) next to the reference label. */
+export function referenceModuleFontSize(refFontSizePx: number, followVerse: boolean): number {
+  return followVerse
+    ? Math.max(10, Math.round(refFontSizePx * 0.82))
+    : Math.max(10, refFontSizePx - 3);
+}
+
+/** Vertical gap (px) between the verse text and an attached reference label. */
+export function relativeReferenceGap(displayedVersePx: number): number {
+  return Math.max(8, Math.round(displayedVersePx * 0.25));
+}
+
+/**
+ * Height (px) reserved inside a single-verse box when the reference label shares
+ * the box with the verse text, so split-long-verses measurements leave room for it.
+ */
+export function relativeReferenceReservedHeight(theme: PresentationTheme | null | undefined, boxHeightPx: number): number {
+  if (!theme?.reference_follow_verse) return 0;
+  const versePx = liveFontSize(theme) * (theme.font_scale ?? 1);
+  const refPx = relativeReferenceFontSize(versePx, theme.reference_verse_ratio);
+  const gapPx = relativeReferenceGap(versePx);
+  const reserved = Math.ceil(refPx * 1.4) + gapPx;
+  return Math.max(0, Math.min(boxHeightPx * 0.45, reserved));
 }
 
 /**

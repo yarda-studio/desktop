@@ -118,32 +118,40 @@ export default function ThemeInspector({ draft, onChange, selected, onSelect, lo
                   value={vertical ?? "bottom"}
                   onChange={(v) => setRefPosition(v, horizontal ?? "center")}
                   options={[
-                    { value: "top", icon: "vertical_align_top", title: "Place above the verse (modes 2–3)" },
-                    { value: "bottom", icon: "vertical_align_bottom", title: "Place below the verse (modes 2–3)" },
+                    { value: "top", icon: "vertical_align_top", title: draft.reference_follow_verse ? "Place above the verse" : "Place above the verse (modes 2–3)" },
+                    { value: "bottom", icon: "vertical_align_bottom", title: draft.reference_follow_verse ? "Place below the verse" : "Place below the verse (modes 2–3)" },
                   ]}
                 />
               )}
             </div>
           </div>
 
-          <div>
-            <FieldLabel>Position</FieldLabel>
-            <div className="grid grid-cols-2 gap-2">
-              <NumberField prefix="X" value={px(box.x, FRAME_W)} min={0} max={FRAME_W} onChange={(v) => setBox({ x: pct(v, FRAME_W) })} />
-              <NumberField prefix="Y" value={px(box.y, FRAME_H)} min={0} max={FRAME_H} onChange={(v) => setBox({ y: pct(v, FRAME_H) })} />
-            </div>
-          </div>
+          {selected === "reference" && draft.reference_follow_verse ? (
+            <p className="font-body-ui text-[12px] text-on-surface-variant">
+              Position and box size follow the verse box while Relative to verse is enabled.
+            </p>
+          ) : (
+            <>
+              <div>
+                <FieldLabel>Position</FieldLabel>
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberField prefix="X" value={px(box.x, FRAME_W)} min={0} max={FRAME_W} onChange={(v) => setBox({ x: pct(v, FRAME_W) })} />
+                  <NumberField prefix="Y" value={px(box.y, FRAME_H)} min={0} max={FRAME_H} onChange={(v) => setBox({ y: pct(v, FRAME_H) })} />
+                </div>
+              </div>
 
-          <div>
-            <FieldLabel>Dimension</FieldLabel>
-            <div className="grid grid-cols-2 gap-2">
-              <NumberField prefix="W" value={px(box.width, FRAME_W)} min={1} max={FRAME_W} onChange={setWidth} />
-              <NumberField prefix="H" value={px(box.height, FRAME_H)} min={1} max={FRAME_H} onChange={setHeight} />
-            </div>
-            <p className="mt-1.5 font-body-ui text-[12px] text-on-surface-variant">Measured on a {FRAME_W}×{FRAME_H} screen.</p>
-          </div>
+              <div>
+                <FieldLabel>Dimension</FieldLabel>
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberField prefix="W" value={px(box.width, FRAME_W)} min={1} max={FRAME_W} onChange={setWidth} />
+                  <NumberField prefix="H" value={px(box.height, FRAME_H)} min={1} max={FRAME_H} onChange={setHeight} />
+                </div>
+                <p className="mt-1.5 font-body-ui text-[12px] text-on-surface-variant">Measured on a {FRAME_W}×{FRAME_H} screen.</p>
+              </div>
 
-          <ToggleRow label="Lock aspect ratio" checked={lockAspect} onChange={onLockAspect} />
+              <ToggleRow label="Lock aspect ratio" checked={lockAspect} onChange={onLockAspect} />
+            </>
+          )}
         </InspectorSection>
 
         {selected === "verse" ? (
@@ -200,6 +208,23 @@ export default function ThemeInspector({ draft, onChange, selected, onSelect, lo
           </>
         ) : (
           <InspectorSection title="Reference label">
+            <ToggleRow
+              label="Relative to verse"
+              hint="Scale with the displayed verse font size and stay close to the text."
+              checked={draft.reference_follow_verse}
+              onChange={(reference_follow_verse) => onChange({ reference_follow_verse })}
+            />
+            {draft.reference_follow_verse && (
+              <RangeRow
+                label="Size relative to verse"
+                value={draft.reference_verse_ratio}
+                min={0.15}
+                max={0.8}
+                step={0.01}
+                format={(v) => `${Math.round(v * 100)}%`}
+                onChange={(reference_verse_ratio) => onChange({ reference_verse_ratio })}
+              />
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <FieldLabel>Weight</FieldLabel>
@@ -207,16 +232,29 @@ export default function ThemeInspector({ draft, onChange, selected, onSelect, lo
                   {WEIGHTS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
                 </select>
               </div>
+              {draft.reference_follow_verse ? (
+                <div>
+                  <FieldLabel>Color</FieldLabel>
+                  <ColorField value={draft.reference_color} onChange={(reference_color) => onChange({ reference_color })} />
+                </div>
+              ) : (
+                <div>
+                  <FieldLabel>Size</FieldLabel>
+                  <NumberField suffix="%" value={Math.round(draft.reference_font_scale * 100)} min={50} max={250} step={5} onChange={(v) => onChange({ reference_font_scale: v / 100 })} />
+                </div>
+              )}
+            </div>
+            {!draft.reference_follow_verse && (
               <div>
-                <FieldLabel>Size</FieldLabel>
-                <NumberField suffix="%" value={Math.round(draft.reference_font_scale * 100)} min={50} max={250} step={5} onChange={(v) => onChange({ reference_font_scale: v / 100 })} />
+                <FieldLabel>Color</FieldLabel>
+                <ColorField value={draft.reference_color} onChange={(reference_color) => onChange({ reference_color })} />
               </div>
-            </div>
-            <div>
-              <FieldLabel>Color</FieldLabel>
-              <ColorField value={draft.reference_color} onChange={(reference_color) => onChange({ reference_color })} />
-            </div>
-            <p className="font-body-ui text-[12px] text-on-surface-variant">In single-verse mode the label sits where you drag it; in modes 2–3 it follows the placement above.</p>
+            )}
+            <p className="font-body-ui text-[12px] text-on-surface-variant">
+              {draft.reference_follow_verse
+                ? "Scales with the displayed verse (including auto-fit shrinking) and sits directly above or below it."
+                : "In single-verse mode the label sits where you drag it; in modes 2–3 it follows the placement above."}
+            </p>
           </InspectorSection>
         )}
 

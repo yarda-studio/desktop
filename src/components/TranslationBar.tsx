@@ -40,7 +40,7 @@ function ModuleChip({
         title={title}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex items-center gap-1 field px-2.5 py-1 rounded-lg font-metadata-mono text-[12px] font-bold hover:text-on-surface transition-colors ${
+        className={`flex items-center gap-1 field px-2 py-0.5 rounded-lg font-metadata-mono text-[11.5px] font-bold hover:text-on-surface transition-colors ${
           tone === "primary" ? "text-on-surface-variant" : "text-secondary"
         }`}
       >
@@ -102,7 +102,7 @@ export default function TranslationBar() {
   }, []);
 
   return (
-    <div data-tour="live-translations" className="flex items-center gap-2 shrink-0">
+    <div data-tour="live-translations" className="flex items-center gap-1.5 shrink-0">
       <ModuleChip
         value={primaryModule}
         onPick={(id) => id && setPrimaryModule(id)}
@@ -116,7 +116,7 @@ export default function TranslationBar() {
         onClick={() => setParallelMode(!parallelMode)}
         title={parallelMode ? "Turn off parallel verses" : "Show a second translation side by side"}
         aria-pressed={parallelMode}
-        className={`p-1.5 rounded-lg ${parallelMode ? "ctl-active" : "ctl text-on-surface-variant"}`}
+        className={`p-1 rounded-lg ${parallelMode ? "ctl-active" : "ctl text-on-surface-variant"}`}
       >
         <span className="material-symbols-outlined text-[16px]">splitscreen</span>
       </button>

@@ -12,8 +12,14 @@ mod sword;
 mod types;
 mod versification;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use tauri::Manager;
+
+/// Acquire a mutex even if an earlier panic poisoned it, so one failed call
+/// doesn't permanently wedge an entire subsystem.
+pub(crate) fn lock_unpoisoned<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|p| p.into_inner())
+}
 
 /// The configured 1280x800 window is larger than many screens once display scaling is applied,
 /// which left the app cut off at first launch. Shrink it to fit the monitor's usable area.
@@ -94,8 +100,8 @@ pub fn run() {
             let modules_dir = data_dir.join("modules");
             std::fs::create_dir_all(&modules_dir)?;
             app.manage(Arc::new(modules::ModuleRegistry::new(modules_dir)));
-            app.manage(commands::ChapterCache::new());
-            app.manage(sword::file_cache::FileCache::new());
+            app.manage(Arc::new(commands::ChapterCache::new()));
+            app.manage(Arc::new(sword::file_cache::FileCache::new()));
             app.manage(commands::PresentationState(std::sync::Mutex::new(None)));
             app.manage(commands::CountdownState(std::sync::Mutex::new(None)));
             app.manage(commands::OutputVersion(std::sync::atomic::AtomicU64::new(
@@ -111,8 +117,8 @@ pub fn run() {
             std::thread::spawn(move || {
                 let db = handle.state::<Arc<db::Database>>();
                 let registry = handle.state::<Arc<modules::ModuleRegistry>>();
-                let chapter_cache = handle.state::<commands::ChapterCache>();
-                let file_cache = handle.state::<sword::file_cache::FileCache>();
+                let chapter_cache = handle.state::<Arc<commands::ChapterCache>>();
+                let file_cache = handle.state::<Arc<sword::file_cache::FileCache>>();
 
                 registry.load_installed();
 

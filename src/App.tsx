@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useAppStore } from "./store/app";
 import { api } from "./lib/tauri";
 import { applyAccent, isAccentId } from "./lib/accents";
+import { applyConsoleCompactness } from "./lib/consoleDensity";
 import { useBuiltinLexicons } from "./features/lexicons/builtinLexiconStore";
 import { importLegacyLocalStorageIfNeeded } from "./lib/legacyImport";
 import TopBar from "./components/TopBar";
@@ -9,17 +10,9 @@ import SideNav, { SIDE_NAV_VIEWS, RAIL_WIDTH_PX } from "./components/SideNav";
 import PresentationTopBar from "./components/PresentationTopBar";
 import ReadingView from "./views/ReadingView";
 import EmptyLibrary from "./views/EmptyLibrary";
-import ModuleManager from "./views/ModuleManager";
-import SearchResults from "./views/SearchResults";
-import SearchHistory from "./views/SearchHistory";
-import BookmarksNotes from "./views/BookmarksNotes";
-import SongsView from "./features/songs/SongsView";
 import ServiceOrderPanel from "./components/ServiceOrderPanel";
 import ErrorBoundary from "./components/ErrorBoundary";
-import CustomizationStudio from "./views/CustomizationStudio";
-import LiveShowRunner from "./views/LiveShowRunner";
 import PlanController from "./features/plan/PlanController";
-import SlidesView from "./features/slides/SlidesView";
 import { ResizeHandle, useResizable } from "./hooks/useResizable";
 import { OnboardingHost } from "./features/onboarding";
 import { initEntitlementSync } from "./features/entitlements";
@@ -28,12 +21,21 @@ import { planSyncParticipant } from "./features/plan/planSync";
 import { FirstRunSetup } from "./features/firstRun";
 import { TeamScriptureNotificationHost, TeamShareModal } from "./features/teamShare";
 
+const ModuleManager = lazy(() => import("./views/ModuleManager"));
+const SearchResults = lazy(() => import("./views/SearchResults"));
+const SearchHistory = lazy(() => import("./views/SearchHistory"));
+const BookmarksNotes = lazy(() => import("./views/BookmarksNotes"));
+const SongsView = lazy(() => import("./features/songs/SongsView"));
+const CustomizationStudio = lazy(() => import("./views/CustomizationStudio"));
+const SlidesView = lazy(() => import("./features/slides/SlidesView"));
+const LiveShowRunner = lazy(() => import("./views/LiveShowRunner"));
+
 export default function App() {
   const {
     view, theme, setTheme, hasModules, setHasModules, setPrimaryModule, setCurrentRef, setView,
     setShowStrongs, setReadingFontSize, isFullscreen, serviceOrderOpen, setServiceOrderOpen,
     hydrateDisplayPrefs, hydrateStudyTools, hydrateSearchHistory, hydrateServiceOrder, hydratePresentationThemes,
-    hydrateWorkspace, workspace, accent, setAccent, setMarkerStrongs,
+    hydrateWorkspace, workspace, accent, setAccent, setMarkerStrongs, consoleCompactness,
   } = useAppStore();
   const presenting = workspace === "presentation";
   const showSideNav = !isFullscreen && SIDE_NAV_VIEWS.includes(view);
@@ -58,6 +60,9 @@ export default function App() {
 
   // Accent colour preset (ink = no attribute)
   useEffect(() => { applyAccent(accent); }, [accent]);
+
+  // Console compactness CSS variables (smoothly adjusts spacing across Presentation views)
+  useEffect(() => { applyConsoleCompactness(consoleCompactness); }, [consoleCompactness]);
 
   // Synchronize entitlements across auth and window focus
   useEffect(() => { initEntitlementSync(); }, []);
@@ -235,51 +240,53 @@ export default function App() {
           {/* Each view gets its own boundary so a crash in one (e.g. Modules) can't
               take TopBar and the rest of the shell down with it — "Go back" just
               switches views, which unmounts the crashed tree instead of reloading. */}
-          {view === "reading" && (
-            <ErrorBoundary label="Reading" onReset={() => setView("modules")} resetLabel="Go to Modules">
-              {hasModules ? <ReadingView /> : <EmptyLibrary />}
-            </ErrorBoundary>
-          )}
-          {view === "modules" && (
-            <ErrorBoundary label="Modules" onReset={() => setView(presenting ? "live" : "reading")} resetLabel={presenting ? "Back to Live Show" : "Go to Reading"}>
-              <ModuleManager />
-            </ErrorBoundary>
-          )}
-          {view === "search" && (
-            <ErrorBoundary label="Search" onReset={() => setView("reading")} resetLabel="Go to Reading">
-              <SearchResults />
-            </ErrorBoundary>
-          )}
-          {view === "history" && (
-            <ErrorBoundary label="History" onReset={() => setView("reading")} resetLabel="Go to Reading">
-              <SearchHistory />
-            </ErrorBoundary>
-          )}
-          {presenting && view === "customize" && (
-            <ErrorBoundary label="Customization Studio" onReset={() => setView("reading")} resetLabel="Go to Reading">
-              <CustomizationStudio />
-            </ErrorBoundary>
-          )}
-          {presenting && view === "songs" && (
-            <ErrorBoundary label="Songs" onReset={() => setView("reading")} resetLabel="Go to Reading">
-              <SongsView />
-            </ErrorBoundary>
-          )}
-          {presenting && view === "slides" && (
-            <ErrorBoundary label="Slides" onReset={() => setView("reading")} resetLabel="Go to Reading">
-              <SlidesView />
-            </ErrorBoundary>
-          )}
-          {presenting && view === "live" && (
-            <ErrorBoundary label="Live Show" onReset={() => setView("reading")} resetLabel="Go to Reading">
-              <LiveShowRunner />
-            </ErrorBoundary>
-          )}
-          {(view === "bookmarks" || view === "notes") && (
-            <ErrorBoundary key={view} label={view === "bookmarks" ? "Bookmarks" : "Notes"} onReset={() => setView("reading")} resetLabel="Go to Reading">
-              <BookmarksNotes />
-            </ErrorBoundary>
-          )}
+          <Suspense fallback={null}>
+            {view === "reading" && (
+              <ErrorBoundary label="Reading" onReset={() => setView("modules")} resetLabel="Go to Modules">
+                {hasModules ? <ReadingView /> : <EmptyLibrary />}
+              </ErrorBoundary>
+            )}
+            {view === "modules" && (
+              <ErrorBoundary label="Modules" onReset={() => setView(presenting ? "live" : "reading")} resetLabel={presenting ? "Back to Live Show" : "Go to Reading"}>
+                <ModuleManager />
+              </ErrorBoundary>
+            )}
+            {view === "search" && (
+              <ErrorBoundary label="Search" onReset={() => setView("reading")} resetLabel="Go to Reading">
+                <SearchResults />
+              </ErrorBoundary>
+            )}
+            {view === "history" && (
+              <ErrorBoundary label="History" onReset={() => setView("reading")} resetLabel="Go to Reading">
+                <SearchHistory />
+              </ErrorBoundary>
+            )}
+            {presenting && view === "customize" && (
+              <ErrorBoundary label="Customization Studio" onReset={() => setView("reading")} resetLabel="Go to Reading">
+                <CustomizationStudio />
+              </ErrorBoundary>
+            )}
+            {presenting && view === "songs" && (
+              <ErrorBoundary label="Songs" onReset={() => setView("reading")} resetLabel="Go to Reading">
+                <SongsView />
+              </ErrorBoundary>
+            )}
+            {presenting && view === "slides" && (
+              <ErrorBoundary label="Slides" onReset={() => setView("reading")} resetLabel="Go to Reading">
+                <SlidesView />
+              </ErrorBoundary>
+            )}
+            {presenting && view === "live" && (
+              <ErrorBoundary label="Live Show" onReset={() => setView("reading")} resetLabel="Go to Reading">
+                <LiveShowRunner />
+              </ErrorBoundary>
+            )}
+            {(view === "bookmarks" || view === "notes") && (
+              <ErrorBoundary key={view} label={view === "bookmarks" ? "Bookmarks" : "Notes"} onReset={() => setView("reading")} resetLabel="Go to Reading">
+                <BookmarksNotes />
+              </ErrorBoundary>
+            )}
+          </Suspense>
         </div>
         {!isFullscreen && presenting && (
           <div

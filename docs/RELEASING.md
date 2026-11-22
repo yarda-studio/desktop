@@ -1,6 +1,6 @@
 # Releasing
 
-Pushing a tag that starts with `v` runs `.github/workflows/build.yml`: it syncs the public repo, builds Mac and Windows, and **publishes** the release on `yarda-studio/desktop`, where the in-app updater reads `latest.json`. Check the version in `src-tauri/tauri.conf.json` and the changelog first.
+Pushing a tag that starts with `v` runs `.github/workflows/build.yml`: it syncs the public repo, builds Mac and Windows, and **publishes** the release on `yarda-studio/desktop`, where the in-app updater reads `latest.json`. Update `VERSION` and run `npm run version:sync -- --release` (which updates `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and stamps `CHANGELOG.md`) first.
 
 ## What a release builds
 

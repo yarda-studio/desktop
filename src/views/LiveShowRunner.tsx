@@ -12,7 +12,7 @@ import StrongsSheet from "../components/StrongsSheet";
 import ErrorBoundary from "../components/ErrorBoundary";
 import PlanSection from "../features/plan/PlanSection";
 import OutputStrip from "../features/songs/OutputStrip";
-import { liveDisplayPrefs, liveFontSize, liveSafeMargin } from "../lib/liveText";
+import { liveDisplayPrefs, liveFontSize, liveSafeMargin, relativeReferenceReservedHeight } from "../lib/liveText";
 import OutputPreview from "../components/OutputPreview";
 import { addVerseToPlan } from "../features/plan/addToPlan";
 import { reportVerseParts, verseKey } from "../features/plan/verseParts";
@@ -25,6 +25,7 @@ import PresentationSearchBar, { type PresentationSearchBarHandle } from "../comp
 import { ResizeHandle, useResizable } from "../hooks/useResizable";
 import AiSearchDock from "../components/aiSearch/AiSearchDock";
 import ConsolePaneTabs, { type ConsolePane } from "../components/ConsolePaneTabs";
+import { columnLayoutClasses } from "../lib/consoleDensity";
 
 function verseText(chapterVerses: { verse: number; spans: { text: string }[] }[] | undefined, verse: number): string {
   return chapterVerses?.find((v) => v.verse === verse)?.spans.map((s) => s.text).join("") ?? "";
@@ -55,6 +56,7 @@ export default function LiveShowRunner() {
     versePart, setVersePart,
     setSelectedStrongs, setStrongsGroup, showStrongs, showRedLetter,
     strongsLive, strongsPage, strongsDoc,
+    splitConsoleColumns,
   } = useAppStore();
 
   // Same click contract as ReadingView's handleStrongsClick. StrongsSheet
@@ -131,15 +133,15 @@ export default function LiveShowRunner() {
   // Every major panel is user-resizable; sizes persist across restarts and
   // double-clicking a divider restores its default.
   const queueW = useResizable({
-    storageKey: "scriptura.live.queueWidth", initial: Math.round(window.innerWidth * 0.24), min: 180, axis: "x",
-    max: () => Math.max(180, Math.round(window.innerWidth * 0.36)),
+    storageKey: "scriptura.live.queueWidth", initial: Math.round(window.innerWidth * 0.22), min: 150, axis: "x",
+    max: () => Math.max(150, Math.round(window.innerWidth * 0.34)),
   });
   const liveW = useResizable({
-    storageKey: "scriptura.live.liveWidth", initial: Math.round(window.innerWidth * 0.3), min: 220, axis: "x", invert: true,
-    max: () => Math.max(220, Math.round(window.innerWidth * 0.44)),
+    storageKey: "scriptura.live.liveWidth", initial: Math.round(window.innerWidth * 0.27), min: 175, axis: "x", invert: true,
+    max: () => Math.max(175, Math.round(window.innerWidth * 0.38)),
   });
   const bottomH = useResizable({
-    storageKey: "scriptura.live.bottomHeight", initial: Math.round(window.innerHeight * 0.36), min: 140, axis: "y", invert: true,
+    storageKey: "scriptura.live.bottomHeight", initial: Math.round(window.innerHeight * 0.38), min: 130, axis: "y", invert: true,
     max: () => Math.max(160, window.innerHeight - 240),
   });
   const [pane, setPane] = useState<ConsolePane>("preview");
@@ -176,7 +178,8 @@ export default function LiveShowRunner() {
     } else if (ctx === 1 && theme) {
       // A filled verse box is drawn with 1.2% padding each side (see FreeformVerseLayout).
       boxW = (theme.verse_box_width / 100) * screenW * (theme.verse_box_fill ? 0.976 : 1);
-      boxH = (theme.verse_box_height / 100) * screenH;
+      const rawH = (theme.verse_box_height / 100) * screenH;
+      boxH = rawH - relativeReferenceReservedHeight(theme, rawH);
     } else if (ctx === 2 || ctx === 3) {
       boxW = ((100 - 2 * hPadPct) / 100) * screenW;
       boxH = screenH * (ctx === 3 ? 0.5 : 0.6);
@@ -789,9 +792,10 @@ export default function LiveShowRunner() {
   // A Strong's lookup is being shown on the output: the Live column mirrors it (instead of the live verse)
   // so the operator can see what is on air and step its pages from here.
   const strongsOnAir = strongsLive && !!selectedStrongs && !!strongsDoc && strongsDoc.pages.length > 0;
+  const layout = columnLayoutClasses(pane, splitConsoleColumns);
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-2 sm:p-2.5 gap-2 sm:gap-2.5">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-[var(--c-shell-pad,10px)] gap-[var(--c-shell-gap,10px)]">
       <ConsolePaneTabs pane={pane} onChange={setPane} scheduleCount={serviceOrder.length} liveActive={presentationActive} />
 
       {/* Schedule | Preview | Live — each column ends in an output strip */}
@@ -800,16 +804,16 @@ export default function LiveShowRunner() {
         <section
           data-tour="live-schedule"
           style={{ "--pane-w": `${queueW.size}px` } as React.CSSProperties}
-          className={`${pane === "schedule" ? "flex" : "hidden"} min-[880px]:flex w-full min-[880px]:w-[var(--pane-w)] shrink min-w-0 min-[880px]:max-w-[32%] flex-col overflow-hidden panel rounded-3xl`}
+          className={`${layout.scheduleShow} ${layout.scheduleSize} flex-col overflow-hidden panel rounded-[var(--c-radius,16px)]`}
         >
           <ErrorBoundary compact label="Plan and schedule">
           <PlanSection scheduleCount={serviceOrder.length}>
-          <div className="shrink-0 flex items-center justify-between gap-3 px-3 py-2 border-b border-outline-variant">
-            <span className="font-body-ui text-[12px] text-on-surface-variant shrink-0">{serviceOrder.length} {serviceOrder.length === 1 ? "item" : "items"} queued</span>
-            <div className="flex items-center gap-2 whitespace-nowrap">
+          <div className="shrink-0 flex items-center justify-between gap-2 px-[var(--c-hdr-px,14px)] py-[var(--c-hdr-py,8px)] border-b border-outline-variant">
+            <span className="font-body-ui text-[11.5px] text-on-surface-variant shrink-0">{serviceOrder.length} {serviceOrder.length === 1 ? "item" : "items"} queued</span>
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
               <button
                 onClick={() => setServiceOrderOpen(true)}
-                className="flex items-center gap-1 font-body-ui font-medium text-[12px] text-on-surface-variant hover:text-primary transition-colors"
+                className="flex items-center gap-1 font-body-ui font-medium text-[11.5px] text-on-surface-variant hover:text-primary transition-colors"
                 title="Reorder or remove queue items (Ctrl+Shift+Q)"
               >
                 <span className="material-symbols-outlined text-[15px]">reorder</span>
@@ -818,7 +822,7 @@ export default function LiveShowRunner() {
               {serviceOrder.length > 0 && (
                 <button
                   onClick={clearServiceOrder}
-                  className="flex items-center gap-1 px-1.5 py-0.5 min-h-6 rounded font-body-ui font-medium text-[12px] text-on-surface-variant hover:text-error ghost"
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded font-body-ui font-medium text-[11.5px] text-on-surface-variant hover:text-error ghost"
                   title="Clear the whole schedule"
                 >
                   <span className="material-symbols-outlined text-[15px]">delete_sweep</span>
@@ -827,9 +831,9 @@ export default function LiveShowRunner() {
               )}
             </div>
           </div>
-          <div data-tour="live-schedule-list" className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+          <div data-tour="live-schedule-list" className="flex-1 min-h-0 overflow-y-auto px-[var(--c-sched-list-px,12px)] py-[var(--c-sched-list-py,8px)]">
             {serviceOrder.length === 0 ? (
-              <div className="p-4 text-center">
+              <div className="p-3 text-center">
                 <p className="font-body-ui text-[12px] text-on-surface-variant leading-relaxed">
                   Nothing scheduled yet. Add verses from the library below with Queue (Ctrl+Q).
                 </p>
@@ -848,23 +852,23 @@ export default function LiveShowRunner() {
                           sendLive({ book: item.book, chapter: item.chapter, verse: item.verse }, 0);
                         }}
                         title="Click to preview slides • Double-click to send live"
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg border transition-colors select-none ${
+                        className={`w-full text-left px-[var(--c-sched-card-px,10px)] py-[var(--c-sched-card-py,6px)] rounded-lg border transition-colors select-none ${
                           isSelected ? "row-selected border-primary/30" : "border-transparent hover:bg-surface-container-low"
                         }`}
                       >
                         <div className="flex items-center gap-1.5">
-                          <span className="font-metadata-mono text-[12px] text-on-surface-variant">{idx + 1}</span>
-                          <span className={`font-body-ui text-[12px] font-semibold truncate ${isSelected ? "text-primary" : "text-on-surface"}`}>
+                          <span className="font-metadata-mono text-[11px] text-on-surface-variant">{idx + 1}</span>
+                          <span className={`font-body-ui text-[length:var(--c-sched-title,12.5px)] font-semibold truncate ${isSelected ? "text-primary" : "text-on-surface"}`}>
                             {serviceItemLabel(item)} {item.module ? `(${item.module})` : ""}
                           </span>
                           {isLive && (
-                            <span className="font-body-ui font-medium text-[12px] text-error ml-auto shrink-0 flex items-center gap-1">
+                            <span className="font-body-ui font-medium text-[11px] text-error ml-auto shrink-0 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse" />
                               Live
                             </span>
                           )}
                         </div>
-                        <p className="font-body-ui text-[12px] text-on-surface-variant truncate mt-0.5 leading-tight">{item.text}</p>
+                        <p className="font-body-ui text-[length:var(--c-sched-sub,12px)] text-on-surface-variant truncate mt-0.5 leading-tight">{item.text}</p>
                       </button>
                     </li>
                   );
@@ -876,22 +880,22 @@ export default function LiveShowRunner() {
           </ErrorBoundary>
         </section>
 
-        <div className="hidden min-[880px]:contents">
+        <div className={layout.handleShow}>
           <ResizeHandle spaced axis="x" label="schedule" dragging={queueW.dragging} handleProps={queueW.handleProps} />
         </div>
 
         {/* ── Preview ── */}
-        <section data-tour="live-preview" className={`${pane === "preview" ? "flex" : "hidden"} min-[880px]:flex flex-1 min-w-0 flex-col overflow-hidden panel rounded-3xl`}>
-          <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 min-[880px]:py-2 border-b border-outline-variant">
-            <h2 className="min-w-0 flex-1 font-body-ui text-[13px] font-bold text-on-surface truncate">
+        <section data-tour="live-preview" className={`${layout.previewShow} flex-1 min-w-0 flex-col overflow-hidden panel rounded-[var(--c-radius,16px)]`}>
+          <div className="shrink-0 flex items-center gap-1.5 px-[var(--c-hdr-px,14px)] py-[var(--c-hdr-py,8px)] border-b border-outline-variant">
+            <h2 className="min-w-0 flex-1 font-body-ui text-[length:var(--c-hdr-text,13px)] font-bold text-on-surface truncate">
               Preview <span className="font-normal normal-case tracking-normal text-on-surface-variant">— {rangeCitation}{primaryModule ? ` (${primaryModule})` : ""}</span>
             </h2>
-            <div className="flex items-center gap-1 min-[960px]:gap-1.5 shrink-0">
+            <div className="flex items-center gap-1 shrink-0">
               <button
                 data-tour="live-queue-add"
                 onClick={addSelectedToQueue}
                 disabled={allSelectedInQueue}
-                className="flex items-center gap-1 px-2 py-1 rounded-md ctl font-body-ui font-medium text-[12px] text-on-surface-variant hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-1.5 py-1 rounded-md ctl font-body-ui font-medium text-[11.5px] text-on-surface-variant hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 title={
                   allSelectedInQueue
                     ? "Already in the schedule"
@@ -915,7 +919,7 @@ export default function LiveShowRunner() {
                   void addVerseToPlan({ book: previewRef.book, chapter: previewRef.chapter, verse: first }, primaryModule, last);
                 }}
                 disabled={!primaryModule}
-                className="p-1.5 ctl rounded-md text-on-surface-variant hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                className="p-1 ctl rounded-md text-on-surface-variant hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                 title="Add this passage to the service plan"
                 aria-label="Add this passage to the service plan"
               >
@@ -932,31 +936,31 @@ export default function LiveShowRunner() {
                   });
                 }}
                 disabled={!primaryModule}
-                className="p-1.5 ctl rounded-md text-on-surface-variant hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                className="p-1 ctl rounded-md text-on-surface-variant hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                 title={forPlatform("Send previewed passage to team (Ctrl+Shift+T)")}
                 aria-label="Send previewed passage to team"
               >
-                <span className="material-symbols-outlined text-[15px]">forward_to_inbox</span>
+                <span className="material-symbols-outlined text-[14px]">forward_to_inbox</span>
               </button>
               <button
                 onClick={goBack}
                 disabled={liveHistory.length === 0}
-                className="p-1.5 ctl rounded-md text-on-surface disabled:opacity-40 disabled:cursor-not-allowed"
+                className="p-1 ctl rounded-md text-on-surface disabled:opacity-40 disabled:cursor-not-allowed"
                 title="Return to the previously-live verse (Backspace)"
                 aria-label="Return to the previously live verse"
               >
-                <span className="material-symbols-outlined text-[16px]">undo</span>
+                <span className="material-symbols-outlined text-[15px]">undo</span>
               </button>
               <button
                 data-tour="live-golive"
                 onClick={goLive}
                 disabled={currentPreviewSlide ? (sameRef(currentPreviewSlide.ref, currentRef) && currentPreviewSlide.part === versePart) : (sameRef(previewRef, currentRef) && previewPart === versePart)}
-                className="flex items-center gap-1.5 px-2.5 py-1 min-[880px]:px-3 min-[880px]:py-1.5 rounded-md btn-primary font-body-ui text-[13px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                className="flex items-center gap-1 px-[var(--c-golive-px,12px)] !min-h-0 h-[var(--c-golive-h,32px)] rounded-md btn-primary font-body-ui !text-[length:var(--c-golive-text,13px)] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 title="Send the previewed verse live (Enter, or double-click it)"
                 aria-label="Go Live"
               >
-                <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                <span className="hidden sm:inline min-[880px]:hidden min-[960px]:inline">Go Live</span>
+                <span className="material-symbols-outlined text-[15px]">play_arrow</span>
+                <span className={layout.goLiveLabel}>Go Live</span>
               </button>
             </div>
           </div>
@@ -971,7 +975,7 @@ export default function LiveShowRunner() {
               <StrongsSheet docked output={{ stage, theme: activePresentationTheme }} />
             </ErrorBoundary>
           ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-1.5">
+          <div className="flex-1 min-h-0 overflow-y-auto p-[var(--c-list-pad,10px)] flex flex-col gap-[var(--c-list-gap,6px)]">
             {previewSlides.map((slide, i) => {
               const active = i === activeSlideIndex;
               return (
@@ -999,18 +1003,21 @@ export default function LiveShowRunner() {
                     }
                   }}
                   title="Click to preview • Double-click to send live"
-                  className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border transition-colors cursor-pointer select-none ${
+                  className={`flex items-start gap-[var(--c-card-gap,10px)] px-[var(--c-card-px,12px)] py-[var(--c-card-py,8px)] rounded-lg border transition-colors cursor-pointer select-none ${
                     active ? "row-selected border-primary/40" : "border-outline-variant/50 hover:bg-surface-container-low"
                   }`}
                 >
-                  <span className={`font-metadata-mono text-[12px] shrink-0 mt-0.5 ${active ? "text-primary font-bold" : "text-on-surface-variant"}`}>
+                  <span className={`font-metadata-mono text-[11px] shrink-0 mt-0.5 ${active ? "text-primary font-bold" : "text-on-surface-variant"}`}>
                     {i + 1}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className={`font-body-ui text-[12px] font-bold ${active ? "text-primary" : "text-on-surface"}`}>
+                    <p className={`font-body-ui text-[length:var(--c-card-title,12px)] font-bold ${active ? "text-primary" : "text-on-surface"}`}>
                       {slide.label}
                     </p>
-                    <p className={`font-body-reading text-[13px] ${showStrongs ? "leading-[1.8]" : "leading-snug"} text-on-surface mt-0.5`}>
+                    <p
+                      className="font-body-reading text-[length:var(--c-card-text,13px)] text-on-surface mt-0.5"
+                      style={{ lineHeight: showStrongs ? "var(--c-card-strongs-lh, 1.8)" : "1.375" }}
+                    >
                       {slide.spans && slide.spans.length > 0 ? (
                         <VerseSpans
                           spans={slide.spans}
@@ -1048,7 +1055,7 @@ export default function LiveShowRunner() {
           </OutputStrip>
         </section>
 
-        <div className="hidden min-[880px]:contents">
+        <div className={layout.handleShow}>
           <ResizeHandle spaced axis="x" label="live" dragging={liveW.dragging} handleProps={liveW.handleProps} />
         </div>
 
@@ -1056,22 +1063,22 @@ export default function LiveShowRunner() {
         <section
           data-tour="live-output"
           style={{ "--pane-w": `${liveW.size}px` } as React.CSSProperties}
-          className={`${pane === "live" ? "flex" : "hidden"} min-[880px]:flex w-full min-[880px]:w-[var(--pane-w)] shrink min-w-0 min-[880px]:max-w-[38%] flex-col overflow-hidden panel rounded-3xl`}
+          className={`${layout.liveShow} ${layout.liveSize} flex-col overflow-hidden panel rounded-[var(--c-radius,16px)]`}
         >
-          <div className="shrink-0 flex items-center gap-3 px-3.5 py-2 border-b border-outline-variant">
-            <h2 className="font-body-ui text-[13px] font-bold text-on-surface ">Live</h2>
+          <div className="shrink-0 flex items-center gap-2.5 px-[var(--c-hdr-px,14px)] py-[var(--c-hdr-py,8px)] border-b border-outline-variant">
+            <h2 className="font-body-ui text-[length:var(--c-hdr-text,13px)] font-bold text-on-surface">Live</h2>
             {presentationActive && (
-              <span className="flex items-center gap-1 font-body-ui font-medium text-[12px] text-error">
+              <span className="flex items-center gap-1 font-body-ui font-medium text-[11.5px] text-error">
                 <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse" />
                 On air
               </span>
             )}
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-1.5">
+          <div className="flex-1 min-h-0 overflow-y-auto p-[var(--c-list-pad,10px)] flex flex-col gap-[var(--c-list-gap,6px)]">
             {overridden && (
-              <div className="px-3 py-2 text-center ctl rounded-lg">
-                <p className="font-body-ui text-[12px] text-on-surface-variant">
+              <div className="px-2.5 py-1.5 text-center ctl rounded-lg">
+                <p className="font-body-ui text-[11.5px] text-on-surface-variant">
                   {liveEmergency ? "Standby screen is showing on the output." : "Output is cut to black."}
                 </p>
               </div>
@@ -1079,15 +1086,15 @@ export default function LiveShowRunner() {
             {strongsOnAir && strongsDoc ? (
               <>
                 <style>{`.strongs-card .sref{color:var(--color-primary, #8ab4f8)}.strongs-card b{font-weight:700}`}</style>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/30 row-selected">
-                  <span className="material-symbols-outlined !text-[18px] text-primary shrink-0" aria-hidden="true">menu_book</span>
+                <div className="flex items-center gap-[var(--c-card-gap,10px)] px-[var(--c-card-px,12px)] py-[var(--c-card-py,8px)] rounded-lg border border-primary/30 row-selected">
+                  <span className="material-symbols-outlined !text-[16px] text-primary shrink-0" aria-hidden="true">menu_book</span>
                   <div className="min-w-0 flex-1">
-                    <p className="font-body-ui text-[12px] font-bold text-primary truncate">Strong's {strongsDoc.number} is on the output</p>
+                    <p className="font-body-ui text-[length:var(--c-card-title,12px)] font-bold text-primary truncate">Strong's {strongsDoc.number} is on the output</p>
                     <p className="font-body-ui text-[11px] text-on-surface-variant truncate">{slideLabel(currentRef, liveSplit ? versePart : null, primaryModule)} returns when you clear it</p>
                   </div>
                   <button
                     onClick={() => useAppStore.getState().setStrongsLive(false)}
-                    className="ctl rounded-md px-2 py-1 font-body-ui text-[12px] font-bold text-on-surface shrink-0"
+                    className="ctl rounded-md px-2 py-0.5 font-body-ui text-[11.5px] font-bold text-on-surface shrink-0"
                     title="Take the lookup off the output and go back to the live verse"
                   >
                     Clear
@@ -1102,16 +1109,16 @@ export default function LiveShowRunner() {
                       tabIndex={0}
                       onClick={() => useAppStore.getState().setStrongsPage(i)}
                       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); useAppStore.getState().setStrongsPage(i); } }}
-                      className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border transition-colors cursor-pointer select-none ${
+                      className={`flex items-start gap-[var(--c-card-gap,10px)] px-[var(--c-card-px,12px)] py-[var(--c-card-py,8px)] rounded-lg border transition-colors cursor-pointer select-none ${
                         active ? "row-selected border-primary/30" : "border-outline-variant/60 hover:bg-surface-container-low"
                       } ${overridden ? "opacity-50" : ""}`}
                     >
-                      <span className={`font-metadata-mono text-[12px] shrink-0 mt-0.5 ${active ? "text-primary font-bold" : "text-on-surface-variant"}`}>{i + 1}</span>
+                      <span className={`font-metadata-mono text-[11px] shrink-0 mt-0.5 ${active ? "text-primary font-bold" : "text-on-surface-variant"}`}>{i + 1}</span>
                       <div className="min-w-0 flex-1">
-                        <p className={`font-body-ui text-[12px] font-bold ${active ? "text-primary" : "text-on-surface"}`}>
+                        <p className={`font-body-ui text-[length:var(--c-card-title,12px)] font-bold ${active ? "text-primary" : "text-on-surface"}`}>
                           Strong's {strongsDoc.number} · {i + 1}/{strongsDoc.pages.length}
                         </p>
-                        <div className="strongs-card font-body-reading text-[13px] leading-snug text-on-surface mt-0.5" dangerouslySetInnerHTML={{ __html: html }} />
+                        <div className="strongs-card font-body-reading text-[length:var(--c-card-text,13px)] leading-snug text-on-surface mt-0.5" dangerouslySetInnerHTML={{ __html: html }} />
                       </div>
                     </div>
                   );
@@ -1127,20 +1134,19 @@ export default function LiveShowRunner() {
                   tabIndex={0}
                   onClick={() => setVersePart(i)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setVersePart(i); } }}
-                  className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border transition-colors cursor-pointer select-none ${
+                  className={`flex items-start gap-[var(--c-card-gap,10px)] px-[var(--c-card-px,12px)] py-[var(--c-card-py,8px)] rounded-lg border transition-colors cursor-pointer select-none ${
                     active ? "row-selected border-primary/30" : "border-outline-variant/60 hover:bg-surface-container-low"
                   } ${overridden ? "opacity-50" : ""}`}
                 >
-                  <span className={`font-metadata-mono text-[12px] shrink-0 mt-0.5 ${active ? "text-primary font-bold" : "text-on-surface-variant"}`}>{i + 1}</span>
+                  <span className={`font-metadata-mono text-[11px] shrink-0 mt-0.5 ${active ? "text-primary font-bold" : "text-on-surface-variant"}`}>{i + 1}</span>
                   <div className="min-w-0">
-                    <p className={`font-body-ui text-[12px] font-bold ${active ? "text-primary" : "text-on-surface"}`}>
+                    <p className={`font-body-ui text-[length:var(--c-card-title,12px)] font-bold ${active ? "text-primary" : "text-on-surface"}`}>
                       {slideLabel(currentRef, liveSplit ? i : null, primaryModule)}
                     </p>
-                    <p className="font-body-reading text-[13px] leading-snug text-on-surface mt-0.5">{part || "—"}</p>
+                    <p className="font-body-reading text-[length:var(--c-card-text,13px)] leading-snug text-on-surface mt-0.5">{part || "—"}</p>
                   </div>
                 </div>
               );
-            
               })
             )}
           </div>
@@ -1161,17 +1167,17 @@ export default function LiveShowRunner() {
       <ResizeHandle axis="y" label="library" dragging={bottomH.dragging} handleProps={bottomH.handleProps} />
 
       {/* ── Library: reference bar + verse list + Ask Scripture ── */}
-      <div style={{ height: bottomH.size, maxHeight: "52%" }} className="relative shrink-0 panel rounded-3xl flex overflow-hidden">
+      <div style={{ height: bottomH.size, maxHeight: "52%" }} className="relative shrink-0 panel rounded-[var(--c-radius,16px)] flex overflow-hidden">
         {/* Left column: reference bar + verses list */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          <div className="shrink-0 min-h-[45px] flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-3 py-1.5 border-b border-outline-variant/40">
+          <div className="shrink-0 min-h-[var(--c-toolbar-h,45px)] flex flex-wrap items-center gap-x-2 gap-y-1 px-[var(--c-toolbar-px,12px)] py-[var(--c-toolbar-py,6px)] border-b border-outline-variant/40">
             <TranslationBar />
-            <span className="hidden min-[900px]:inline font-body-ui text-[13px] font-semibold text-on-surface shrink-0">{rangeCitation}</span>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button onClick={() => stepChapter(-1)} className="p-1 rounded-md ctl text-on-surface-variant" title={forPlatform("Previous chapter (Ctrl+P)")}>
+            <span className="hidden min-[960px]:inline font-body-ui text-[12.5px] font-semibold text-on-surface shrink-0">{rangeCitation}</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => stepChapter(-1)} className="p-0.5 rounded-md ctl text-on-surface-variant" title={forPlatform("Previous chapter (Ctrl+P)")}>
                 <span className="material-symbols-outlined text-[16px]">chevron_left</span>
               </button>
-              <button onClick={() => stepChapter(1)} className="p-1 rounded-md ctl text-on-surface-variant" title={forPlatform("Next chapter (Ctrl+N)")}>
+              <button onClick={() => stepChapter(1)} className="p-0.5 rounded-md ctl text-on-surface-variant" title={forPlatform("Next chapter (Ctrl+N)")}>
                 <span className="material-symbols-outlined text-[16px]">chevron_right</span>
               </button>
             </div>
@@ -1185,7 +1191,7 @@ export default function LiveShowRunner() {
             </div>
           </div>
 
-          <div ref={verseListRef} data-tour="live-verses" className="flex-1 min-w-0 overflow-y-auto px-2 py-2">
+          <div ref={verseListRef} data-tour="live-verses" className="flex-1 min-w-0 overflow-y-auto px-[var(--c-verse-list-px,8px)] py-[var(--c-verse-list-py,8px)]">
             {(previewChapter?.verses ?? []).map((v) => {
               const text = v.spans.map((s) => s.text).join("");
               const parts = previewPartsMap.get(v.verse) ?? [text];
@@ -1210,7 +1216,7 @@ export default function LiveShowRunner() {
               const headActive = isSelected;
               const shownPart = isPreviewVerse ? previewPart : 0;
               return (
-                <div key={v.verse} data-verse={v.verse} className="mb-1">
+                <div key={v.verse} data-verse={v.verse} className="mb-[var(--c-verse-mb,4px)]">
                   {/* A plain div, not a button — the unsplit case nests clickable
                       Strong's-number buttons inside, which a <button> can't legally contain. */}
                   <div
@@ -1244,19 +1250,22 @@ export default function LiveShowRunner() {
                         handleVerseClick(v.verse, e.shiftKey, false);
                       }
                     }}
-                    className={`w-full text-left flex items-start gap-2.5 px-3 py-2 rounded-md border border-transparent transition-colors cursor-pointer select-none ${
+                    className={`w-full text-left flex items-start gap-[var(--c-verse-gap,10px)] px-[var(--c-verse-px,12px)] py-[var(--c-verse-py,8px)] rounded-md border border-transparent transition-colors cursor-pointer select-none ${
                       headActive ? "row-selected" : "border-transparent hover:bg-surface-container-low"
                     }`}
                   >
-                    <span className={`font-metadata-mono text-[12px] shrink-0 mt-0.5 ${headActive ? "text-primary font-bold" : "text-on-surface-variant"}`}>
+                    <span className={`font-metadata-mono text-[length:var(--c-verse-num,12px)] w-5 text-right tabular-nums shrink-0 mt-0.5 ${headActive ? "text-primary font-bold" : "text-on-surface-variant"}`}>
                       {v.verse}
                     </span>
                     {split && (
-                      <span className={`shrink-0 mt-0.5 px-1.5 rounded-full border font-metadata-mono text-[12px] ${isPreviewVerse ? "border-primary text-primary" : "border-outline-variant text-on-surface-variant"}`}>
+                      <span className={`shrink-0 mt-0.5 px-1.5 rounded-full border font-metadata-mono text-[11px] ${isPreviewVerse ? "border-primary text-primary" : "border-outline-variant text-on-surface-variant"}`}>
                         {shownPart + 1}/{parts.length}
                       </span>
                     )}
-                    <span className={`font-body-reading text-[14px] ${showStrongs ? "leading-[1.9]" : "leading-snug"} text-on-surface flex-1 min-w-0`}>
+                    <span
+                      className="font-body-reading text-[length:var(--c-verse-text,14px)] text-on-surface flex-1 min-w-0"
+                      style={{ lineHeight: showStrongs ? "var(--c-verse-strongs-lh, 1.9)" : "var(--c-verse-lh, 1.375)" }}
+                    >
                       <VerseSpans
                         spans={split ? sliceSpansForPart(v.spans, parts, 0) : v.spans}
                         showStrongs={showStrongs}
@@ -1285,9 +1294,9 @@ export default function LiveShowRunner() {
                           const i = j + 1;
                           const active = isPreviewVerse && previewPart === i;
                           return (
-                            <div key={i} className="pl-6 relative mt-1">
+                            <div key={i} className="pl-6 relative mt-0.5">
                               <span
-                                className="material-symbols-outlined absolute left-1 top-1.5 text-[14px] text-on-surface-variant pointer-events-none"
+                                className="material-symbols-outlined absolute left-1 top-1 text-[14px] text-on-surface-variant pointer-events-none"
                                 aria-hidden
                               >
                                 subdirectory_arrow_right
@@ -1299,14 +1308,17 @@ export default function LiveShowRunner() {
                                 onDoubleClick={() => { cancelPendingClickSettle(); select(i); sendLive({ ...previewRef, verse: v.verse }, i); }}
                                 title="Double-click to send live"
                                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(i); } }}
-                                className={`w-full text-left flex items-start gap-2.5 px-3 py-2 rounded-md border transition-colors cursor-pointer select-none ${
+                                className={`w-full text-left flex items-start gap-[var(--c-verse-gap,10px)] px-[var(--c-verse-px,12px)] py-[var(--c-verse-py,8px)] rounded-md border transition-colors cursor-pointer select-none ${
                                   active ? "row-selected border-transparent" : "border-outline-variant/50 hover:bg-surface-container-low"
                                 }`}
                               >
-                                <span className={`font-metadata-mono text-[12px] shrink-0 mt-0.5 ${active ? "text-primary font-bold" : "text-on-surface-variant"}`}>
+                                <span className={`font-metadata-mono text-[11px] shrink-0 mt-0.5 ${active ? "text-primary font-bold" : "text-on-surface-variant"}`}>
                                   p{i + 1}
                                 </span>
-                                <span className={`font-body-reading text-[14px] ${showStrongs ? "leading-[1.9]" : "leading-snug"} text-on-surface`}>
+                                <span
+                                  className="font-body-reading text-[length:var(--c-verse-text,14px)] text-on-surface"
+                                  style={{ lineHeight: showStrongs ? "var(--c-verse-strongs-lh, 1.9)" : "var(--c-verse-lh, 1.375)" }}
+                                >
                                   <VerseSpans spans={sliceSpansForPart(v.spans, parts, i)} showStrongs={showStrongs} showRedLetter={showRedLetter} onStrongsClick={handleStrongsClick} />
                                 </span>
                               </div>

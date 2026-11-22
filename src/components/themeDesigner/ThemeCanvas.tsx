@@ -4,7 +4,7 @@ import { FRAME_H, FRAME_W, boxKey, type ThemeElement } from "../../lib/themeDraf
 import GridMenu from "./GridMenu";
 import { GRIDS, activeLines, loadGridSettings, saveGridSettings, snapMove, snapResize, type GridSettings } from "./grids";
 import ThemeBackdrop from "../ThemeBackdrop";
-import { previewBackground, referenceJustify, referenceTextStyle, verseTextStyle } from "./themePreviewStyle";
+import { previewBackground, referenceJustify, referenceTextStyle, relativeReferenceGapCqw, verseTextStyle } from "./themePreviewStyle";
 
 interface Props {
   draft: PresentationThemeInput;
@@ -120,6 +120,7 @@ export default function ThemeCanvas({ draft, onChange, selected, onSelect, lockA
 
   // Arrow keys nudge the selected box; Shift nudges further.
   function onKeyDown(e: React.KeyboardEvent) {
+    if (selected === "reference" && draft.reference_follow_verse) return;
     const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     const dir = arrows[e.key];
     if (!dir) return;
@@ -186,25 +187,51 @@ export default function ThemeCanvas({ draft, onChange, selected, onSelect, lockA
             onPointerDown={(e) => beginDrag(e, "verse", false)}
             onResizePointerDown={(e) => beginDrag(e, "verse", true)}
           >
-            <p className="h-full flex items-center" style={verseTextStyle(draft)}>
-              <span className="w-full">For God so loved the world, that he gave his only begotten Son.</span>
-            </p>
+            {draft.reference_follow_verse ? (
+              <div className="h-full flex flex-col justify-center overflow-hidden" style={{ gap: relativeReferenceGapCqw(draft) }}>
+                {draft.reference_position.startsWith("top-") && (
+                  <p
+                    className="flex items-center font-metadata-mono uppercase shrink-0"
+                    style={{ ...referenceTextStyle(draft), letterSpacing: "0.18em", justifyContent: referenceJustify(draft) }}
+                  >
+                    John 3:16 · KJV
+                  </p>
+                )}
+                <p style={verseTextStyle(draft)}>
+                  <span className="block w-full">For God so loved the world, that he gave his only begotten Son.</span>
+                </p>
+                {!draft.reference_position.startsWith("top-") && (
+                  <p
+                    className="flex items-center font-metadata-mono uppercase shrink-0"
+                    style={{ ...referenceTextStyle(draft), letterSpacing: "0.18em", justifyContent: referenceJustify(draft) }}
+                  >
+                    John 3:16 · KJV
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="h-full flex items-center" style={verseTextStyle(draft)}>
+                <span className="w-full">For God so loved the world, that he gave his only begotten Son.</span>
+              </p>
+            )}
           </CanvasBox>
 
-          <CanvasBox
-            label="Reference"
-            selected={selected === "reference"}
-            style={boxStyle("reference")}
-            onPointerDown={(e) => beginDrag(e, "reference", false)}
-            onResizePointerDown={(e) => beginDrag(e, "reference", true)}
-          >
-            <p
-              className="h-full flex items-center font-metadata-mono uppercase"
-              style={{ ...referenceTextStyle(draft), letterSpacing: "0.18em", justifyContent: referenceJustify(draft) }}
+          {!draft.reference_follow_verse && (
+            <CanvasBox
+              label="Reference"
+              selected={selected === "reference"}
+              style={boxStyle("reference")}
+              onPointerDown={(e) => beginDrag(e, "reference", false)}
+              onResizePointerDown={(e) => beginDrag(e, "reference", true)}
             >
-              John 3:16 · KJV
-            </p>
-          </CanvasBox>
+              <p
+                className="h-full flex items-center font-metadata-mono uppercase"
+                style={{ ...referenceTextStyle(draft), letterSpacing: "0.18em", justifyContent: referenceJustify(draft) }}
+              >
+                John 3:16 · KJV
+              </p>
+            </CanvasBox>
+          )}
         </div>
       </div>
 

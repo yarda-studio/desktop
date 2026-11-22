@@ -274,6 +274,11 @@ export interface PresentationTheme {
   background_video: string | null;
   // Optional fill behind the verse box — what makes a lower-third bar.
   verse_box_fill: string | null;
+  // When true, the reference label scales with the displayed verse font size
+  // and sits directly above/below the rendered verse text.
+  reference_follow_verse: boolean;
+  // Reference font size as a fraction of the displayed verse font size (e.g. 0.35).
+  reference_verse_ratio: number;
   // Which theme is currently applied — a session preference, freely
   // reassignable to any theme (including personal ones) and unrelated to
   // whether it can be deleted. See is_builtin for that.

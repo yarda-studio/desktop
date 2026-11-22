@@ -79,6 +79,7 @@ impl Database {
             (18, SCHEMA_V18_BUILTIN_PRESET_THEMES),
             (19, SCHEMA_V19_THEME_BACKGROUND_VIDEO),
             (20, SCHEMA_V20_SYNC_STATE),
+            (21, SCHEMA_V21_REFERENCE_FOLLOW_VERSE),
         ]
     }
 
@@ -661,7 +662,9 @@ impl Database {
                     reference_box_x, reference_box_y, reference_box_width, reference_box_height,
                     auto_layout, min_font_scale, transition_type, transition_duration,
                     scroll_v_padding, font_size, line_spacing, letter_spacing, background_image,
-                    background_image_dim, verse_box_fill, background_video, is_default, is_builtin, created_at, updated_at
+                    background_image_dim, verse_box_fill, background_video,
+                    reference_follow_verse, reference_verse_ratio,
+                    is_default, is_builtin, created_at, updated_at
              FROM presentation_themes
              ORDER BY is_default DESC, name COLLATE NOCASE",
         )?;
@@ -685,8 +688,9 @@ impl Database {
                 reference_box_x, reference_box_y, reference_box_width, reference_box_height,
                 auto_layout, min_font_scale, transition_type, transition_duration,
                 scroll_v_padding, font_size, line_spacing, letter_spacing, background_image,
-                background_image_dim, verse_box_fill, background_video
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35)",
+                background_image_dim, verse_box_fill, background_video,
+                reference_follow_verse, reference_verse_ratio
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37)",
             params![
                 id, input.name, input.background_color, input.background_gradient,
                 input.text_color, input.reference_color, input.font_family, input.text_align,
@@ -703,6 +707,7 @@ impl Database {
                 input.font_size.clamp(12.0, 300.0), input.line_spacing.clamp(0.0, 2.0),
                 input.letter_spacing.clamp(-1.0, 2.0), background_image,
                 input.background_image_dim.clamp(0.0, 0.9), verse_box_fill, background_video,
+                input.reference_follow_verse, input.reference_verse_ratio.clamp(0.15, 0.85),
             ],
         )?;
         self.presentation_theme_by_id(&conn, &id)
@@ -726,7 +731,8 @@ impl Database {
                 auto_layout=?24, min_font_scale=?25, transition_type=?26, transition_duration=?27,
                 scroll_v_padding=?28, font_size=?29, line_spacing=?30, letter_spacing=?31,
                 background_image=?32, background_image_dim=?33, verse_box_fill=?34,
-                background_video=?35, updated_at=datetime('now')
+                background_video=?35, reference_follow_verse=?36, reference_verse_ratio=?37,
+                updated_at=datetime('now')
              WHERE id=?1",
             params![
                 id, input.name, input.background_color, input.background_gradient,
@@ -744,6 +750,7 @@ impl Database {
                 input.font_size.clamp(12.0, 300.0), input.line_spacing.clamp(0.0, 2.0),
                 input.letter_spacing.clamp(-1.0, 2.0), background_image,
                 input.background_image_dim.clamp(0.0, 0.9), verse_box_fill, background_video,
+                input.reference_follow_verse, input.reference_verse_ratio.clamp(0.15, 0.85),
             ],
         )?;
         if changed == 0 {
@@ -801,6 +808,29 @@ impl Database {
         Ok(())
     }
 
+    pub fn presentation_theme_background_video(&self, id: &str) -> Result<Option<String>> {
+        let conn = self.conn();
+        let video = conn
+            .query_row(
+                "SELECT background_video FROM presentation_themes WHERE id=?1",
+                params![id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(video)
+    }
+
+    pub fn is_background_video_referenced(&self, name: &str) -> Result<bool> {
+        let conn = self.conn();
+        let exists: i64 = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM presentation_themes WHERE background_video=?1)",
+            params![name],
+            |row| row.get(0),
+        )?;
+        Ok(exists != 0)
+    }
+
     pub fn set_default_presentation_theme(&self, id: &str) -> Result<PresentationTheme> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -827,7 +857,9 @@ impl Database {
                     reference_box_x, reference_box_y, reference_box_width, reference_box_height,
                     auto_layout, min_font_scale, transition_type, transition_duration,
                     scroll_v_padding, font_size, line_spacing, letter_spacing, background_image,
-                    background_image_dim, verse_box_fill, background_video, is_default, is_builtin, created_at, updated_at
+                    background_image_dim, verse_box_fill, background_video,
+                    reference_follow_verse, reference_verse_ratio,
+                    is_default, is_builtin, created_at, updated_at
              FROM presentation_themes WHERE id=?1",
             params![id],
             presentation_theme_from_row,
@@ -1253,7 +1285,8 @@ impl Database {
                                     reference_box_x, reference_box_y, reference_box_width, reference_box_height,
                                     auto_layout, min_font_scale, transition_type, transition_duration,
                                     scroll_v_padding, font_size, line_spacing, letter_spacing,
-                                    background_image, background_image_dim, verse_box_fill, background_video
+                                    background_image, background_image_dim, verse_box_fill, background_video,
+                                    reference_follow_verse, reference_verse_ratio
                              FROM presentation_themes WHERE id = ?1 AND is_builtin = 0",
                             params![record_id],
                             |row| {
@@ -1294,6 +1327,8 @@ impl Database {
                                     "background_image_dim": row.get::<_, f64>(33)?,
                                     "verse_box_fill": row.get::<_, Option<String>>(34)?,
                                     "background_video": row.get::<_, Option<String>>(35)?,
+                                    "reference_follow_verse": row.get::<_, i32>(36)? != 0,
+                                    "reference_verse_ratio": row.get::<_, f64>(37)?,
                                     "is_builtin": false,
                                 }))
                             },
@@ -1705,6 +1740,20 @@ impl Database {
                             .unwrap_or(0.35);
                         let verse_box_fill = d.get("verse_box_fill").and_then(|v| v.as_str());
                         let bg_video = d.get("background_video").and_then(|v| v.as_str());
+                        let ref_follow_verse = if d
+                            .get("reference_follow_verse")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                        {
+                            1
+                        } else {
+                            0
+                        };
+                        let ref_verse_ratio = d
+                            .get("reference_verse_ratio")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.35)
+                            .clamp(0.15, 0.85);
 
                         tx.execute(
                             "INSERT INTO presentation_themes (
@@ -1715,11 +1764,12 @@ impl Database {
                                 reference_box_x, reference_box_y, reference_box_width, reference_box_height,
                                 auto_layout, min_font_scale, transition_type, transition_duration, is_builtin,
                                 scroll_v_padding, font_size, line_spacing, letter_spacing,
-                                background_image, background_image_dim, verse_box_fill, background_video
+                                background_image, background_image_dim, verse_box_fill, background_video,
+                                reference_follow_verse, reference_verse_ratio
                              ) VALUES (
                                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
                                 ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, 0,
-                                ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36
+                                ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38
                              ) ON CONFLICT(id) DO UPDATE SET
                                 name = excluded.name,
                                 background_color = excluded.background_color,
@@ -1755,7 +1805,9 @@ impl Database {
                                 background_image = excluded.background_image,
                                 background_image_dim = excluded.background_image_dim,
                                 verse_box_fill = excluded.verse_box_fill,
-                                background_video = excluded.background_video
+                                background_video = excluded.background_video,
+                                reference_follow_verse = excluded.reference_follow_verse,
+                                reference_verse_ratio = excluded.reference_verse_ratio
                              WHERE presentation_themes.is_builtin = 0",
                             params![
                                 r.record_id, name, bg_color, bg_gradient, text_color, ref_color,
@@ -1764,7 +1816,8 @@ impl Database {
                                 vx, vy, vw, vh, rx, ry, rw, rh,
                                 auto_layout, min_font_scale, trans_type, trans_dur,
                                 scroll_v_pad, font_size, line_spacing, letter_spacing,
-                                bg_img, bg_img_dim, verse_box_fill, bg_video
+                                bg_img, bg_img_dim, verse_box_fill, bg_video,
+                                ref_follow_verse, ref_verse_ratio
                             ],
                         )?;
                     }
@@ -2549,6 +2602,13 @@ const SCHEMA_V19_THEME_BACKGROUND_VIDEO: &str = r#"
 ALTER TABLE presentation_themes ADD COLUMN background_video TEXT;
 "#;
 
+/// v21: reference labels can opt in to scaling dynamically with the displayed
+/// verse font size and hugging the rendered verse text.
+const SCHEMA_V21_REFERENCE_FOLLOW_VERSE: &str = r#"
+ALTER TABLE presentation_themes ADD COLUMN reference_follow_verse INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE presentation_themes ADD COLUMN reference_verse_ratio REAL NOT NULL DEFAULT 0.35;
+"#;
+
 /// v20: cloud sync state tracking and stable UUIDs across devices
 const SCHEMA_V20_SYNC_STATE: &str = r#"
 CREATE TABLE IF NOT EXISTS sync_state (
@@ -2861,10 +2921,12 @@ fn presentation_theme_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Pres
         background_image_dim: row.get(32)?,
         verse_box_fill: row.get(33)?,
         background_video: row.get(34)?,
-        is_default: row.get(35)?,
-        is_builtin: row.get(36)?,
-        created_at: row.get(37)?,
-        updated_at: row.get(38)?,
+        reference_follow_verse: row.get::<_, Option<i32>>(35)?.unwrap_or(0) != 0,
+        reference_verse_ratio: row.get::<_, Option<f64>>(36)?.unwrap_or(0.35),
+        is_default: row.get(37)?,
+        is_builtin: row.get(38)?,
+        created_at: row.get(39)?,
+        updated_at: row.get(40)?,
     })
 }
 
@@ -3051,6 +3113,8 @@ mod tests {
                 background_image_dim: 5.0, // out of range: must clamp
                 verse_box_fill: fill.map(String::from),
                 background_video: video.map(String::from),
+                reference_follow_verse: true,
+                reference_verse_ratio: 0.42,
             };
 
         let created = db
@@ -3072,6 +3136,20 @@ mod tests {
         assert_eq!(created.font_size, 300.0);
         assert_eq!(created.background_image_dim, 0.9);
         assert_eq!(created.line_spacing, 0.5);
+        assert!(created.reference_follow_verse);
+        assert_eq!(created.reference_verse_ratio, 0.42);
+        assert!(!base.reference_follow_verse);
+        assert_eq!(base.reference_verse_ratio, 0.35);
+
+        // Out-of-range reference_verse_ratio clamps to [0.15, 0.85].
+        let mut clamped_input = make(None, None, None);
+        clamped_input.reference_follow_verse = false;
+        clamped_input.reference_verse_ratio = 2.5;
+        let clamped = db
+            .update_presentation_theme(&created.id, &clamped_input)
+            .unwrap();
+        assert!(!clamped.reference_follow_verse);
+        assert_eq!(clamped.reference_verse_ratio, 0.85);
 
         // Clearing the picture and fill persists as NULL.
         let cleared = db
@@ -3135,6 +3213,8 @@ mod tests {
             background_image_dim: 0.35,
             verse_box_fill: None,
             background_video: None,
+            reference_follow_verse: false,
+            reference_verse_ratio: 0.35,
         };
         let created = db.create_presentation_theme(&input).unwrap();
         assert_eq!(created.name, "Lower third");
@@ -3202,6 +3282,8 @@ mod tests {
             background_image_dim: 0.35,
             verse_box_fill: None,
             background_video: None,
+            reference_follow_verse: false,
+            reference_verse_ratio: 0.35,
         };
         let created = db.create_presentation_theme(&input).unwrap();
         db.set_default_presentation_theme(&created.id).unwrap();
@@ -3306,6 +3388,8 @@ mod tests {
             background_image_dim: 0.35,
             verse_box_fill: None,
             background_video: None,
+            reference_follow_verse: false,
+            reference_verse_ratio: 0.35,
         };
         let created = db.create_presentation_theme(&input).unwrap();
         assert!(!created.is_default);

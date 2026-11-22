@@ -1,6 +1,13 @@
 import type { StateCreator } from "zustand";
 import type { AppState, Theme } from "../app";
 import type { AccentId } from "../../lib/accents";
+import {
+  clampCompactness,
+  readConsoleCompactness,
+  readSplitConsoleColumns,
+  writeConsoleCompactness,
+  writeSplitConsoleColumns,
+} from "../../lib/consoleDensity";
 
 export interface UiSlice {
   theme: Theme;
@@ -11,6 +18,10 @@ export interface UiSlice {
   setIsFullscreen: (v: boolean) => void;
   settingsOpen: boolean;
   setSettingsOpen: (v: boolean) => void;
+  consoleCompactness: number;
+  setConsoleCompactness: (value: number) => void;
+  splitConsoleColumns: boolean;
+  setSplitConsoleColumns: (v: boolean) => void;
 }
 
 export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set) => ({
@@ -22,4 +33,15 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set) => (
   setIsFullscreen: (isFullscreen) => set({ isFullscreen }),
   settingsOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  consoleCompactness: readConsoleCompactness(),
+  setConsoleCompactness: (value) => {
+    const consoleCompactness = clampCompactness(value);
+    writeConsoleCompactness(consoleCompactness);
+    set({ consoleCompactness });
+  },
+  splitConsoleColumns: readSplitConsoleColumns(),
+  setSplitConsoleColumns: (splitConsoleColumns) => {
+    writeSplitConsoleColumns(splitConsoleColumns);
+    set({ splitConsoleColumns });
+  },
 });

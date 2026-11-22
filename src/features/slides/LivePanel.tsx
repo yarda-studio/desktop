@@ -1,4 +1,5 @@
 import OutputPreview from "../../components/OutputPreview";
+import { columnLayoutClasses } from "../../lib/consoleDensity";
 import { useAppStore } from "../../store/app";
 import { useSlidesLive } from "./liveStore";
 import PageChips from "./PageChips";
@@ -9,6 +10,8 @@ export default function LivePanel({ width, stage, className = "flex" }: { width:
   const presentationActive = useAppStore((s) => s.presentationActive);
   const liveBlack = useAppStore((s) => s.liveBlack);
   const liveEmergency = useAppStore((s) => s.liveEmergency);
+  const splitConsoleColumns = useAppStore((s) => s.splitConsoleColumns);
+  const layout = columnLayoutClasses("live", splitConsoleColumns);
   const outputState = useSlidePresentState(live, livePage);
   const at = live?.id != null ? schedule.findIndex((s) => s.id === live.id) : -1;
   const pageCount = live?.pages.length ?? 0;
@@ -19,28 +22,28 @@ export default function LivePanel({ width, stage, className = "flex" }: { width:
   return (
     <section
       style={{ "--pane-w": `${width}px` } as React.CSSProperties}
-      className={`${className} w-full min-[880px]:w-[var(--pane-w)] shrink min-w-0 min-[880px]:max-w-[38%] flex-col overflow-hidden panel rounded-3xl`}
+      className={`${className} ${layout.liveSize} flex-col overflow-hidden panel rounded-[var(--c-radius,16px)]`}
     >
-      <div className="shrink-0 flex items-center gap-3 px-3.5 py-2.5 border-b border-outline-variant">
-        <h2 className="font-body-ui text-[13px] font-bold text-on-surface">Live</h2>
+      <div className="shrink-0 flex items-center gap-2.5 px-[var(--c-hdr-px,14px)] py-[var(--c-hdr-py,8px)] border-b border-outline-variant">
+        <h2 className="font-body-ui text-[length:var(--c-hdr-text,13px)] font-bold text-on-surface">Live</h2>
         {presentationActive && (
-          <span className="flex items-center gap-1 font-body-ui font-medium text-[12px] text-error">
+          <span className="flex items-center gap-1 font-body-ui font-medium text-[11.5px] text-error">
             <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse" />
             On air
           </span>
         )}
         <span className="flex-1" />
         {live && (
-          <button onClick={clearLive} className="ghost px-1.5 py-0.5 min-h-6 rounded font-body-ui font-medium text-[12px] text-on-surface-variant" title="Clear this panel (use BLACK in the top bar to blank the screen)">
+          <button onClick={clearLive} className="ghost px-1.5 py-0.5 rounded font-body-ui font-medium text-[11.5px] text-on-surface-variant" title="Clear this panel (use BLACK in the top bar to blank the screen)">
             Clear
           </button>
         )}
       </div>
 
-      <div className="flex-1 min-h-0 p-3 flex flex-col gap-2">
+      <div className="flex-1 min-h-0 p-[var(--c-stage-pad,16px)] flex flex-col gap-1.5">
         {(liveBlack || liveEmergency) && (
-          <div className="px-3 py-2 text-center ctl rounded-lg">
-            <p className="font-body-ui text-[12px] text-on-surface-variant">
+          <div className="px-2.5 py-1.5 text-center ctl rounded-lg">
+            <p className="font-body-ui text-[11.5px] text-on-surface-variant">
               {liveEmergency ? "Standby screen is showing on the output." : "Output is cut to black."}
             </p>
           </div>
@@ -53,12 +56,12 @@ export default function LivePanel({ width, stage, className = "flex" }: { width:
       </div>
 
       {live && pageCount > 1 && (
-        <div className="shrink-0 border-t border-outline-variant px-4 py-2">
+        <div className="shrink-0 border-t border-outline-variant px-3 py-1.5">
           <PageChips count={pageCount} index={livePage} onSelect={setLivePage} />
         </div>
       )}
 
-      <div className="shrink-0 border-t border-outline-variant px-4 py-3 flex items-center gap-3">
+      <div className="shrink-0 border-t border-outline-variant px-3 py-2 flex items-center gap-2">
         <p className="min-w-0 flex-1 font-body-ui text-[12px] text-on-surface truncate" title={live?.title}>{live ? live.title : "Nothing live"}</p>
         <div className="flex ctl rounded-md overflow-hidden shrink-0">
           <button onClick={() => void stepLive(-1)} disabled={!canPrev} className="px-2 py-1 disabled:opacity-35 hover:bg-on-surface/10" aria-label="Previous page or slide" title="Previous page, or the previous scheduled slide (Page Up)">

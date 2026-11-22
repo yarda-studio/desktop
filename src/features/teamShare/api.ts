@@ -1,5 +1,7 @@
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabase } from "../../lib/supabase.ts";
-import type { TeamScripturePayload } from "./teamShareLogic.ts";
+import type { OrgMember } from "../orgs/api.ts";
+import { resolveSenderName, teamVerseChannelTopic, type TeamScripturePayload } from "./teamShareLogic.ts";
 
 export interface SendVerseParams {
   orgId: string;
@@ -13,9 +15,11 @@ export interface SendVerseParams {
   module: string | null;
   text: string;
   note?: string;
+  /** Existing subscribed private channel for `orgId`, if already open in the store. */
+  existingChannel?: RealtimeChannel | null;
 }
 
-/** Sends a scripture share via both Supabase Realtime broadcast and database insert. */
+/** Sends a scripture share via private Supabase Realtime broadcast and database insert. */
 export async function sendScriptureShare(params: SendVerseParams): Promise<TeamScripturePayload> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("Supabase is not configured.");
@@ -36,9 +40,17 @@ export async function sendScriptureShare(params: SendVerseParams): Promise<TeamS
     createdAt: new Date().toISOString(),
   };
 
-  // 1. Broadcast immediately on the org channel (ultra-low latency)
-  const channel = supabase.channel(`org:${params.orgId}:team_verses`);
+  // 1. Broadcast immediately on the private org channel (ultra-low latency)
+  const ownsTempChannel = !params.existingChannel;
+  const channel =
+    params.existingChannel ??
+    supabase.channel(teamVerseChannelTopic(params.orgId), {
+      config: { private: true },
+    });
   try {
+    await supabase.realtime.setAuth().catch((err: unknown) => {
+      console.warn("[teamShare] could not refresh realtime auth; private broadcast may be rejected:", err);
+    });
     await channel.send({
       type: "broadcast",
       event: "scripture_share",
@@ -46,6 +58,10 @@ export async function sendScriptureShare(params: SendVerseParams): Promise<TeamS
     });
   } catch (err) {
     console.warn("[teamShare] broadcast failed, relying on db sync:", err);
+  } finally {
+    if (ownsTempChannel) {
+      await supabase.removeChannel(channel).catch(() => {});
+    }
   }
 
   // 2. Persist to team_scripture_shares table if it exists (for durability & history)
@@ -78,7 +94,12 @@ export async function sendScriptureShare(params: SendVerseParams): Promise<TeamS
 }
 
 /** Fetches recent scripture shares for the organization. */
-export async function fetchRecentScriptureShares(orgId: string, limit = 20): Promise<TeamScripturePayload[]> {
+export async function fetchRecentScriptureShares(
+  orgId: string,
+  limit = 20,
+  members: OrgMember[] = [],
+  currentUserId: string | null = null,
+): Promise<TeamScripturePayload[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
 
@@ -96,7 +117,7 @@ export async function fetchRecentScriptureShares(orgId: string, limit = 20): Pro
       id: row.id,
       orgId: row.org_id,
       senderId: row.sender_id,
-      senderName: "Team Member", // will be resolved against member directory
+      senderName: resolveSenderName(row.sender_id, currentUserId, members),
       recipientId: row.recipient_id,
       book: row.book,
       chapter: row.chapter,

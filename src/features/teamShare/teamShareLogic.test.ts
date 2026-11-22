@@ -7,6 +7,7 @@ import {
   isTargetForUser,
   formatRelativeTime,
   isValidVerseRef,
+  teamVerseChannelTopic,
   type ShareTarget,
 } from "./teamShareLogic.ts";
 import type { OrgMember } from "../orgs/api.ts";
@@ -36,6 +37,7 @@ describe("teamShareLogic", () => {
   it("formatShareTarget formats 'all' target as Entire Team", () => {
     const target: ShareTarget = { type: "all" };
     assert.equal(formatShareTarget(target, dummyMembers), "Entire Team");
+    assert.equal(teamVerseChannelTopic("org-1"), "org:org-1:team_verses");
   });
 
   it("formatShareTarget resolves member name or fallback email", () => {

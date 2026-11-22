@@ -62,7 +62,7 @@ export default function SongList({ onImport }: { onImport: () => void }) {
     <div className="flex flex-1 min-w-0 min-h-0 flex-col">
       <div className="flex flex-1 min-h-0">
         {/* Sources (sidebar on md+, horizontal strip below md) */}
-        <nav className="hidden md:block w-48 lg:w-56 shrink-0 border-r border-outline-variant bg-surface-container-lowest/40 overflow-y-auto py-2">
+        <nav className="hidden md:block w-40 lg:w-48 shrink-0 border-r border-outline-variant bg-surface-container-lowest/40 overflow-y-auto py-1.5">
           <SourceHeading>Songs</SourceHeading>
           <SourceRow icon="library_music" active={source.kind === "all"} onClick={() => setSource({ kind: "all" })}>All Songs</SourceRow>
           <SourceRow icon="star" active={source.kind === "favourites"} onClick={() => setSource({ kind: "favourites" })}>Favourites</SourceRow>
@@ -115,13 +115,13 @@ export default function SongList({ onImport }: { onImport: () => void }) {
             ))}
           </div>
 
-          <label className="field flex items-center gap-2 mx-3 mt-2.5 md:mt-3 mb-2 rounded-md px-2.5 h-8 sm:h-9 shrink-0">
-            <span className="material-symbols-outlined text-[18px] text-secondary">search</span>
+          <label className="field flex items-center gap-2 mx-[var(--c-search-mx,12px)] mt-[var(--c-search-mt,10px)] mb-[var(--c-search-mb,8px)] h-[var(--c-search-h,34px)] rounded-md px-2.5 shrink-0">
+            <span className="material-symbols-outlined text-[17px] text-secondary">search</span>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search titles, authors and lyrics"
-              className="flex-1 min-w-0 bg-transparent outline-none text-[13px] font-body-ui text-on-surface"
+              className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] font-body-ui text-on-surface"
             />
           </label>
 
@@ -130,7 +130,7 @@ export default function SongList({ onImport }: { onImport: () => void }) {
               <button
                 key={c.key}
                 onClick={() => toggleSort(c.key)}
-                className="flex items-center justify-between gap-1 px-3 py-2 text-left font-body-ui text-[13px] text-on-surface border-r border-outline-variant last:border-r-0 hover:bg-surface-container-low"
+                className="flex items-center justify-between gap-1 px-[var(--c-table-px,12px)] py-[var(--c-table-py,8px)] text-[length:var(--c-table-text,13px)] text-left font-body-ui text-on-surface border-r border-outline-variant last:border-r-0 hover:bg-surface-container-low"
               >
                 {c.label}
                 {sort?.key === c.key && (
@@ -188,12 +188,12 @@ function Row({ song, selected, onSelect, onOpen }: { song: SongSummary; selected
       title="Double-click to add to the schedule"
       className={`${GRID} cursor-default select-none ${selected ? "row-selected" : "hover:bg-surface-container-low"}`}
     >
-      <span className="px-3 py-2 font-body-ui text-[13px] text-on-surface truncate flex items-center gap-1.5">
+      <span className="px-[var(--c-table-px,12px)] py-[var(--c-table-py,8px)] text-[length:var(--c-table-text,13px)] font-body-ui text-on-surface truncate flex items-center gap-1.5">
         {song.favourite && <span className="material-symbols-outlined text-[14px] text-primary shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>}
         <span className="truncate">{song.title}</span>
       </span>
-      <span className="px-3 py-2 font-body-ui text-[13px] text-on-surface-variant truncate">{song.author}</span>
-      <span className="px-3 py-2 font-body-ui text-[13px] text-on-surface-variant truncate">{song.copyright}</span>
+      <span className="px-[var(--c-table-px,12px)] py-[var(--c-table-py,8px)] text-[length:var(--c-table-text,13px)] font-body-ui text-on-surface-variant truncate">{song.author}</span>
+      <span className="px-[var(--c-table-px,12px)] py-[var(--c-table-py,8px)] text-[length:var(--c-table-text,13px)] font-body-ui text-on-surface-variant truncate">{song.copyright}</span>
     </div>
   );
 }
@@ -214,7 +214,7 @@ function Footer({ count, selected, onNew, onHymnary, onImport, onEdit, onPlan, o
   }, [menu]);
 
   return (
-    <div className="h-11 shrink-0 flex items-center gap-1 px-3 border-t border-outline-variant bg-surface-container-lowest/40">
+    <div className="h-[var(--c-footer-h,44px)] px-[var(--c-footer-px,12px)] shrink-0 flex items-center gap-1 border-t border-outline-variant bg-surface-container-lowest/40">
       <button onClick={onNew} title="New song" aria-label="New song" className="ghost p-1.5 rounded-md text-on-surface">
         <span className="material-symbols-outlined text-[20px]">add</span>
       </button>

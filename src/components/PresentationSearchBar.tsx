@@ -222,16 +222,16 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
   })() : undefined;
 
   return (
-    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+    <div className="flex items-center gap-1.5 min-w-0">
       <button
         data-tour="live-strongs"
         onClick={toggleStrongs}
         aria-pressed={showStrongs}
-        className={`rounded-lg px-2 py-1 flex items-center gap-1.5 shrink-0 ${showStrongs ? "ctl-active" : "ctl text-on-surface-variant"}`}
+        className={`rounded-lg px-1.5 py-1 flex items-center gap-1 shrink-0 ${showStrongs ? "ctl-active" : "ctl text-on-surface-variant"}`}
         title={showStrongs ? "Strong's concordance on — click to turn off" : "Strong's concordance off — click to turn on"}
         aria-label={`Strong's concordance ${showStrongs ? "on" : "off"}`}
       >
-        <span className="material-symbols-outlined text-[18px]">tag</span>
+        <span className="material-symbols-outlined text-[16px]">tag</span>
         <span className="font-body-ui font-medium text-[12px] hidden xl:inline">Strong's</span>
       </button>
 
@@ -239,23 +239,23 @@ const PresentationSearchBar = forwardRef<PresentationSearchBarHandle, Props>(fun
         data-tour="live-ask"
         onClick={() => useAiSearchStore.getState().toggle()}
         aria-pressed={aiOpen}
-        className={`rounded-lg px-2 py-1 flex items-center gap-1.5 shrink-0 ${aiOpen ? "ctl-active" : "ctl text-on-surface-variant"}`}
+        className={`rounded-lg px-1.5 py-1 flex items-center gap-1 shrink-0 ${aiOpen ? "ctl-active" : "ctl text-on-surface-variant"}`}
         title={forPlatform("Ask Scripture — find verses by describing them (Ctrl+Shift+K, or start the search bar with ?)")}
         aria-label={`Ask Scripture ${aiOpen ? "open" : "closed"}`}
       >
-        <span className="material-symbols-outlined text-[18px]">auto_awesome</span>
+        <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
         <span className="font-body-ui font-medium text-[12px] hidden xl:inline">Ask</span>
       </button>
 
       <SearchHistoryMenu entries={searchHistory} onPick={runHistory} onClear={clearSearchHistory} />
 
       <div className="relative flex-1 min-w-[110px]">
-        <span className={`material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-[18px] pointer-events-none select-none ${route.kind === "ask" ? "text-primary" : "text-on-surface-variant"}`}>
+        <span className={`material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-[17px] pointer-events-none select-none ${route.kind === "ask" ? "text-primary" : "text-on-surface-variant"}`}>
           {ui.icon}
         </span>
         <input
           ref={inputRef}
-          className={`w-full pl-8 ${ui.label ? "pr-24" : "pr-8"} py-1 focus:outline-none text-body-ui font-body-ui transition-colors placeholder:text-on-surface-variant field rounded-lg`}
+          className={`w-full pl-7 ${ui.label ? "pr-24" : "pr-8"} py-0.5 h-7 focus:outline-none text-[13px] font-body-ui transition-colors placeholder:text-on-surface-variant field rounded-lg`}
           placeholder={forPlatform(`Verse (jn 3:16), word, or ${ASK_PREFIX} ask (Ctrl+K)`)}
           value={value}
           onChange={(e) => {

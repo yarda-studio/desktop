@@ -5,6 +5,7 @@ services
 website
 docs/PRO_TEAMS_IMPLEMENTATION_PROMPT.md
 docs/hosted-outputs-design.md
+docs/AUDIT-*.md
 docs/lovable-ui-*
 .env*
 node_modules

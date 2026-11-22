@@ -23,13 +23,13 @@ impl ChapterCache {
     }
 
     pub fn get(&self, module_id: &str, book: &str, chapter: u32) -> Option<ChapterText> {
-        let map = self.map.lock().unwrap();
+        let map = crate::lock_unpoisoned(&self.map);
         map.get(&(module_id.to_string(), book.to_string(), chapter))
             .cloned()
     }
 
     pub fn insert(&self, module_id: &str, book: &str, chapter: u32, value: ChapterText) {
-        let mut map = self.map.lock().unwrap();
+        let mut map = crate::lock_unpoisoned(&self.map);
         if map.len() >= MAX_CACHE_ENTRIES {
             // Evict one arbitrary entry to keep memory bounded
             if let Some(key) = map.keys().next().cloned() {
@@ -65,64 +65,83 @@ pub fn load_chapter(
 }
 
 #[tauri::command]
-pub fn get_chapter(
+pub async fn get_chapter(
     module_id: String,
     book: String,
     chapter: u32,
-    registry: State<Arc<ModuleRegistry>>,
-    chapter_cache: State<ChapterCache>,
-    file_cache: State<FileCache>,
+    registry: State<'_, Arc<ModuleRegistry>>,
+    chapter_cache: State<'_, Arc<ChapterCache>>,
+    file_cache: State<'_, Arc<FileCache>>,
 ) -> std::result::Result<ChapterText, AppError> {
-    load_chapter(
-        &registry,
-        &chapter_cache,
-        &file_cache,
-        &module_id,
-        &book,
-        chapter,
-    )
+    let registry = Arc::clone(&registry);
+    let chapter_cache = Arc::clone(&chapter_cache);
+    let file_cache = Arc::clone(&file_cache);
+    tokio::task::spawn_blocking(move || {
+        load_chapter(
+            &registry,
+            &chapter_cache,
+            &file_cache,
+            &module_id,
+            &book,
+            chapter,
+        )
+    })
+    .await
+    .map_err(|e| AppError::Other(e.to_string()))?
 }
 
 #[tauri::command]
-pub fn get_verse(
+pub async fn get_verse(
     module_id: String,
     book: String,
     chapter: u32,
     verse: u32,
-    registry: State<Arc<ModuleRegistry>>,
-    file_cache: State<FileCache>,
+    registry: State<'_, Arc<ModuleRegistry>>,
+    file_cache: State<'_, Arc<FileCache>>,
 ) -> std::result::Result<VerseText, AppError> {
-    let conf = registry
-        .conf_for(&module_id)
-        .ok_or_else(|| AppError::ModuleNotFound(module_id.clone()))?;
-    let module_path = registry.module_path(&module_id);
-    let reader = BibleReader::open(&module_path, &conf, &file_cache)?;
-    reader.get_verse(&book, chapter, verse)
+    let registry = Arc::clone(&registry);
+    let file_cache = Arc::clone(&file_cache);
+    tokio::task::spawn_blocking(move || {
+        let conf = registry
+            .conf_for(&module_id)
+            .ok_or_else(|| AppError::ModuleNotFound(module_id.clone()))?;
+        let module_path = registry.module_path(&module_id);
+        let reader = BibleReader::open(&module_path, &conf, &file_cache)?;
+        reader.get_verse(&book, chapter, verse)
+    })
+    .await
+    .map_err(|e| AppError::Other(e.to_string()))?
 }
 
 // ── Commentary ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn get_commentary(
+pub async fn get_commentary(
     module_id: String,
     book: String,
     chapter: u32,
     verse: u32,
-    registry: State<Arc<ModuleRegistry>>,
-    file_cache: State<FileCache>,
+    registry: State<'_, Arc<ModuleRegistry>>,
+    file_cache: State<'_, Arc<FileCache>>,
 ) -> std::result::Result<String, AppError> {
-    let conf = registry
-        .conf_for(&module_id)
-        .ok_or_else(|| AppError::ModuleNotFound(module_id.clone()))?;
-    let module_path = registry.module_path(&module_id);
-    let reader = BibleReader::open(&module_path, &conf, &file_cache)?;
-    let verse_text = reader.get_verse(&book, chapter, verse)?;
-    Ok(verse_text
-        .spans
-        .iter()
-        .map(|s| s.text.as_str())
-        .collect::<Vec<_>>()
-        .join(""))
+    let registry = Arc::clone(&registry);
+    let file_cache = Arc::clone(&file_cache);
+    tokio::task::spawn_blocking(move || {
+        let conf = registry
+            .conf_for(&module_id)
+            .ok_or_else(|| AppError::ModuleNotFound(module_id.clone()))?;
+        let module_path = registry.module_path(&module_id);
+        let reader = BibleReader::open(&module_path, &conf, &file_cache)?;
+        let verse_text = reader.get_verse(&book, chapter, verse)?;
+        Ok(verse_text
+            .spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join(""))
+    })
+    .await
+    .map_err(|e| AppError::Other(e.to_string()))?
 }
 
 // ── Cross references ──────────────────────────────────────────────────────────
@@ -130,24 +149,30 @@ pub fn get_commentary(
 /// Returns cross-references for the given verse by reading the TSK SWORD module.
 /// Returns an empty list (not an error) if TSK isn't installed.
 #[tauri::command]
-pub fn get_cross_references(
+pub async fn get_cross_references(
     book: String,
     chapter: u32,
     verse: u32,
-    registry: State<Arc<ModuleRegistry>>,
-    file_cache: State<FileCache>,
+    registry: State<'_, Arc<ModuleRegistry>>,
+    file_cache: State<'_, Arc<FileCache>>,
 ) -> std::result::Result<Vec<CrossReference>, AppError> {
-    let Some(conf) = registry.conf_for("TSK") else {
-        return Ok(vec![]);
-    };
-    let module_path = registry.module_path("TSK");
-    let reader = BibleReader::open(&module_path, &conf, &file_cache)?;
+    let registry = Arc::clone(&registry);
+    let file_cache = Arc::clone(&file_cache);
+    tokio::task::spawn_blocking(move || {
+        let Some(conf) = registry.conf_for("TSK") else {
+            return Ok(vec![]);
+        };
+        let module_path = registry.module_path("TSK");
+        let reader = BibleReader::open(&module_path, &conf, &file_cache)?;
 
-    // TSK stores its actual references within ThML <scripRef> elements. The
-    // normal display parser suppresses those elements, so read the raw module
-    // data before passing it to the TSK-specific parser.
-    let Ok(raw) = reader.get_raw_verse(&book, chapter, verse) else {
-        return Ok(vec![]);
-    };
-    Ok(crate::sword::crossref::parse_tsk_text(&raw, 120))
+        // TSK stores its actual references within ThML <scripRef> elements. The
+        // normal display parser suppresses those elements, so read the raw module
+        // data before passing it to the TSK-specific parser.
+        let Ok(raw) = reader.get_raw_verse(&book, chapter, verse) else {
+            return Ok(vec![]);
+        };
+        Ok(crate::sword::crossref::parse_tsk_text(&raw, 120))
+    })
+    .await
+    .map_err(|e| AppError::Other(e.to_string()))?
 }

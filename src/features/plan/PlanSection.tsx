@@ -47,20 +47,20 @@ export default function PlanSection({ children, scheduleCount }: { children: Rea
         role="tab"
         aria-selected={on}
         onClick={() => setMode(id)}
-        className={`seg-tab relative z-10 flex min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 font-bold transition-colors duration-200 active:scale-[0.97] ${
+        className={`seg-tab relative z-10 flex min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 font-bold transition-colors duration-200 active:scale-[0.97] ${
           on ? "text-on-surface" : "text-on-surface-variant hover:text-on-surface"
         }`}
       >
-        <span className="seg-ico material-symbols-outlined !text-[16px] shrink-0" aria-hidden="true">{icon}</span>
+        <span className="seg-ico material-symbols-outlined !text-[15px] shrink-0" aria-hidden="true">{icon}</span>
         <span className="shrink-0">{label}</span>
-        {count !== undefined && <span key={count} className="seg-count motion-swap shrink-0 rounded-full bg-on-surface/10 px-1.5 text-[11px] font-semibold leading-[18px] text-on-surface-variant">{count}</span>}
+        {count !== undefined && <span key={count} className="seg-count motion-swap shrink-0 rounded-full bg-on-surface/10 px-1.5 text-[10.5px] font-semibold leading-[16px] text-on-surface-variant">{count}</span>}
       </button>
     );
   };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col font-body-ui text-[12px] text-on-surface">
-      <div className="seg shrink-0 px-3 pt-2.5">
+      <div className="seg shrink-0 px-[var(--c-plan-px,12px)] pt-[var(--c-plan-pt,10px)]">
         <div role="tablist" aria-label="Plan or schedule" className="seg-tabs relative w-full items-center gap-0.5 rounded-lg bg-surface-container p-0.5">
           {/* The pill that slides under the active tab: tabs are equal width, so it moves one tab + one gap. */}
           <span
@@ -72,17 +72,17 @@ export default function PlanSection({ children, scheduleCount }: { children: Rea
           {tab("schedule", "Schedule", "queue_music", scheduleCount)}
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-2">
+      <div className="flex shrink-0 items-center gap-1.5 px-[var(--c-plan-px,12px)] py-[var(--c-plan-sum-py,8px)]">
         <div className="min-w-0 flex-1">
-          <p key={summary} className="motion-swap truncate text-on-surface-variant" title={summary}>{summary}</p>
-          <div className="text-on-surface-variant"><PlanClock /></div>
+          <p key={summary} className="motion-swap truncate text-[11.5px] text-on-surface-variant" title={summary}>{summary}</p>
+          <div className="text-[11px] text-on-surface-variant"><PlanClock /></div>
         </div>
         <span className="flex shrink-0 overflow-hidden rounded-md ctl">
-          <button onClick={() => void usePlan.getState().step(-1)} disabled={items.length === 0} className="px-2 py-0.5 hover:bg-on-surface/10 disabled:opacity-35" aria-label="Previous step" title="Previous step (Shift+Page Up)">
-            <span className="material-symbols-outlined !text-[18px]">chevron_left</span>
+          <button onClick={() => void usePlan.getState().step(-1)} disabled={items.length === 0} className="px-1.5 py-0.5 hover:bg-on-surface/10 disabled:opacity-35" aria-label="Previous step" title="Previous step (Shift+Page Up)">
+            <span className="material-symbols-outlined !text-[16px]">chevron_left</span>
           </button>
-          <button onClick={() => void usePlan.getState().step(1)} disabled={items.length === 0} className="border-l border-outline-variant px-2 py-0.5 hover:bg-on-surface/10 disabled:opacity-35" aria-label="Next step" title="Next step (Shift+Page Down)">
-            <span className="material-symbols-outlined !text-[18px]">chevron_right</span>
+          <button onClick={() => void usePlan.getState().step(1)} disabled={items.length === 0} className="border-l border-outline-variant px-1.5 py-0.5 hover:bg-on-surface/10 disabled:opacity-35" aria-label="Next step" title="Next step (Shift+Page Down)">
+            <span className="material-symbols-outlined !text-[16px]">chevron_right</span>
           </button>
         </span>
       </div>

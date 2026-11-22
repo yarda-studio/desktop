@@ -35,6 +35,11 @@ export function formatShareTarget(target: ShareTarget, members: OrgMember[] = []
   return target.name || "Team Member";
 }
 
+/** Builds the private Supabase Realtime topic name for team scripture sharing. */
+export function teamVerseChannelTopic(orgId: string): string {
+  return `org:${orgId}:team_verses`;
+}
+
 /** Resolves display name for a sender. */
 export function resolveSenderName(senderId: string, currentUserId: string | null, members: OrgMember[] = []): string {
   if (currentUserId && senderId === currentUserId) return "You";

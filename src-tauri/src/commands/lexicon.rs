@@ -101,7 +101,9 @@ pub fn set_builtin_lexicon_enabled(
         let json = serde_json::to_string(&next).unwrap_or_else(|_| "[]".to_string());
         db.set_meta(builtin::DISABLED_META_KEY, &json)?;
     } else if registry.conf_for(&id).is_some() {
-        let raw = db.get_meta("disabled_installed_lexicons")?.unwrap_or_default();
+        let raw = db
+            .get_meta("disabled_installed_lexicons")?
+            .unwrap_or_default();
         let mut current: Vec<String> = serde_json::from_str(&raw).unwrap_or_default();
         current.retain(|existing| !existing.eq_ignore_ascii_case(&id));
         if !enabled {

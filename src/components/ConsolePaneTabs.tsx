@@ -1,4 +1,6 @@
 import SegmentedControl from "./SegmentedControl";
+import { columnLayoutClasses } from "../lib/consoleDensity";
+import { useAppStore } from "../store/app";
 
 export type ConsolePane = "schedule" | "preview" | "live";
 
@@ -10,11 +12,13 @@ interface Props {
 }
 
 /**
- * Compact pane switcher shown below 880px in the presentation console tabs
- * (Scriptures, Slides, Songs), letting the active column use the full width
- * instead of squeezing all three columns side by side.
+ * Compact pane switcher shown below the active column-collapse threshold
+ * (660px in side-by-side mode, 880px in tabbed-when-narrow mode), letting the
+ * active column use the full width instead of squeezing three columns.
  */
 export default function ConsolePaneTabs({ pane, onChange, scheduleCount, liveActive }: Props) {
+  const splitColumns = useAppStore((s) => s.splitConsoleColumns);
+  const layout = columnLayoutClasses(pane, splitColumns);
   return (
     <SegmentedControl
       ariaLabel="Console panel"
@@ -46,7 +50,7 @@ export default function ConsolePaneTabs({ pane, onChange, scheduleCount, liveAct
           ),
         },
       ]}
-      className="min-[880px]:hidden shrink-0 rounded-xl panel p-1 gap-1"
+      className={`${layout.tabsHide} shrink-0 rounded-xl panel p-1 gap-1`}
       itemClassName="py-1 rounded-lg text-[12px] font-semibold"
       indicatorClassName="rounded-lg bg-primary shadow-xs"
     />

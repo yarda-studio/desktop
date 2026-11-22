@@ -14,4 +14,10 @@ ignore = [
   "RUSTSEC-2026-0368",
   "RUSTSEC-2026-0369",
   "RUSTSEC-2026-0429",
+  # Added 2026-11-22: ZipStreamReader entry-name mismatch (0548) and unchecked AES
+  # authentication (0545), same zip 4.6.1 via tauri-plugin-updater. Our own code
+  # uses zip 9.4.1 and never reads AES or streamed archives; the updater only
+  # unpacks bundles whose minisign signature has already verified.
+  "RUSTSEC-2026-0548",
+  "RUSTSEC-2026-0545",
 ]

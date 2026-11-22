@@ -1,4 +1,6 @@
 import ErrorBoundary from "../../components/ErrorBoundary";
+import { columnLayoutClasses } from "../../lib/consoleDensity";
+import { useAppStore } from "../../store/app";
 import PlanSection from "../plan/PlanSection";
 import { useSlidesLive } from "./liveStore";
 import SlideThumb from "./SlideThumb";
@@ -7,20 +9,24 @@ const KIND_ICON = { announcement: "campaign", freeform: "dashboard_customize" } 
 
 export default function SchedulePanel({ width, className = "flex" }: { width: number; className?: string }) {
   const { schedule, previewId, live, preview, goLive, removeFromSchedule, moveInSchedule, clearSchedule } = useSlidesLive();
+  const compactness = useAppStore((s) => s.consoleCompactness);
+  const splitConsoleColumns = useAppStore((s) => s.splitConsoleColumns);
+  const layout = columnLayoutClasses("schedule", splitConsoleColumns);
+  const thumbWidth = Math.round(72 - (compactness / 100) * 24);
 
   return (
     <section
       style={{ "--pane-w": `${width}px` } as React.CSSProperties}
-      className={`${className} w-full min-[880px]:w-[var(--pane-w)] shrink min-w-0 min-[880px]:max-w-[32%] flex-col overflow-hidden panel rounded-3xl`}
+      className={`${className} ${layout.scheduleSize} flex-col overflow-hidden panel rounded-[var(--c-radius,16px)]`}
     >
       <ErrorBoundary compact label="Plan and schedule">
       <PlanSection scheduleCount={schedule.length}>
-      <div className="shrink-0 flex items-center justify-between gap-3 px-3 py-2 border-b border-outline-variant">
-        <span className="font-body-ui text-[12px] text-on-surface-variant">{schedule.length} {schedule.length === 1 ? "slide" : "slides"} queued</span>
+      <div className="shrink-0 flex items-center justify-between gap-2 px-[var(--c-hdr-px,14px)] py-[var(--c-hdr-py,8px)] border-b border-outline-variant">
+        <span className="font-body-ui text-[11.5px] text-on-surface-variant">{schedule.length} {schedule.length === 1 ? "slide" : "slides"} queued</span>
         {schedule.length > 0 && (
           <button
             onClick={() => void clearSchedule()}
-            className="flex items-center gap-1 px-1.5 py-0.5 min-h-6 rounded font-body-ui font-medium text-[12px] text-on-surface-variant hover:text-error ghost"
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded font-body-ui font-medium text-[11.5px] text-on-surface-variant hover:text-error ghost"
             title="Clear the whole schedule"
           >
             <span className="material-symbols-outlined text-[15px]">delete_sweep</span>
@@ -28,9 +34,9 @@ export default function SchedulePanel({ width, className = "flex" }: { width: nu
           </button>
         )}
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+      <div className="flex-1 min-h-0 overflow-y-auto px-[var(--c-sched-list-px,12px)] py-[var(--c-sched-list-py,8px)]">
         {schedule.length === 0 ? (
-          <p className="p-4 text-center font-body-ui text-[12px] text-on-surface-variant leading-relaxed">
+          <p className="p-3 text-center font-body-ui text-[12px] text-on-surface-variant leading-relaxed">
             Nothing scheduled yet. Double-click a slide in the library below to add it.
           </p>
         ) : (
@@ -44,15 +50,15 @@ export default function SchedulePanel({ width, className = "flex" }: { width: nu
                     onClick={() => void preview(s.id)}
                     onDoubleClick={() => void goLive(s.id)}
                     title="Click to preview • Double-click to send live"
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-colors ${
+                    className={`w-full flex items-center gap-2 px-[var(--c-sched-card-px,10px)] py-[var(--c-sched-card-py,6px)] rounded-lg border text-left transition-colors ${
                       selected ? "row-selected border-primary/40" : "border-outline-variant/50 hover:bg-surface-container-low"
                     }`}
                   >
-                    <span className={`font-metadata-mono text-[12px] shrink-0 mt-0.5 ${selected ? "text-primary font-bold" : "text-on-surface-variant"}`}>{i + 1}</span>
-                    <SlideThumb id={s.id} updatedAt={s.updated_at} width={72} />
+                    <span className={`font-metadata-mono text-[11px] shrink-0 mt-0.5 ${selected ? "text-primary font-bold" : "text-on-surface-variant"}`}>{i + 1}</span>
+                    <SlideThumb id={s.id} updatedAt={s.updated_at} width={thumbWidth} />
                     <span className="min-w-0 flex-1 flex items-center gap-1.5 self-center">
-                      <span className="material-symbols-outlined text-[16px] text-on-surface-variant shrink-0" aria-hidden="true">{KIND_ICON[s.kind]}</span>
-                      <span className={`font-body-ui text-[13px] font-semibold truncate ${selected ? "text-primary" : "text-on-surface"}`}>{s.title}</span>
+                      <span className="material-symbols-outlined text-[15px] text-on-surface-variant shrink-0" aria-hidden="true">{KIND_ICON[s.kind]}</span>
+                      <span className={`font-body-ui text-[length:var(--c-sched-title,12.5px)] font-semibold truncate ${selected ? "text-primary" : "text-on-surface"}`}>{s.title}</span>
                       {isLive && <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse shrink-0" title="Live" />}
                     </span>
                   </button>

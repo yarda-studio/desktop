@@ -1,10 +1,11 @@
 import type { CSSProperties } from "react";
 import type { PresentationThemeInput } from "../../lib/tauri";
+import { relativeReferenceFontSize, relativeReferenceGap } from "../../lib/liveText";
 import { FRAME_W, fontFamilyCss } from "../../lib/themeDraft";
 
 /** px on the 1920-wide reference frame → container-width units, so previews
  * scale with whatever size they're drawn at while matching the real output. */
-const cqw = (px: number) => `${(px / FRAME_W) * 100}cqw`;
+export const cqw = (px: number) => `${(px / FRAME_W) * 100}cqw`;
 
 export function previewBackground(theme: PresentationThemeInput): CSSProperties {
   if (theme.background_image) {
@@ -32,15 +33,22 @@ export function verseTextStyle(theme: PresentationThemeInput): CSSProperties {
   };
 }
 
-/** Mirrors PresentationView's reference label size (28% of the verse size,
- * floored at 12px, then scaled by the theme). */
+/** Mirrors PresentationView's reference label size (either proportional to the
+ * displayed verse when `reference_follow_verse` is on, or 28% of base size
+ * scaled by `reference_font_scale`). */
 export function referenceTextStyle(theme: PresentationThemeInput): CSSProperties {
-  const px = Math.max(12, Math.round(theme.font_size * 0.28)) * theme.reference_font_scale;
+  const px = theme.reference_follow_verse
+    ? relativeReferenceFontSize(theme.font_size * theme.font_scale, theme.reference_verse_ratio)
+    : Math.max(12, Math.round(theme.font_size * 0.28)) * theme.reference_font_scale;
   return {
     color: theme.reference_color,
     fontSize: cqw(px),
     fontWeight: theme.reference_font_weight,
   };
+}
+
+export function relativeReferenceGapCqw(theme: PresentationThemeInput): string {
+  return cqw(relativeReferenceGap(theme.font_size * theme.font_scale));
 }
 
 export function referenceJustify(theme: PresentationThemeInput): CSSProperties["justifyContent"] {

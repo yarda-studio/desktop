@@ -22,14 +22,18 @@ export interface WidthRange {
  *  2. Shrink: only once at max width and still overflowing, step font-size
  *     down from `maxSize` until it fits or `minSize` is reached.
  */
-export function useShrinkToFit({ text, maxSize, minSize = 24, widthRange }: {
+export function useShrinkToFit({ text, maxSize, minSize = 24, widthRange, measureKey, onMeasureSize }: {
   text: string;
   maxSize: number;
   minSize?: number;
   widthRange?: WidthRange;
+  measureKey?: string | number;
+  onMeasureSize?: (size: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const textRef = useRef<HTMLParagraphElement | null>(null);
+  const onMeasureSizeRef = useRef(onMeasureSize);
+  onMeasureSizeRef.current = onMeasureSize;
   const [fontSize, setFontSize] = useState(maxSize);
   const [widthPct, setWidthPct] = useState(widthRange?.min ?? 100);
   const [resizeTick, setResizeTick] = useState(0);
@@ -53,6 +57,7 @@ export function useShrinkToFit({ text, maxSize, minSize = 24, widthRange }: {
 
     let size = maxSize;
     el.style.fontSize = `${size}px`;
+    onMeasureSizeRef.current?.(size);
 
     if (widthRange) {
       while (overflows() && width < widthRange.max) {
@@ -64,12 +69,13 @@ export function useShrinkToFit({ text, maxSize, minSize = 24, widthRange }: {
     while (size > minSize && overflows()) {
       size -= FONT_STEP;
       el.style.fontSize = `${size}px`;
+      onMeasureSizeRef.current?.(size);
     }
 
     setFontSize(size);
     setWidthPct(width);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, maxSize, minSize, widthRange?.min, widthRange?.max, resizeTick]);
+  }, [text, maxSize, minSize, widthRange?.min, widthRange?.max, measureKey, resizeTick]);
 
   return { containerRef, textRef, fontSize, widthPct };
 }

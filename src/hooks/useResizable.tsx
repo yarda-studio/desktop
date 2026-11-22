@@ -124,7 +124,7 @@ export function ResizeHandle({ axis, dragging, handleProps, label, spaced }: Han
       title="Drag to resize · double-click to reset"
       {...handleProps}
       className={`group shrink-0 flex items-center justify-center touch-none select-none ${
-        horizontal ? (spaced ? "w-3 cursor-col-resize" : "w-2 -mx-1 cursor-col-resize") : "h-2 -my-1 cursor-row-resize"
+        horizontal ? (spaced ? "w-2 cursor-col-resize" : "w-2 -mx-1 cursor-col-resize") : "h-2 -my-1 cursor-row-resize"
       }`}
     >
       <span

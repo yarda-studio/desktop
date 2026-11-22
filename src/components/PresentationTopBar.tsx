@@ -165,7 +165,7 @@ export default function PresentationTopBar() {
 
   return (
     <header
-      className="relative flex items-center justify-between gap-1 sm:gap-1.5 lg:gap-2 h-11 px-1.5 sm:px-2 md:px-content-margin w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0"
+      className="relative flex items-center justify-between gap-1 sm:gap-1.5 lg:gap-2 h-[var(--c-topbar-h,44px)] px-1.5 sm:px-2 md:px-3 w-full z-50 glass !rounded-none !border-x-0 !border-t-0 shrink-0"
       style={IS_MAC ? { paddingLeft: MAC_WINDOW_BUTTONS_WIDTH } : undefined}
     >
       {/* The bar is also the window's title bar (there is no separate one), so its empty parts drag the window. */}

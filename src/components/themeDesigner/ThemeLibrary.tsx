@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PresentationTheme, PresentationThemeInput } from "../../lib/tauri";
 import { THEME_PRESETS, type ThemePreset } from "../../lib/themeDraft";
 import ThemeBackdrop from "../ThemeBackdrop";
-import { previewBackground, referenceJustify, referenceTextStyle, verseTextStyle } from "./themePreviewStyle";
+import { previewBackground, referenceJustify, referenceTextStyle, relativeReferenceGapCqw, verseTextStyle } from "./themePreviewStyle";
 
 interface Props {
   themes: PresentationTheme[];
@@ -171,27 +171,40 @@ function ThemeThumb({ theme }: { theme: PresentationThemeInput }) {
     <div className="aspect-video relative isolate overflow-hidden" style={{ ...previewBackground(theme), containerType: "inline-size" }}>
       <ThemeBackdrop video={theme.background_video} dim={theme.background_image_dim} playing={false} />
       <div
-        className="absolute flex items-center"
+        className={`absolute flex ${theme.reference_follow_verse ? "flex-col justify-center" : "items-center"}`}
         style={{
           left: `${theme.verse_box_x}%`, top: `${theme.verse_box_y}%`,
           width: `${theme.verse_box_width}%`, height: `${theme.verse_box_height}%`,
           background: theme.verse_box_fill || undefined,
           padding: theme.verse_box_fill ? "0 1.2%" : undefined,
+          gap: theme.reference_follow_verse ? relativeReferenceGapCqw(theme) : undefined,
           overflow: "hidden",
         }}
       >
+        {theme.reference_follow_verse && theme.reference_position.startsWith("top-") && (
+          <div className="flex items-center font-metadata-mono uppercase shrink-0" style={{ letterSpacing: "0.12em", justifyContent: referenceJustify(theme), ...referenceTextStyle(theme) }}>
+            Genesis 1:1
+          </div>
+        )}
         <span className="w-full" style={verseTextStyle(theme)}>In the beginning God created the heaven and the earth.</span>
+        {theme.reference_follow_verse && !theme.reference_position.startsWith("top-") && (
+          <div className="flex items-center font-metadata-mono uppercase shrink-0" style={{ letterSpacing: "0.12em", justifyContent: referenceJustify(theme), ...referenceTextStyle(theme) }}>
+            Genesis 1:1
+          </div>
+        )}
       </div>
-      <div
-        className="absolute flex items-center font-metadata-mono uppercase"
-        style={{
-          left: `${theme.reference_box_x}%`, top: `${theme.reference_box_y}%`,
-          width: `${theme.reference_box_width}%`, height: `${theme.reference_box_height}%`,
-          letterSpacing: "0.12em", justifyContent: referenceJustify(theme), ...referenceTextStyle(theme),
-        }}
-      >
-        Genesis 1:1
-      </div>
+      {!theme.reference_follow_verse && (
+        <div
+          className="absolute flex items-center font-metadata-mono uppercase"
+          style={{
+            left: `${theme.reference_box_x}%`, top: `${theme.reference_box_y}%`,
+            width: `${theme.reference_box_width}%`, height: `${theme.reference_box_height}%`,
+            letterSpacing: "0.12em", justifyContent: referenceJustify(theme), ...referenceTextStyle(theme),
+          }}
+        >
+          Genesis 1:1
+        </div>
+      )}
     </div>
   );
 }

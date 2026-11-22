@@ -121,12 +121,15 @@ pub(crate) fn build_fts_index(
 // ── Search ────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn search(
+pub async fn search(
     query: String,
     options: SearchOptions,
-    db: State<Arc<Database>>,
+    db: State<'_, Arc<Database>>,
 ) -> std::result::Result<Vec<SearchResult>, AppError> {
-    db.search_fts(&query, &options)
+    let db = Arc::clone(&db);
+    tokio::task::spawn_blocking(move || db.search_fts(&query, &options))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))?
 }
 
 /// Rebuild the full-text search index for a module.
